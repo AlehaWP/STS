@@ -1,0 +1,105 @@
+// *****************************************************************************
+// Название: Отказ в регистрации доб. листа\комм. акта
+// Описание: Отказ в регистрации доб. листа\комм. акта
+// Кнопка вызова: 0
+// Подпись кнопки: do1_modif_reg_error.prd
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+VAR ('sSQL', String, '');
+VAR ('XmlNodeDescript', integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlNodeDescript, 'whid'));
+VAR ('vDO1ID',   String, XMLNODEATTRIBUTE (XmlNodeDescript, 'do1id'));
+VAR ('DoDt',     String, XMLNODEATTRIBUTE (XmlNodeDescript, 'dodt'));
+VAR ('vID',      String, '0');
+VAR ('vCounter', String, '0');
+VAR ('DocId', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('strStatus', String, '');
+VAR ('strSubStatus', String, '');
+VAR ('dRegDate', DateTime);
+
+    IF (LENGTH (vDO1ID) > 0,
+      Block(
+        IF (LENGTH (vDO1ID) > 30,
+          Block( // получили GUID
+            sSQL := 'SELECT ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+            OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+            IF (RECORDCOUNT ('qFindDocID') > 0,
+              Block( // найдена ДО-2
+                vID := qFindDocID.ID;
+              ),
+              Block( // ДО-2 не найдена
+                sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+                OPENQUERY ('qFindID', 'STS_DB', sSQL);
+                vID := qFindID.ID;
+              )
+            ); // IF - //
+          ),
+          Block( // получили ID
+            sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vDO1ID;
+            OPENQUERY ('qFindID', 'STS_DB', sSQL);
+            vID := qFindID.ID;
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+
+    sSQL := ' UPDATE KRD_MAIN SET STATUS_EPS = ' + char(39) + 'В регистрации комм. акта отказано' + char(39) + 
+            ' WHERE PLACEID='+ vPlaceID + ' AND MAIN_ID='+ vID;
+    EXECUTESQL('STS_DB', sSQL);
+
+    VAR ('sDocumentId', String, IF (XmlNodeHasAttribute (XmlNodeDescript, 'initEnvelopeId'), XMLNODEATTRIBUTE (XmlNodeDescript, 'initEnvelopeId'), ''));
+    VAR ('sActInfo', String, '');
+    IF (LENGTH (sDocumentId) > 0,
+      Block(
+        OPENQUERY ('qKD', 'STS_DB', 'SELECT PLACEID, DOC_NO, DOC_DATETIME FROM KRD_DOP WHERE PLACEID=' + vPlaceId + ' AND ID=' + vID + ' AND DOCUMENTID=' +char(39)+ sDocumentId +char(39));
+        IF (FIELDISNULL ('qKD', 'PLACEID') = 0,
+          sActInfo := 'КА: ' + qKD.DOC_NO + ' от ' + FDT ('DD.MM.YYYY', qKD.DOC_DATETIME)
+        ); // IF
+        CLOSEDATASET ('qKD');
+
+        sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vPlaceId + ' AND ID=' + vID + ' AND DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+      ),
+      Block(
+    sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DOC_REG_STATUS = ' +char(39)+ 'И' +char(39);
+      )
+    ); // IF
+    EXECUTESQL ('STS_DB', sSQL);
+    
+    // запись регистрации ДО-1
+    strStatus := 'В регистрации комм. акта отказано';
+    DoType := 'ДО-1';
+    DoNo := '';
+    sSQL := 'SELECT * FROM KRD_MAIN WHERE PLACEID=' + vPlaceID +  ' AND ID=' + vID;
+    OPENQUERY ('qDO1', 'STS_DB', sSQL);
+    IF (FIELDISNULL ('qDO1', 'PLACEID') = 0,
+      Block(
+        DoNo := qDO1.NBD;
+        DoDate := qDO1.BD_DATE;
+        DocId := qDO1.DOCUMENTID;
+        dRegDate := (Date() + Time(1));
+        OPENQUERY ('qryNum', 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+        sJourGuid := qryNum.JOURGUID;
+        IF (LENGTH (sActInfo) > 0,
+          Block(
+            sSubStatus := sActInfo;
+            IF (LENGTH (XMLNODEVALUE (XMLNODECHILD (XmlNodeDescript, 0))) > 0,
+              sSubStatus := sSubStatus + '. Причина: ' + REPLACECR (XMLNODEVALUE (XMLNODECHILD (XmlNodeDescript, 0)))
+            ); // IF
+          ),
+          Block(
+        sSubStatus := XMLNODEVALUE (XMLNODECHILD (XmlNodeDescript, 0));
+      )
+        ); // IF
+        
+      )
+    ); // IF
+    CLOSEDATASET ('qDO1');
+    
+

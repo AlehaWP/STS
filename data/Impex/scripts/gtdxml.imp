@@ -1,0 +1,883 @@
+// *****************************************************************************
+// Название: ГТД.XML(ИМ)
+// Описание: ГТД.XML(ИМ)
+// Кнопка вызова: 0
+// Подпись кнопки: ГТД.XML(ИМ)
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+VAR ('Report', Integer, GetCurrentGtdNode());
+VAR ('vPlaceId', Integer, DocPlaceID());
+VAR ('vId', Integer, 0);
+VAR ('bImportDoc', Boolean, ImportMode() = 'ImportDoc');
+VAR ('bCreateDoc', Boolean, bImportDoc | (ImportMode() = 'CreateDoc'));
+VAR ('iContCounter', Integer, 1);
+VAR ('iPapersCounter', Integer, 1);
+
+VAR ('iChoice', Integer, INIFILE ('GTDXMLIMP', 'Choice', 0));
+VAR ('sFilter', String, GETFILTER ('KRD_MAIN'));
+
+  iChoice := CHOICEVARIANTS ('Параметры загрузки', 1, iChoice, 'Загружать количество в доп. единицах|Загружать в описание товара артикулы и описания групп', '|');
+  IF (iChoice = -1, RAISEEXCEPTION ('Создание документа отменено пользователем'), WRITEINIFILE ('GTDXMLIMP', 'Choice', iChoice));
+  SETFILTER ('KRD_MAIN', '');
+  IF (vPlaceId = 0, RAISEEXCEPTION ('Внутренняя ошибка - склад с PLACEID = 0 не найден'));
+
+VAR ('sSQL', String, '');
+
+  sSQL := 'SELECT * FROM STORES WHERE PLACEID=' + vPlaceId;
+  OPENQUERY ('qStores', 'STS_DB', sSQL, 1);
+  IF (FIELDISNULL ('qStores', 'PLACEID'),
+    Block(
+      CLOSEDATASET ('qStores');
+      RAISEEXCEPTION ('Внутренняя ошибка - склад с PLACEID = ' + vPlaceId + ' не найден')
+    )
+  );
+
+  OPENTABLE ('KRD_COMM_A',        'STS_DB', 'KRD_COMM', 'PLACEID;ID;G32', 1);
+  OPENTABLE ('KRD_PAPERS_A',      'STS_DB', 'KR_PAPER', 'PLACEID;ID;COUNTER', 1);
+  OPENTABLE ('KRD_COMM_PAPERS_A', 'STS_DB', 'KR_C_P',   'PLACEID;ID;G32', 1);
+  OPENTABLE ('KRD_TRANSP_A',      'STS_DB', 'KR_TRANS', 'PLACEID;ID;COUNTER', 1);
+  OPENTABLE ('KRD_CONT_A',        'STS_DB', 'KRD_CONT', 'PLACEID;ID;COUNTER', 1);
+
+VAR ('sMakeBD_NoExpr',   String, INIFILE ('Docs', 'MakeBD_No', ''));
+VAR ('sStoreDoc_NoExpr', String, INIFILE ('Docs', 'StoreDoc_No', ''));
+VAR ('iCurStoreDoc_No', Integer, CONVERT (READCOUNTERSSTRING ('ContractDocNo', 'Default', 0), Integer));
+VAR ('sStoreDoc_No', String, '');
+
+  IF (TRIM (sStoreDoc_NoExpr) = '',
+    Block(
+      iCurStoreDoc_No := iCurStoreDoc_No + 1;
+      sStoreDoc_No := LEFTPAD (TRIM (iCurStoreDoc_No), 6, '0');
+      WRITECOUNTERSSTRING ('ContractDocNo', 'Default', TRIM (iCurStoreDoc_No));
+    ),
+    Block(
+      sStoreDoc_No := SOLVE (sStoreDoc_NoExpr);
+    )
+  ); // IF
+
+  vId := GetNewKrdMainID(vPlaceId);
+
+VAR ('sG082',           String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.OrganizationName);
+VAR ('sG08_OGRN',       String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.RFOrganizationFeatures.OGRN);
+VAR ('sG084C',          String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.RFOrganizationFeatures.INN);
+VAR ('sG08_KPP',        String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.RFOrganizationFeatures.KPP);
+VAR ('sG083',           String, '');
+VAR ('sG043',           String, '');
+VAR ('sG08_DOC_KIND',   String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.IdentityCard.IdentityCardCode);
+VAR ('sG08_DOC_ABBR',   String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.IdentityCard.IdentityCardName);
+VAR ('sG08_DOC_SERIES', String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.IdentityCard.IdentityCardSeries);
+VAR ('sG08_DOC_NUMBER', String, Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.IdentityCard.IdentityCardNumber);
+VAR ('sG17A',           String, REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.CountryCode, 'KOD'));
+
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.PostalCode) > 0,
+    sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.PostalCode
+  ); // IF
+  // опечатка CounryName вместо CountryName
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.CounryName) > 0,
+    IF (LENGTH (sG083) = 0,
+      sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.CounryName,
+      sG083 := sG083 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.CounryName
+    ); // IF
+  ); // IF
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.Region) > 0,
+    IF (LENGTH (sG083) = 0,
+      sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.City,
+      sG083 := sG083 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.City
+    ); // IF
+  ); // IF
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.StreetHouse) > 0,
+    IF (LENGTH (sG083) = 0,
+      sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.StreetHouse,
+      sG083 := sG083 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.StreetHouse
+    ); // IF
+  ); // IF
+
+  // признак того, что данные о получателе совпадают с данными о декларанте
+  // если 1, то загружаем информацию из раздела ESADout_CUDeclarant
+  IF ((Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.DeclarantEqualFlag = 1) |
+      (Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.EqualIndicator = 1),
+    Block(
+      sG082 := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.OrganizationName;
+      sG08_OGRN := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.RFOrganizationFeatures.OGRN;
+      sG084C := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.RFOrganizationFeatures.INN;
+      sG08_KPP := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.RFOrganizationFeatures.KPP;
+      IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.PostalCode) > 0,
+        sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignee.SubjectAddressDetails.PostalCode
+      ); // IF
+      // опечатка CounryName вместо CountryName
+      IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.CounryName) > 0,
+        IF (LENGTH (sG083) = 0,
+          sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.CounryName,
+          sG083 := sG083 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.CounryName
+        ); // IF
+      ); // IF
+      IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.Region) > 0,
+        IF (LENGTH (sG083) = 0,
+          sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.City,
+          sG083 := sG083 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.City
+        ); // IF
+      ); // IF
+      IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.StreetHouse) > 0,
+        IF (LENGTH (sG083) = 0,
+          sG083 := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.StreetHouse,
+          sG083 := sG083 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.SubjectAddressDetails.StreetHouse
+        ); // IF
+      ); // IF
+      sG08_DOC_KIND := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.IdentityCard.IdentityCardCode;
+      sG08_DOC_ABBR := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.IdentityCard.IdentityCardName;
+      sG08_DOC_SERIES := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.IdentityCard.IdentityCardSeries;
+      sG08_DOC_NUMBER := Report.ESADout_CUGoodsShipment.ESADout_CUDeclarant.IdentityCard.IdentityCardNumber;
+      sG17A := REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.SubjectAddressDetails.CountryCode, 'KOD');
+    )
+  ); // IF
+
+  VAR ('sG023', String, '');
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.PostalCode) > 0,
+    sG023 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.PostalCode
+  ); // IF
+  // опечатка CounryName вместо CountryName
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.CounryName) > 0,
+    IF (LENGTH (sG023) = 0,
+      sG023 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.CounryName,
+      sG023 := sG023 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.CounryName
+    ); // IF
+  ); // IF
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.Region) > 0,
+    IF (LENGTH (sG023) = 0,
+      sG023 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.Region,
+      sG023 := sG023 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.Region
+    ); // IF
+  ); // IF
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.City) > 0,
+    IF (LENGTH (sG023) = 0,
+      sG023 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.City,
+      sG023 := sG023 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.City
+    ); // IF
+  ); // IF
+  IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.StreetHouse) > 0,
+    IF (LENGTH (sG023) = 0,
+      sG023 := Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.StreetHouse,
+      sG023 := sG023 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.StreetHouse
+    ); // IF
+  ); // IF
+
+    VAR ('sG043', String, '');
+    IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.PostalCode) > 0,
+      sG043 := Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.PostalCode
+    ); // IF
+    // опечатка CounryName вместо CountryName
+    IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.CounryName) > 0,
+      IF (LENGTH (sG043) = 0,
+        sG043 := Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.CounryName,
+        sG043 := sG043 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.CounryName
+      ); // IF
+    ); // IF
+    IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.Region) > 0,
+      IF (LENGTH (sG043) = 0,
+        sG043 := Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.Region,
+        sG043 := sG043 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.Region
+      ); // IF
+    ); // IF
+    IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.City) > 0,
+      IF (LENGTH (sG043) = 0,
+        sG043 := Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.City,
+        sG043 := sG043 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.City
+      ); // IF
+    ); // IF
+    IF (LENGTH (Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.StreetHouse) > 0,
+      IF (LENGTH (sG043) = 0,
+        sG043 := Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.StreetHouse,
+        sG043 := sG043 + ', ' + Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.StreetHouse
+      ); // IF
+    ); // IF
+
+    VAR ('sTransportCountry', String);
+    VAR ('sTransportModeCode', String);
+    IF (XMLNODEFIND (Report.ESADout_CUGoodsShipment.ESADout_CUConsigment, 'ESADout_CUDepartureArrivalTransport'),
+      Block(
+        sTransportCountry := REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUDepartureArrivalTransport.TransportMeans.TransportMeansNationalityCode, 'KOD');
+        sTransportModeCode := Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUDepartureArrivalTransport.TransportModeCode;
+      ),
+      IF (XMLNODEFIND (Report.ESADout_CUGoodsShipment.ESADout_CUConsigment, 'ESADout_CUBorderTransport'),
+        Block(
+          sTransportCountry := REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUBorderTransport.TransportNationalityCode, 'KOD');
+          IF (LENGTH (sTransportCountry) = 0,
+            sTransportCountry := sTransportCountry := REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUBorderTransport.TransportMeans.TransportMeansNationalityCode, 'KOD')
+          ); // IF
+          sTransportModeCode := Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUBorderTransport.TransportModeCode;
+        )
+      ) // IF
+    ); // IF
+
+    APPENDRECORD ('KRD_MAIN');
+    EDIT ('KRD_MAIN');
+    SETFIELDVALUE ('KRD_MAIN',
+                   'PLACEID',            vPlaceId,
+                   'ID',                 vId,
+                   'MAIN_ID',            vId,
+                   'NBD',                SOLVE (sMakeBD_NoExpr),
+                   'STORE_DOC_NO',       sStoreDoc_No,
+                   'BD_DATE',            Now (),
+                   'A_MODE',             6,
+                   'Z_MODE',             3,
+                   'G011',               Report.CustomsProcedure,
+                   'G012',               Report.CustomsModeCode,
+                   'G05',                Report.ESADout_CUGoodsShipment.TotalGoodsNumber,
+                   'G06',                Report.ESADout_CUGoodsShipment.TotalPackageNumber,
+                   'G19',                Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ContainerIndicator,
+                   'TRANSPORT_COUNTRY',  sTransportCountry,
+                   'G261',               sTransportModeCode,
+                   'G142',               qStores.NAME,
+                   'G143',               qStores.ADDRESS,
+                   'G1440',              qStores.LICENCETYPE,
+                   'G144',               qStores.LICENCENO,
+                   'G145',               qStores.LICENCEDATE,
+                   'G022',               Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.OrganizationName,
+                   'G02_OGRN',           Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.RFOrganizationFeatures.OGRN,
+                   'G024C',              Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.RFOrganizationFeatures.INN,
+                   'G02_KPP',            Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.RFOrganizationFeatures.KPP,
+                   'G023',               sG023,
+                   'G02_DOC_KIND',       Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.IdentityCard.IdentityCardCode,
+                   'G02_DOC_KIND',       Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.IdentityCard.IdentityCardName,
+                   'G02_DOC_KIND',       Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.IdentityCard.IdentityCardSeries,
+                   'G02_DOC_KIND',       Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.IdentityCard.IdentityCardNumber,
+                   'G15A',               REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.ESADout_CUConsignor.SubjectAddressDetails.CountryCode, 'KOD'),
+                   'G082',               sG082,
+                   'G08_OGRN',           sG08_OGRN,
+                   'G084C',              sG084C,
+                   'G08_KPP',            sG08_KPP,
+                   'G083',               sG083,
+                   'G08_DOC_KIND',       sG08_DOC_KIND,
+                   'G08_DOC_ABBR',       sG08_DOC_ABBR,
+                   'G08_DOC_SERIES',     sG08_DOC_SERIES,
+                   'G08_DOC_NUMBER',     sG08_DOC_NUMBER,
+                   'G17A',               sG17A,
+                   'G042',               Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.OrganizationName,
+                   'G04_OGRN',           Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.RFOrganizationFeatures.OGRN,
+                   'G044C',              Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.RFOrganizationFeatures.INN,
+                   'G04_KPP',            Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.RFOrganizationFeatures.KPP,
+                   'G043',               sG043,
+                   'G04_COUNTRY',        REFERENCE ('OKSMT', 'ABC2', Report.ESADout_CUGoodsShipment.ESADout_CUCarrier.SubjectAddressDetails.CountryCode, 'KOD'),
+                   'G092',               Report.ESADout_CUFinancialAdjustingResponsiblePerson.OrganizationName,
+                   'G09_OGRN',           Report.ESADout_CUFinancialAdjustingResponsiblePerson.RFOrganizationFeatures.OGRN,
+                   'G094C',              Report.ESADout_CUFinancialAdjustingResponsiblePerson.RFOrganizationFeatures.INN,
+                   'G09_KPP',            Report.ESADout_CUFinancialAdjustingResponsiblePerson.RFOrganizationFeatures.KPP,
+                   'G093',               Report.ESADout_CUFinancialAdjustingResponsiblePerson.Address.StreetHouse,
+                   'G09_COUNTRY',        Report.ESADout_CUFinancialAdjustingResponsiblePerson.Address.CountryCode,
+                   'G221',               CURRENCYCODE (Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.ContractCurrencyCode),
+                   'G222',               Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.TotalInvoiceAmount,
+                   'G23',                Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.ContractCurrencyRate,
+    ); // SETFIELDVALUE
+    POST ('KRD_MAIN');
+  
+  VAR ('iTranspCounter', Integer, 1);
+
+  IF (XMLNODEFIND (Report.ESADout_CUGoodsShipment.ESADout_CUConsigment, 'ESADout_CUDepartureArrivalTransport'),
+    Block(
+      VAR ('XmlDepartureArrivalTransport', Integer, Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUDepartureArrivalTransport);
+      IF (XMLNODEFIND (XmlDepartureArrivalTransport, 'TransportMeans'),
+        Block(
+          VAR ('iTranspIndex', Integer, 0);
+          VAR ('iTranspsCount', Integer, XMLNODECHILDCOUNT (XmlDepartureArrivalTransport));
+          VAR ('XmlTransportMeans', Integer);
+
+          SHOWPROGRESS ('Обработка транспортных средств..');
+          TRYFINALLY (
+            Block(
+              WHILE (iTranspIndex < iTranspsCount,
+                Block(
+                  XmlTransportMeans := XMLNODECHILD (XmlDepartureArrivalTransport, iTranspIndex);
+                  IF (XMLNODENAME (XmlTransportMeans) = 'TransportMeans',
+                    Block(
+                      // проверяем есть ли элемент ActiveTransportIdentifier (по его наличию понимаем, что это не ТС, а прицеп)
+                      IF (LENGTH (XmlTransportMeans.ActiveTransportIdentifier) > 0,
+                        Block(
+                          // проверяем есть ли транспортным средством из ActiveTransportIdentifier?
+                          sSQL := 'SELECT COUNTER FROM KR_TRANS WHERE PLACEID=' + vPlaceId +
+                                  ' AND ID=' + vId +
+                                  ' AND CARNO=' +char(39)+ XmlTransportMeans.ActiveTransportIdentifier +char(39);
+                          OPENQUERY ('qCheckTS', sSQL, 'STS_DB', 1);
+
+                          // если есть, то делаем UPDATE
+                          IF (FIELDISNULL ('qCheckTS', 'COUNTER') = 0,
+                            Block(
+                              sSQL := 'UPDATE KR_TRANS SET NTRAILER=' +char(39)+ XmlTransportMeans.TransportIdentifier +char(39)+
+                                      ' WHERE PLACEID=' + vPlaceId +
+                                      ' AND ID=' + vId +
+                                      ' AND COUNTER=' + qCheckTS.COUNTER;
+                              EXECUTESQL ('STS_DB', sSQL);
+                            ),
+                            // если нет, то делаем APPENDRECORD
+                            Block(
+                              APPENDRECORD ('KRD_TRANSP_A');
+                              EDIT ('KRD_TRANSP_A');
+                              SETFIELDVALUE ('KRD_TRANSP_A',
+                                              'PLACEID',        vPlaceId,
+                                              'ID',             vId,
+                                              'COUNTER',        iTranspCounter,
+                                              'CARNO',          XmlTransportMeans.ActiveTransportIdentifier,
+                                              'NTRAILER',       XmlTransportMeans.TransportIdentifier,
+                                              'TRANSP_CODE',    XmlDepartureArrivalTransport.TransportModeCode,
+                                              'TRANSP_COUNTRY', REFERENCE('OKSMT', 'ABC2', XmlTransportMeans.TransportMeansNationalityCode, 'KOD'),
+                              ); // SETFIELDVALUE
+                              POST ('KRD_TRANSP_A');
+                              iTranspCounter := iTranspCounter + 1;
+                            )
+                          ); // IF
+                          CLOSEDATASET ('qCheckTS');
+                        ),
+                        Block(
+                          APPENDRECORD ('KRD_TRANSP_A');
+                          EDIT ('KRD_TRANSP_A');
+                          SETFIELDVALUE ('KRD_TRANSP_A',
+                                          'PLACEID',        vPlaceId,
+                                          'ID',             vId,
+                                          'COUNTER',        iTranspCounter,
+                                          'CARNO',          XmlTransportMeans.TransportIdentifier,
+                                          'TRANSP_CODE',    XmlDepartureArrivalTransport.TransportModeCode,
+                                          'TRANSP_COUNTRY', REFERENCE('OKSMT', 'ABC2', XmlTransportMeans.TransportMeansNationalityCode, 'KOD'),
+                                          'NTRAILER',       XmlTransportMeans.FirstTrailerRegId,
+                          ); // SETFIELDVALUE
+                          POST ('KRD_TRANSP_A');
+                          iTranspCounter := iTranspCounter + 1;
+                        )
+                      ); // IF
+                    )
+                  ); // IF
+                  SETPROGRESS (iTranspIndex, 100, iTranspsCount);
+                  iTranspIndex := iTranspIndex + 1;
+                )
+              ); // WHILE
+            ),
+            Block(
+              HIDEPROGRESS ();
+            )
+          ); // TRYFINALLY
+        )
+      ); // IF
+    )
+  ); // IF
+
+  IF (XMLNODEFIND (Report.ESADout_CUGoodsShipment.ESADout_CUConsigment, 'ESADout_CUBorderTransport'),
+    Block(
+      VAR ('xBorderTransport', Integer, Report.ESADout_CUGoodsShipment.ESADout_CUConsigment.ESADout_CUBorderTransport);
+      IF (XMLNODEFIND (xBorderTransport, 'TransportMeans'),
+        Block(
+          VAR ('xTransportMeans', Integer);
+          VAR ('iBorderTransportChildCount', Integer, XMLNODECHILDCOUNT (xBorderTransport));
+          VAR ('iTransportMeansIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xBorderTransport, 'TransportMeans')));
+
+          SHOWPROGRESS ('Обработка транспортных средств');
+          TRYFINALLY (
+            Block(
+              WHILE (XMLNODENAME (XMLNODECHILD (xBorderTransport, iTransportMeansIndex), 1) = 'TransportMeans',
+                Block(
+                  xTransportMeans := XMLNODECHILD (xBorderTransport, iTransportMeansIndex);
+                  // проверяем это транспортное средство или прицеп
+                  IF (XMLNODEFIND (xTransportMeans, 'ActiveTransportIdentifier'),
+                    Block(
+                      sSQL := 'SELECT' +
+                              ' COUNTER' +
+                              ' FROM KR_TRANS' +
+                              ' WHERE' +
+                              ' PLACEID=' + vPlaceId +
+                              ' AND ID=' + vId +
+                              ' AND CARNO=' +char(39)+ xTransportMeans.ActiveTransportIdentifier +char(39);
+                      OPENQUERY ('qCheckTS', sSQL, 'STS_DB', 1);
+                      IF (FIELDISNULL ('qCheckTS', 'COUNTER') = 0,
+                        Block(
+                          sSQL := 'UPDATE KR_TRANS SET NTRAILER=' +char(39)+ xTransportMeans.TransportIdentifier +char(39)+
+                                  ' WHERE PLACEID=' + vPlaceId +
+                                  ' AND ID=' + vId +
+                                  ' AND COUNTER=' + qCheckTS.COUNTER;
+                          EXECUTESQL ('STS_DB', sSQL);
+                        ),
+                        // если нет, то делаем APPENDRECORD
+                        Block(
+                          APPENDRECORD ('KRD_TRANSP_A');
+                          EDIT ('KRD_TRANSP_A');
+                          SETFIELDVALUE ('KRD_TRANSP_A',
+                                          'PLACEID',        vPlaceId,
+                                          'ID',             vId,
+                                          'COUNTER',        iTranspCounter,
+                                          'CARNO',          xTransportMeans.ActiveTransportIdentifier,
+                                          'NTRAILER',       xTransportMeans.TransportIdentifier,
+                                          'TRANSP_CODE',    xBorderTransport.TransportModeCode,
+                                          'TRANSP_COUNTRY', REFERENCE('OKSMT', 'ABC2', xTransportMeans.TransportMeansNationalityCode, 'KOD'),
+                          ); // SETFIELDVALUE
+                          POST ('KRD_TRANSP_A');
+                          iTranspCounter := iTranspCounter + 1;
+                        )
+                      ); // IF
+                      CLOSEDATASET ('qCheckTS');
+                    ),
+                    Block(
+                      APPENDRECORD ('KRD_TRANSP_A');
+                      EDIT ('KRD_TRANSP_A');
+                      SETFIELDVALUE ('KRD_TRANSP_A',
+                                      'PLACEID',        vPlaceId,
+                                      'ID',             vId,
+                                      'COUNTER',        iTranspCounter,
+                                      'CARNO',          xTransportMeans.TransportIdentifier,
+                                      'TRANSP_CODE',    xBorderTransport.TransportModeCode,
+                                      'TRANSP_COUNTRY', REFERENCE('OKSMT', 'ABC2', xTransportMeans.TransportMeansNationalityCode, 'KOD'),
+                                      'NTRAILER',       xTransportMeans.FirstTrailerRegId,
+                      ); // SETFIELDVALUE
+                      POST ('KRD_TRANSP_A');
+                      iTranspCounter := iTranspCounter + 1;
+                    )
+                  ); // IF
+
+                  iTransportMeansIndex := iTransportMeansIndex + 1;
+                  SETPROGRESS (iTransportMeansIndex, 100, iBorderTransportChildCount);
+                )
+              );
+            ),
+            Block(
+              HIDEPROGRESS ()
+            )
+          ); // TRYFINALLY
+        )
+      ); // IF
+    )
+  );
+
+  IF (XMLNODEFIND (Report, 'ESADout_CUGoodsShipment'),
+    Block(
+      VAR ('iGoodsCount', Integer, XMLNODECHILDCOUNT (XMLNODEFIND (Report, 'ESADout_CUGoodsShipment')));
+      VAR ('iGoodsIndex', Integer, 0);
+      VAR ('XmlGood', Integer);
+      VAR ('vG32', Integer, 1);
+      VAR ('sNTTN', String, '');
+      VAR ('sNCONT', String, '');
+
+      SHOWPROGRESS ('Обработка данных о товарах..');
+      TRYFINALLY (
+        Block(
+          VAR ('sGoodsDescription', Memo, '');
+          VAR ('sStorageType', String, 'НОР');
+          VAR ('iLegPeriod', Integer, 15);
+          VAR ('sStorageDate', String, ADDMONTHS (KRD_MAIN.BD_DATE, 4, 1));
+
+          WHILE (iGoodsIndex < iGoodsCount,
+            Block(
+              VAR ('sGoodsGroupDescription', Memo, '');
+              XmlGood := XMLNODECHILD (Report.ESADout_CUGoodsShipment, iGoodsIndex);
+
+              IF (XMLNODENAME (XmlGood) = 'ESADout_CUGoods',
+                Block(
+                  sGoodsDescription := XmlGood.GoodsDescription;
+                  //raiseexception (CURRENCYCODE (Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.ContractCurrencyCode));
+
+                  APPENDRECORD ('KRD_COMM_A');
+                  EDIT ('KRD_COMM_A');
+                  SETFIELDVALUE ('KRD_COMM_A',
+                                  'PLACEID',        vPlaceId,
+                                  'ID',             vId,
+                                  'G32',            vG32,
+                                  'GN',             vG32,
+                                  'ACCEPTDATE',     KRD_MAIN.BD_DATE,
+                                  'G33',            XmlGood.GoodsTNVEDCode,
+                                  'G312',           sGoodsDescription,
+                                  'G35',            XmlGood.GrossWeightQuantity,
+                                  'G38',            XmlGood.NetWeightQuantity,
+                                  'G42',            XmlGood.InvoicedCost,
+                                  'G42_CURRENCY',   CURRENCYCODE (Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.ContractCurrencyCode),
+                                  'VALCODE' ,       Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.ContractCurrencyCode,
+                                  'G46',            XmlGood.StatisticalCost,
+                                  'G34',            REFERENCE ('OKSMT', 'KRNAIM', XmlGood.OriginCountryName, 'KOD'),
+                                  'G317IZG',        IF (XmlGood.GoodsGroupDescription.GoodsGroupInformation.Manufacturer <> '', XmlGood.GoodsGroupDescription.GoodsGroupInformation.Manufacturer, ''),
+                                  'G311',           XmlGood.ESADGoodsPackaging.PakageQuantity,
+                                  'G313',           REFERENCE ('VIDUPAK', 'KOD', XmlGood.ESADGoodsPackaging.PackagePalleteInformation.PalleteCode, 'NAIM_R'),
+                                  'G313_CODE',      XmlGood.ESADGoodsPackaging.PackagePalleteInformation.PalleteCode,
+                                  'G31_4',          XmlGood.ESADExcise.ExciseSerieses,
+                                  'BOXNO',          INIFILE ('KRD_COMM', 'BOXNO', SOLVE (INIFILE('DOCS', 'BoxNoExpr', ''))),
+//                                  'STORAGE_TYPE',   sStorageType,
+//                                  'LEG_PERIOD',     iLegPeriod,
+//                                  'STORAGE_DATE',   sStorageDate,
+                                  'N_TTN',          sNTTN,
+                                  'N_TTN_G32',      vG32,
+                                  'N_CONT',         sNCONT,
+                                  'WITHOUT_UNLOAD' , 2,
+                  ); // SETFIELDVALUE
+
+                  // срок хранения заполняем только для таможенного склада
+                  IF (INIFILE ('WorkPlace', 'CustomsStore', 0) = 1,
+                    Block(
+                      sStorageType := 'ТСК';
+                      iLegPeriod := REFERENCE ('STORTYPE', 'STORAGE_TYPE', sStorageType, 'STORAGE_LEGPERIOD');
+                      showmessage (KRD_MAIN.BD_DATE + iLegPeriod);
+                      IF (iLegPeriod > 0,
+                         sStorageDate := KRD_MAIN.BD_DATE + iLegPeriod,
+                         sStorageDate := ADDMONTHS (KRD_MAIN.BD_DATE, 36, 0)
+                      ); // IF
+
+                      SETFIELDVALUE (
+                        'KRD_COMM_A',
+                        'STORAGE_TYPE', sStorageType,
+                        'LEG_PERIOD',   iLegPeriod,
+                        'STORE_PERIOD', REFERENCE ('STORTYPE', 'STORAGE_TYPE', sStorageType, 'STORAGE_PERIOD'),
+                        'STORAGE_DATE', sStorageDate,
+                      ); // SETFIELDVALUE
+                    )
+                  ); // IF
+                  
+                  IF (sNTTN <> '',
+                    Block(
+                      APPENDRECORD ('KRD_COMM_PAPERS_A');
+                      EDIT ('KRD_COMM_PAPERS_A');
+                      SETFIELDVALUE ('KRD_COMM_PAPERS_A',
+                                      'PLACEID',      vPlaceId,
+                                      'ID',           vId,
+                                      'G32',          vG32,
+                                      'DOC_TYPE',     13,
+                                      'DOC_COUNTER',  sNTTN
+                      ); // SETFIELDVALUE
+                      POST ('KRD_COMM_PAPERS_A');
+                    )
+                  ); // IF
+  {
+                  IF (sNCONT <> '',
+                    Block(
+                      APPENDRECORD ('KRD_COMM_PAPERS_A');
+                      EDIT ('KRD_COMM_PAPERS_A');
+                      SETFIELDVALUE ('KRD_COMM_PAPERS_A',
+                                      'PLACEID',      vPlaceId,
+                                      'ID',           vId,
+                                      'G32',          vG32,
+                                      'DOC_TYPE',     11,
+                                      'DOC_COUNTER',  sNCONT
+                      ); // SETFIELDVALUE
+                      POST ('KRD_COMM_PAPERS_A');
+                    )
+                  ); // IF
+  }
+                  IF ((iChoice = 1) | (iChoice = 3),
+                    Block(
+                      VAR ('fG315A', Float, 0);
+                      VAR ('sG315', String, '');
+                      VAR ('sG41A', String, '');
+
+                      IF (XMLNODEFIND (XmlGood, 'SupplementaryGoodsQuantity'),
+                        Block(
+                          fG315A := XmlGood.SupplementaryGoodsQuantity.GoodsQuantity;
+                          sG315 := XmlGood.SupplementaryGoodsQuantity.MeasureUnitQualifierName;
+                          sG41A := XmlGood.SupplementaryGoodsQuantity.MeasureUnitQualifierCode;
+                        ),
+                        Block(
+                          // суммируем графу 31 "Описание и характеристики товара, таблица"
+                          VAR ('iGroupIndex', Integer, 0);
+                          VAR ('iGroupCount', Integer, XMLNODECHILDCOUNT (XmlGood));
+                          VAR ('XmlGoodsGroupDescription', Integer);
+
+                          WHILE (iGroupIndex < iGroupCount,
+                            Block(
+                              XmlGoodsGroupDescription := XMLNODECHILD (XmlGood, iGroupIndex);
+                              IF (XMLNODENAME (XmlGoodsGroupDescription) = 'catESAD_cu:GoodsGroupDescription',
+                                Block(
+                                  VAR ('iGroupInformationIndex', Integer, 0);
+                                  VAR ('iGroupInformationCount', Integer, XMLNODECHILDCOUNT (XmlGoodsGroupDescription));
+                                  VAR ('XmlGoodsGroupInformation', Integer);
+
+                                  // если есть хоть одна ветка catESAD_cu:GoodsGroupInformation, то начинаем цикл по
+                                  // дочерним веткам catESAD_cu:GoodsGroupDescription
+                                  IF (XMLNODEFIND (XmlGoodsGroupDescription, 'catESAD_cu:GoodsGroupInformation'),
+                                    Block(
+                                      // цикл в поисках всех веток catESAD_cu:GoodsGroupInformation
+                                      // в них ищем catESAD_cu:GoodsGroupQuantity.cat_ru:GoodsQuantity и накапливаем сумму
+                                      WHILE (iGroupInformationIndex < iGroupInformationCount,
+                                        Block(
+                                          XmlGoodsGroupInformation := XMLNODECHILD (XmlGoodsGroupDescription, iGroupInformationIndex);
+
+                                          IF (XMLNODENAME (XmlGoodsGroupInformation) = 'catESAD_cu:GoodsGroupInformation',
+                                            Block(
+                                              IF (XmlGoodsGroupInformation.GoodsGroupQuantity.GoodsQuantity > 0,
+                                                Block(
+                                                  fG315A := fG315A + XmlGoodsGroupInformation.GoodsGroupQuantity.GoodsQuantity;
+                                                  sG315 := XmlGoodsGroupInformation.GoodsGroupQuantity.MeasureUnitQualifierName;
+                                                  sG41A := XmlGoodsGroupInformation.GoodsGroupQuantity.MeasureUnitQualifierCode;
+                                                )
+                                              ); // IF
+                                            )
+                                          ); // IF
+
+                                          iGroupInformationIndex := iGroupInformationIndex + 1;
+                                        )
+                                      ); // WHILE
+                                    )
+                                  ); // IF
+                                )
+                              ); // IF
+
+                              iGroupIndex := iGroupIndex + 1;
+                            )
+                          ); // WHILE
+                        )
+                      ); // IF
+
+
+                      SETFIELDVALUE ('KRD_COMM_A',
+                                      'G315A',  fG315A,
+                                      'G315',   sG315,
+                                      'G41A',   sG41A
+                      ); // SETFIELDVALUE
+                    )
+                  ); // IF
+                  POST ('KRD_COMM_A');
+
+                  IF (XMLNODEFIND (XmlGood, 'ESADout_CUPresentedDocument'),
+                    Block(
+                      VAR ('iPaperIndex', Integer, 0);
+                      VAR ('iPapersCount', Integer, XMLNODECHILDCOUNT (XmlGood));
+                      VAR ('XmlPaper', Integer);
+
+                      WHILE (iPaperIndex < iPapersCount,
+                        Block(
+                          XmlPaper := XMLNODECHILD (XmlGood, iPaperIndex);
+                          IF ((XMLNODENAME (XmlPaper) = 'ESADout_CUPresentedDocument') &
+                              ((COPY (XmlPaper.PresentedDocumentModeCode, 1, 2) = '02') | (COPY (XmlPaper.PresentedDocumentModeCode, 1, 2) = '04')),
+                            Block(
+                              VAR ('sPaperName', String, REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XmlPaper.PresentedDocumentModeCode, 'PAPERNAME'));
+                              VAR ('bNewPaper', Boolean, False);
+
+                              IF (LENGTH (TRIM (STRTODATE (XmlPaper.PrDocumentDate, 'YYYY-MM-DD', '-'))) > 0,
+                                bNewPaper := LOCATE ('KRD_PAPERS_A', 'PLACEID;ID;PAPERNO;PAPERNAME;PAPERDATE', [vPlaceId, vId, XmlPaper.PrDocumentNumber, sPaperName, STRTODATE (XmlPaper.PrDocumentDate, 'YYYY-MM-DD', '-')]) = 0,
+                                bNewPaper := LOCATE ('KRD_PAPERS_A', 'PLACEID;ID;PAPERNO;PAPERNAME', [vPlaceId, vId, XmlPaper.PrDocumentNumber, sPaperName]) = 0
+                              ); // IF
+                              IF (bNewPaper,
+                                Block(
+                                  APPENDRECORD ('KRD_PAPERS_A');
+                                  EDIT ('KRD_PAPERS_A');
+                                  SETFIELDVALUE ('KRD_PAPERS_A',
+                                                  'PLACEID',        vPlaceId,
+                                                  'ID',             vId,
+                                                  'COUNTER',        iPapersCounter,
+                                                  'PAPERCODE',      XmlPaper.PresentedDocumentModeCode,
+                                                  'PAPERNAME',      sPaperName,
+                                                  'PAPERNO',        XmlPaper.PrDocumentNumber,
+                                                  'PAPERDEND',      STRTODATE (XmlPaper.DocumentEndActionsDate, 'YYYY-MM-DD', '-'),
+                                                  'PAPERCURRENCY',  IF (REFERENCE ('PAPERS', 'PAPERNAME', REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XmlPaper.PresentedDocumentModeCode, 'PAPERNAME'), 'PAPER_IS_INVOICE') = 1, CURRENCYCODE (Report.ESADout_CUGoodsShipment.ESADout_CUMainContractTerms.ContractCurrencyCode), ''),
+                                                  'PAPERDATE',      STRTODATE (XmlPaper.PrDocumentDate, 'YYYY-MM-DD', '-')
+                                  );
+                                  POST ('KRD_PAPERS_A');
+
+
+                                  IF (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XmlPaper.PresentedDocumentModeCode, 'PAPER_IS_WAYBILL') = '1',
+                                    Block(
+                                      sSQL := 'UPDATE KRD_COMM SET N_TTN=' + iPapersCounter +
+                                              ' WHERE PLACEID=' + vPlaceId +
+                                              ' AND ID=' + vID +
+                                              ' AND N_TTN IS NULL';
+                                      EXECUTESQL ('STS_DB', sSQL);
+                                      sNTTN := iPapersCounter;
+
+                                      APPENDRECORD ('KRD_COMM_PAPERS_A');
+                                      EDIT ('KRD_COMM_PAPERS_A');
+                                      SETFIELDVALUE ('KRD_COMM_PAPERS_A',
+                                                      'PLACEID',      vPlaceId,
+                                                      'ID',           vId,
+                                                      'G32',          vG32,
+                                                      'DOC_TYPE',     13,
+                                                      'DOC_COUNTER',  sNTTN
+                                      ); // SETFIELDVALUE
+                                      POST ('KRD_COMM_PAPERS_A');
+                                    )
+                                  ); // IF
+
+                                  iPapersCounter := iPapersCounter + 1;
+                                )
+                              ); // IF
+                            ),
+                            Block(
+                              IF (XMLNODENAME (XmlPaper) = 'catESAD_cu:GoodsGroupDescription',
+                                Block(
+                                  IF ((iChoice = 2) | (iChoice = 3),
+                                    Block(
+                                      IF (LENGTH (sGoodsGroupDescription) = 0,
+                                        sGoodsGroupDescription := XmlPaper.GoodsDescription,
+                                        sGoodsGroupDescription := sGoodsGroupDescription + ';' +char(13)+ XmlPaper.GoodsDescription
+                                      ); // IF
+
+                                      VAR ('sArticle', String, '');
+                                      VAR ('iArticleCount', Integer, XMLNODECHILDCOUNT (XmlPaper));
+                                      VAR ('iArticleIndex', Integer, 0);
+                                      VAR ('XmlGoodsGroupInformation', Integer);
+
+                                      WHILE (iArticleIndex < iArticleCount,
+                                        Block(
+                                          XmlGoodsGroupInformation :=  XMLNODECHILD (XmlPaper, iArticleIndex);
+                                          IF (XMLNODENAME (XmlGoodsGroupInformation) = 'catESAD_cu:GoodsGroupInformation',
+                                            Block(
+
+                                              IF (LENGTH (sArticle) = 0,
+                                                sArticle := XmlGoodsGroupInformation.GoodsMarking,
+                                                sArticle := sArticle + ', ' + XmlGoodsGroupInformation.GoodsMarking;
+                                              ); // IF
+                                            )
+                                          ); // IF
+                                          iArticleIndex := iArticleIndex + 1;
+                                        )
+                                      ); // WHILE
+                                      IF (LENGTH (sArticle) > 0,
+                                        sGoodsGroupDescription := sGoodsGroupDescription + ' (' + sArticle + ')';
+                                      ); // IF
+                                    )
+                                  ); // IF
+                                ),
+                                Block(
+                                  // если это таможенный склад, то проверяем нет ли в файле заявленной даты хранения
+                                  IF (INIFILE ('WorkPlace', 'CustomsStore', 0) = 1,
+                                    Block(
+                                      IF (XmlPaper.PresentedDocumentModeCode = '10042',
+                                        Block(
+                                          VAR ('sStorageDate', String, '');
+                                          IF (XMLNODEFIND (XmlPaper, 'catESAD_cu:TemporaryStorageImportDate'), sStorageDate := FDT ('DD.MM.YYYY', STRTODATE (XmlPaper.TemporaryStorageImportDate, 'YYYY-MM-DD', '-'))); // IF
+                                          IF (LENGTH (sStorageDate) = 0,
+                                            Block(
+                                              IF (XMLNODEFIND (XmlPaper, 'catESAD_cu:DocumentEndActionsDate'), sStorageDate := FDT ('DD.MM.YYYY', STRTODATE (XmlPaper.DocumentEndActionsDate, 'YYYY-MM-DD', '-'))); // IF
+                                            )
+                                          ); // IF
+                                          IF (LENGTH (sStorageDate) > 0,
+                                            Block(
+                                              sSQL := 'UPDATE KRD_COMM' +
+                                                      ' SET STORAGE_DATE=' +char(39) + sStorageDate +char(39)+
+                                                      ' WHERE' +
+                                                      ' PLACEID=' + vPlaceId +
+                                                      ' AND ID=' + vId +
+                                                      ' AND G32=' + vG32;
+                                              EXECUTESQL ('STS_DB', sSQL);
+                                            )
+                                          ); // IF
+                                        )
+                                      ); // IF
+                                    )
+                                  ); // IF
+                                )
+                              ); // IF
+                            )
+                          );
+                          iPaperIndex := iPaperIndex + 1;
+                        )
+                      ); // WHILE
+                    )
+                  ); // IF
+
+                  IF (LENGTH (sGoodsGroupDescription) > 0,
+                    Block(
+                      sSQL := 'UPDATE KRD_COMM' +
+                              ' SET G312=' +char(39)+ sGoodsDescription + ':' +char(13)+ sGoodsGroupDescription +char(39)+
+                              ' WHERE ' +
+                              ' PLACEID=' + vPlaceId +
+                              ' AND ID=' + vID +
+                              ' AND G32=' + vG32;
+                      EXECUTESQL ('STS_DB', sSQL);
+                    )
+                  ); // IF
+
+                  IF (XMLNODEFIND (XmlGood, 'ESADContainer'),
+                    Block(
+                      VAR ('iContIndex', Integer, 0);
+                      VAR ('iContsCount', Integer, XMLNODECHILDCOUNT (XmlGood.ESADContainer));
+                      VAR ('XmlCont', Integer);
+
+                      WHILE (iContIndex < iContsCount,
+                        Block(
+                          XmlCont := XMLNODECHILD (XmlGood.ESADContainer, iContIndex);
+
+                          IF (XMLNODENAME (XmlCont) = 'catESAD_cu:ContainerNumber',
+                            Block(
+                              IF (LOCATE ('KRD_CONT_A', 'PLACEID;ID;CONTNO', [vPlaceId, vId, XmlCont.ContainerIdentificaror]) = 0,
+                                Block(
+                                  APPENDRECORD ('KRD_CONT_A');
+                                  EDIT ('KRD_CONT_A');
+                                  SETFIELDVALUE ('KRD_CONT_A',
+                                                'PLACEID',  vPlaceId,
+                                                'ID',       vId,
+                                                'COUNTER',  iContCounter,
+                                                'CONTNO',   XmlCont.ContainerIdentificaror,
+                                                'N_CONT',   iContCounter,
+                                                'N_TTN',    sNTTN
+                                  ); // SETFIELDVALUE
+                                  POST ('KRD_CONT_A');
+
+                                  APPENDRECORD ('KRD_COMM_PAPERS_A');
+                                  EDIT ('KRD_COMM_PAPERS_A');
+                                  SETFIELDVALUE ('KRD_COMM_PAPERS_A',
+                                                  'PLACEID',      vPlaceId,
+                                                  'ID',           vId,
+                                                  'G32',          vG32,
+                                                  'DOC_TYPE',     11,
+                                                  'DOC_COUNTER',  iContCounter
+                                  ); // SETFIELDVALUE
+                                  POST ('KRD_COMM_PAPERS_A');
+
+                                  sSQL := 'UPDATE KRD_COMM SET N_CONT=' + iContCounter +
+                                          ' WHERE PLACEID=' + vPlaceId +
+                                          ' AND ID=' + vId +
+                                          ' AND G32=' + vG32;
+                                  EXECUTESQL ('STS_DB', sSQL);
+                                  sNCont := iContCounter;
+                                  iContCounter := iContCounter + 1;
+                                ),
+                                Block(
+                                  APPENDRECORD ('KRD_COMM_PAPERS_A');
+                                  EDIT ('KRD_COMM_PAPERS_A');
+                                  SETFIELDVALUE ('KRD_COMM_PAPERS_A',
+                                                  'PLACEID',      vPlaceId,
+                                                  'ID',           vId,
+                                                  'G32',          vG32,
+                                                  'DOC_TYPE',     11,
+                                                  'DOC_COUNTER',  KRD_CONT_A.COUNTER
+                                  ); // SETFIELDVALUE
+                                  POST ('KRD_COMM_PAPERS_A');
+                                )
+                              );
+                            )
+                          );
+                          iContIndex := iContIndex + 1;
+                        )
+                      ); // WHILE
+                    )
+                  ); // IF
+
+                  vG32 := vG32 + 1;
+                )
+              ); // IF
+              SETPROGRESS (iGoodsIndex, 100, iGoodsCount);
+              iGoodsIndex := iGoodsIndex + 1;
+            )
+          ); // WHILE
+        ),
+        Block(
+          HIDEPROGRESS ();
+        )
+      ); // TRYFINALLY
+    )
+  ); // IF
+
+  CLOSEDATASET ('KRD_COMM_A');
+  CLOSEDATASET ('KRD_PAPERS_A');
+  CLOSEDATASET ('KRD_COMM_PAPERS_A');
+  CLOSEDATASET ('KRD_TRANSP_A');
+  CLOSEDATASET ('KRD_CONT_A');
+
+  CLOSEDATASET ('qStores');
+
+  SetIsNewDoc();
+  // SETFILTER ('KRD_MAIN', sFilter);
+
+  // VAR ('dtE', DateTime, Date() + Time(1));
+  // WriteLog('gtdxml', 'END, ' + FDT ('NN мин. SS сек.', (dtE - dtS)));
+
+  IF (GETDATABASETYPE ('STS_DB') = 'MSSQL',
+    Block(
+      // REFRESH ('KRD_MAIN');
+      REFRESH ('KRD_COMM');
+      REFRESH ('KRD_CONT');
+      REFRESH ('KRD_TRANSP');
+      REFRESH ('KRD_PAPERS');
+    )
+  ); // IF

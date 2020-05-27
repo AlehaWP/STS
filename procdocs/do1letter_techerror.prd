@@ -1,0 +1,62 @@
+// *****************************************************************************
+// Название: Подтверждение недоставки письма об ошибках в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO1LetterTechError
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//VAR ('XmlRoot', Integer, GETXMLDOCUMENT ());
+
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'DO1ErrorsLetterTechError'));
+VAR ('sSQL', String);
+
+IF (XmlDoc,
+  Block(
+    VAR ('strStatus', String, 'Письмо об ошибках отвергнуто сервером АСТО');
+    VAR ('vPlaceID', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'WHId')));
+    VAR ('vDO1Id', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'DO1Id')));
+    VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlDoc, 'dodt'));
+    VAR ('DoType', String, '');
+    VAR ('DoNo', String, '');
+    VAR ('DoDate', DateTime);
+    VAR ('dRegDate', DateTime);
+    VAR ('sSubStatus', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'ErrorDsc')));
+    
+    sSQL := 'SELECT ID, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+    //showmessage (sSQL);
+    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+    VAR ('vID', String, qFindID.ID);
+    VAR ('DocId', String, qFindID.DOCUMENTID);
+    
+
+    OPENQUERY ('MaxDOP', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_LETTER WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+    EXECUTESQL ('STS_DB', 'UPDATE KRD_LETTER SET LETTER_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' + MaxDOP.MC);    
+
+    sSQL := 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DODT > ' +char(39)+ DoDt +char(39);
+    OPENQUERY ('qCheck', sSQL, 'dbJournals');
+    IF (RECORDCOUNT ('qCheck') <= 0,
+      Block(
+    EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ strStatus +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+      )
+    ); // IF - //
+        
+    OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN');
+    If(LOCATE ('KRD_MAIN_3', 'PLACEID;ID', [vPlaceId, vId]) = 1,
+      Block(
+         DoNo := KRD_MAIN_3.NBD;
+         DoDate := KRD_MAIN_3.BD_DATE;
+         DoType   := 'ДО-1';
+         dRegDate := DATE()+TIME(1);
+         OPENQUERY ('qryNUM', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+         sJourGuid :=qryNUM.JOURGUID;
+      )
+    );
+    CloseDataset('KRD_MAIN_3');
+         
+  )
+);
+
+

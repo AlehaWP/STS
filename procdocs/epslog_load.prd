@@ -1,0 +1,120 @@
+// *****************************************************************************
+// Название: загрузку лога ЭПС из файла
+// Описание: Загрузка лога ЭПС из XML-файла
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузить лог ЭПС
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sFileName', String);
+VAR ('vPlaceId', String, '');
+VAR ('vId', String, '');
+VAR ('sSQL', String, '');
+VAR ('bAddAll', Integer, 0);
+
+FUNC ('InsertRecord', '',
+  Block(
+    sSQL := 'INSERT INTO EPS_LOG (' +
+            'JOURNAL_MASTER_ID,JOURNAL_UUID,PLACEID,ID,COUNTER,DOCUMENTID,' +
+            'DOCTYPE,DOCNO,DOCSTATUS,SUBSTATUS,LICENCENO,' +
+            'JOURGUID,FILENAME,READED,USERLOGIN) VALUES (' +
+                      XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalMasterId')) + ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalUuid')) +char(39)+ ',' +
+                      XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'PlaceId')) + ',' +
+                      XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'Id')) + ',' +
+                      XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'Counter')) + ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DocumentId'))  +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DocType'))     +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DocNo'))       +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DocStatus'))   +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'SubStatus'))   +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'LicenceNo'))   +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JourGuid'))    +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'FileName'))    +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'Readed'))      +char(39)+ ',' +
+            char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'UserLogin'))   +char(39)+ ')';
+    EXECUTESQL ('dbJournals', sSQL);
+    IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DocDate')))) > 0,
+      Block(
+        sSQL := 'UPDATE EPS_LOG SET ' +
+                'DOCDATE='     +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DocDate')) +char(39)+
+                ' WHERE JOURNAL_MASTER_ID=' + XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalMasterId'));
+        EXECUTESQL ('dbJournals', sSQL);
+      )
+    ); // IF - //
+    IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'RegDate')))) > 0,
+      Block(
+        sSQL := 'UPDATE EPS_LOG SET ' +
+                'REGDATE='     +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'RegDate')) +char(39)+
+                ' WHERE JOURNAL_MASTER_ID=' + XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalMasterId'));
+        EXECUTESQL ('dbJournals', sSQL);
+      )
+    ); // IF - //
+    IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'LicenceDate')))) > 0,
+      Block(
+        sSQL := 'UPDATE EPS_LOG SET ' +
+                'LICENCEDATE=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'LicenceDate')) +char(39)+
+                ' WHERE JOURNAL_MASTER_ID=' + XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalMasterId'));
+        EXECUTESQL ('dbJournals', sSQL);
+      )
+    ); // IF - //
+    IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DoDt')))) > 0,
+      Block(
+        sSQL := 'UPDATE EPS_LOG SET ' +
+                'DODT=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'DoDt')) +char(39)+
+                ' WHERE JOURNAL_MASTER_ID=' + XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalMasterId'));
+        EXECUTESQL ('dbJournals', sSQL);
+      )
+    ); // IF - //
+  )
+), // InsertRecord - //
+
+IF (SELECTFILE ('sFileName', 'Выберите файл для загрузки', 'XML-файлы|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+IF (LENGTH (TRIM (sFileName)) = 0, RAISEEXCEPTION ('Не выбран файл для загрузки'));
+
+  VAR ('XmlDocument', Integer, XMLDOCUMENTCREATE ());
+  XMLDOCUMENTLOAD (XmlDocument, sFileName);
+
+  VAR ('XmlEpsLog', Integer);
+  XmlEpsLog := XMLDOCUMENTROOT (XmlDocument);
+
+  IF (XMLNODEFIND (XmlEpsLog, 'EpsLog'),
+    Block(
+      XmlEpsLog := XMLNODEFIND (XmlEpsLog, 'EpsLog');
+      vPlaceId := XMLNODEATTRIBUTE (XmlEpsLog, 'placeid');
+      vId := XMLNODEATTRIBUTE (XmlEpsLog, 'id');
+      sSQL := 'SELECT JOURNAL_MASTER_ID FROM EPS_LOG WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId;
+      OPENQUERY ('qAddAll', sSQL, 'dbJournals');
+      IF (RECORDCOUNT ('qAddAll') > 0, Block(bAddAll := 1;));
+      CLOSEDATASET ('qAddAll');
+      showmessage ('bAddAll = ' + bAddAll);
+      VAR ('iRecordCount', Integer, XMLNODECHILDCOUNT (XmlEpsLog));
+      VAR ('iRecordIndex', Integer, 0);
+      VAR ('XmlRecord', Integer);
+      WHILE (iRecordIndex < iRecordCount,
+        Block(
+          XmlRecord := XMLNODECHILD (XmlEpsLog, iRecordIndex);
+          IF (bAddAll,
+            Block(
+              InsertRecord ();
+            ),
+            Block(
+              sSQL := 'SELECT JOURNAL_MASTER_ID FROM EPS_LOG WHERE JOURNAL_MASTER_ID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlRecord, 'JournalMasterId')) +char(39);
+              OPENQUERY ('qCheckRecord', sSQL, 'dbJournals');
+              IF (RECORDCOUNT ('qCheckRecord') = 0,
+                Block(
+                  InsertRecord ();
+                )
+              );
+              CLOSEDATASET ('qCheckRecord');
+            )
+          ); // If - bAddAll //
+          iRecordIndex := iRecordIndex + 1;
+        )
+      );
+    ),
+    Block(
+      RAISEEXCEPTION ('Файл пустой или не соответствует схеме журнала');
+    )
+  ); // IF --

@@ -1,0 +1,25 @@
+// *****************************************************************************
+// Название: Поиск контейнера
+// Описание: Поиск контейнера
+// Кнопка вызова: 0
+// Подпись кнопки: Поиск контейнера
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('sContNO', string, INPUTTEXT ('Укажите номер контейнера', 'Контейнер №'));
+OPENQUERY('SelectDO', 'STS_DB', 'SELECT ID FROM KRD_CONT WHERE CONTNO = '+char(39)+sContNo+char(39));
+FIRST('SELECTDO');
+IF(RECORDCOUNT('SELECTDO') = 0, RAISEEXCEPTION ('ДО с номером контейнера '+sContNO+' не найден'));
+VAR('sFilterText', string, 'ID=' + SelectDO.ID);
+NEXT('SELECTDO');
+WHILE(EOF('SELECTDO')=0,
+      BLOCK(
+         sFilterText := sFilterText + ' OR ID='+SelectDO.ID;
+         NEXT('SELECTDO');
+      )
+);
+SETFILTER('KRD_MAIN', sFilterText);
+
+{VAR('sListID', string, UNIONVALUES ('SelectDO', ['ID'], ', ', ''));
+showmessage(sListID);
+SETFILTER('KRD_MAIN', 'ID in ('+sListID+')');}

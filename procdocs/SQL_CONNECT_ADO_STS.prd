@@ -1,0 +1,25 @@
+// *****************************************************************************
+// Название: SQL_CONNECT_ADO_STS
+// Описание: SQL_CONNECT_ADO_STS
+// Кнопка вызова: 0
+// Подпись кнопки: SQL_CONNECT_ADO_STS
+// Вызов по событию: 
+// *****************************************************************************
+//
+OPENDATABASE ('BASE_STS', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=SQLOLEDB.1;Password=sts;Persist Security Info=True;User ID=sts;Initial Catalog=STS_DATA;Data Source=192.168.1.63', 'FileLinkMode=0');
+OPENTABLE ('COMMODIT_NEW', 'COMMODIT', '', 'BASE_STS', 1);
+OPENTABLE ('COMMODIT_5', 'STS_DB', 'COMMODIT');
+//showmessage(COMMID.COMM_ID);
+DELETERECORDS ('COMMODIT_5');
+COPYRECORDS('COMMODIT_NEW', 'COMMODIT_5');
+
+{FIRST('COMMODIT_5');
+WHILE(EOF('COMMODIT_5')=0,
+      BLOCK(
+        COPYRECORDS(Псевдоним набора данных (источника), Псевдоним набора данных (приемника), Отображение поля 1, Отображение поля 2, ...)
+        NEXT('COMMODIT_5');
+      )
+);}
+
+
+//Provider=SQLOLEDB.1;Password=dcl;Persist Security Info=True;User ID=dcl;Initial Catalog=DCLSQL;Data Source=192.168.13.110\MSSQL

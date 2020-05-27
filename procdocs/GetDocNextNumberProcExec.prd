@@ -1,0 +1,104 @@
+// *****************************************************************************
+// Название: Генерация номера ДО
+// Описание: Генерация номера ДО
+// Кнопка вызова: 0
+// Подпись кнопки: Генерация номера ДО
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sSQL', string, '');
+
+FUNC ('CreateTableIfNoExists',PARAM ('sDBName', string, 0),
+      BLOCK(
+            sSQL := "BEGIN TRANSACTION ";
+            sSQL := sSQL  + " if not exists (select * from sysobjects where name='KRD_DONUM' and xtype='U') ";
+            sSQL := sSQL  + " CREATE TABLE KRD_DONUM ( ";
+            sSQL := sSQL  + "[YEAR] [int] NULL, ";
+            sSQL := sSQL  + "[DO1] [int] NULL, ";
+            sSQL := sSQL  + "[DO2] [int] NULL, ";
+            sSQL := sSQL  + "[CA] [int] NULL, ";
+            sSQL := sSQL  + "[PLACEID] [int] NULL ";
+            sSQL := sSQL  + ") ON [PRIMARY] ";
+            sSQL := sSQL  + "Commit";
+            //showmessage (sSQL);
+            EXECUTESQL (sDBName, sSQL);
+
+{
+if NOT EXISTS  (select * from sysobjects where name='GetNum' and type='P')
+	exec('create proc GetNum as select 1')
+go
+ALTER  PROCEDURE GetNum @name varchar(3), @iPlaceid integer, @iYear integer
+as
+BEGIN
+  DECLARE @Num integer
+  Set @Num =0
+     IF @name='DO1'  BEGIN
+	         BEGIN TRAN
+	         SELECT @Num=(DO1+1) FROM KRD_DONUM WHERE PLACEID = @iPlaceid AND [YEAR]= @iYear
+			 IF @Num IS NOT NULL
+		        Update KRD_DONUM set DO1=@Num WHERE PLACEID = @iPlaceid AND [YEAR]= @iYear
+	         ELSE SET @Num=0
+			 COMMIT TRAN
+      END
+	  IF @name='DO2' BEGIN
+	         BEGIN TRAN
+	         SELECT @Num=(DO2+1) FROM KRD_DONUM WHERE PLACEID = @iPlaceid AND [YEAR]= @iYear
+			 IF @Num IS NOT NULL
+		        Update KRD_DONUM set DO2=@Num WHERE PLACEID = @iPlaceid AND [YEAR]= @iYear
+	         ELSE SET @Num=0
+			 COMMIT TRAN
+      END;
+  RETURN @Num
+ END
+}
+      )
+),
+
+FUNC('GenerateNum',
+     BLOCK(
+           PARAM ('dbName', string, 0);
+           PARAM ('DocType', string, 1);
+           PARAM ('iYear', integer, 2);
+           PARAM ('iPlaceID', integer, 3);
+     ),
+     BLOCK(
+           VAR ('sYear', string, convert(iYear, string));
+           VAR ('iResult', integer);
+           VAR ('sResult', string, '');
+           IF ((iYear<2012)|(iYear>2112), sYear := FormatDateTime('YYYY', DATE()));
+//INSERT INTO KRD_DONUM SELECT 2017, CAST (MAX(SUBSTRING(NBD,0,7)) as Int) as NBD, NULL, NULL, PLACEID FROM KRD_MAIN WHERE BD_DATE >= '01.01.2017' GROUP BY PLACEID
+//UPDATE  KRD_DONUM SET DO2=(SELECT CAST (MAX(RELEASE_NO) as Int) as REL_NO FROM RELEASE WHERE OUT_DATE >= '01.01.'+CAST(KRD_DONUM.YEAR as nvarchar(4)) AND PLACEID=KRD_DONUM.PLACEID)
+//Не работает из-за двух проходов OPENQUERY Номер перехлестывается два раза
+            OPENQUERY ("Get_res", "Declare @result integer;" +
+                                  "execute  @result=GetNum @name='"+DocType+"', @iPlaceid="+iPlaceid+", @iYear="+sYear+";"+
+                                  "Select @result as DocNum", dbName,1);
+            iResult := Get_res.DocNum;
+            //showmessage(Get_res.DocNum);
+            CLOSEDATASET("Get_res");
+            IF (iResult=0,
+               BLOCK(
+                      VAR('sDO1', string, INPUTTEXT ('На текущую складскую площадку не найдены номера.','ДО1'));
+                      VAR('sDO2', string, INPUTTEXT ('На текущую складскую площадку не найдены номера.','ДО2'));
+                      sSQL := "INSERT INTO KRD_DONUM VALUES ("+sYear;
+                      sSQL := sSQL + ", "+sDO1;
+                      sSQL := sSQL + ", "+sDO2;
+                      sSQL := sSQL + ", NULL, "+iPlaceID+")";
+
+                      EXECUTESQL (dbName, sSQL);
+                      iResult:=GenerateNum(dbName,DocType,sYear,iPlaceID);
+                )
+           );
+           iResult
+     )
+),
+
+CreateTableIfNoExists('STS_DB');
+
+showmessage(GenerateNum ('STS_DB','DO2',2030,1));
+
+
+
+
+
+

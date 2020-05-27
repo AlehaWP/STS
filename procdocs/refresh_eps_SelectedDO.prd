@@ -1,0 +1,41 @@
+// *****************************************************************************
+// Название: обновление статуса ЭПС
+// Описание: Обновление значения поля "Статус ЭПС" по даным в Монитор ЭД
+// Кнопка вызова: 1
+// Подпись кнопки: Обновить статус ЭПС
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\refresh_eps.prd');
+GETSELECTEDDOCS ('SELECTED_DO1', 'PLACEID', 'ID', 'DOCUMENTID');
+SHOWPROGRESS ('Обновление статуса ДО1');
+VAR ('iCountDO1', integer, RECORDCOUNT('SELECTED_DO1'));
+VAR ('iCounterProgress', integer, 0);
+FIRST ('SELECTED_DO1');
+WHILE(EOF('SELECTED_DO1')=0,
+      BLOCK(
+            //vPlaceID := SELECTED_DO1.PLACEID;
+            //vID      := SELECTED_DO1.ID;
+            //vDocID   := SELECTED_DO1.DOCUMENTID;
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [SELECTED_DO1.PLACEID, SELECTED_DO1.ID]);
+            //showmessage (KRD_MAIN.NBD);
+            RefreshEps(KRD_MAIN.PLACEID , KRD_MAIN.ID, KRD_MAIN.DOCUMENTID );
+            NEXT ('SELECTED_DO1');
+            iCounterProgress := iCounterProgress + 1;
+            SETPROGRESS(iCounterProgress, 100, iCountDO1);
+      )
+);
+GLOBALREFRESH();
+HIDEPROGRESS();
+
+
+
+
+
+
+
+
+

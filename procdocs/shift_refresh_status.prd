@@ -1,0 +1,44 @@
+// *****************************************************************************
+// Название: Обновление статуса документов
+// Описание: По сочетанию клавиш Shift + F5 обновляются статусы документовю Выделенных или текущего
+// Кнопка вызова: 0
+// Подпись кнопки: Shift+F5
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\refresh_eps.prd');
+
+VAR ('iRecNo', Integer, 0),
+VAR ('iRecCount', Integer, GETSELECTEDCOUNT());
+
+  iRecNo := 0;
+  IF (iRecCount > 0,
+    Block(
+      GETSELECTEDDOCS ('KRD_SELECT', 'PLACEID', 'ID', 'DOCUMENTID');
+      FIRST ('KRD_SELECT');
+      SHOWPROGRESS ('Обработка ...');
+      WHILE (iRecNo <> iRecCount ,
+        Block(
+          RefreshEps(CONVERT (KRD_SELECT.PLACEID, String), CONVERT (KRD_SELECT.ID, String), CONVERT (KRD_SELECT.DOCUMENTID, String));
+          SETPROGRESS (iRecNo, 100, iRecCount);
+          NEXT ('KRD_SELECT');
+          iRecNo := iRecNo +1;
+          IF (CANCELPRESSED (),
+            Block(
+              HIDEPROGRESS ();
+              RAISEEXCEPTION ('Обработка остановлена');
+            ),
+          ); // IF
+        )
+      ); // WHILE
+      HIDEPROGRESS ();
+      CLOSEDATASET ('KRD_SELECT');
+    ),
+    RefreshEps (CONVERT (KRD_MAIN.PLACEID, String), CONVERT (KRD_MAIN.ID, String), CONVERT (KRD_MAIN.DOCUMENTID, String))
+  ); // IF
+  GLOBALREFRESH ();
+
+

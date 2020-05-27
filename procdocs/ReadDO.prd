@@ -1,0 +1,80 @@
+// *****************************************************************************
+// Название: Проверка паки на наличие XML
+// Описание: Проверка паки на наличие XML
+// Кнопка вызова: 0
+// Подпись кнопки: Проверка паки на наличие XML
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('spisok', string, GETFILELIST('c:\temp', '*.xml', '|'));
+showmessage(Spisok);
+VAR ('str1', string);
+VAR ('iCountFiles', integer, SPLITSTR(spisok, '|', str1));
+VAR('iCount', integer, 1);
+VAR ('sFileName', string);
+VAR ('sScriptPath', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\');
+
+FUNC('GetXMLValue',
+     PARAM('XMLName', string, 0),
+     BLOCK(
+       VAR('HeaderName', string, '');
+       VAR('iQuantityPart', integer, 0);
+       VAR('iCounter', integer, 2);
+       VAR('iDescriptor', integer, 0);
+       iQuantityPart := SPLITSTR (XMLName, '.', HeaderName);
+       showmessage(CONVERT (HeaderName, integer));
+       iDescriptor := VALUE (HeaderName);
+       While(iCounter <= iQuantityPart,
+         BLOCK(
+           iDescriptor := XMLNODECHILD(iDescriptor, EXTRACTSTR (XMLName, iCounter, '.'));
+           iCounter := iCounter + 1;
+         )
+       );
+       XMLNODEVALUE(iDescriptor)
+     )
+),
+
+FUNC ( 'DocPlaceId', '',
+  Block (
+    VAR('iDocPlaceID', integer, INIFILE ('WorkPlace', 'PlaceNum', 1));
+    iDocPlaceID;
+  )
+),
+
+FUNC ( 'ImportMode', '',
+  Block (
+  VAR('iImportMode', string, 'ReadDocs');
+  iImportMode;
+  )
+),
+
+FUNC ('GetCurrentReportNode', '',
+  Block(
+     VAR('XmlDoc', integer, XMLDOCUMENTCREATE());
+     XMLDOCUMENTLOAD(XMLDoc, sFileName);
+     VAR('XMLRoot', integer, XMLDOCUMENTROOT (XmlDoc));
+     VAR('Conteiner', integer, XMLNODECHILD (XMLRoot, 0));
+     VAR('ContainerDoc', integer, XMLNODECHILD (Conteiner, 1));
+     VAR('DocBody', integer, XMLNODECHILD (ContainerDoc,0));
+     VAR('Report', integer, XMLNODECHILD(DocBody, 0));
+     VAR('sReportName',string, XMLNODENAME (Report));
+
+     showmessage(GetXMLValue('Report.GoodsShipment.CustomsDocs.PrDocumentNumber'));
+     report;
+  )
+),
+
+WHILE (iCount <= iCountFiles,
+       BLOCK (
+         sFileName := 'c:\temp\' + EXTRACTSTR (spisok, iCount, '|');
+         GetCurrentReportNode();
+         {If(STRPOS ('DO1', sReportName),
+           EXECUTESCRIPT (sScriptPath +'5.0.3\do1_album.imp')
+         );
+         If(STRPOS ('DO2', sReportName),
+           EXECUTESCRIPT (sScriptPath +'5.0.3\do2_album.imp')
+         );}
+         iCount:= iCount + 1;
+       )
+);
+

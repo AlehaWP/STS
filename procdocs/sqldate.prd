@@ -1,0 +1,194 @@
+// *****************************************************************************
+// Название: Преобразование даты в SQL-запросе под разные типы БД
+// Описание: Преобразование даты в SQL-запросе под разные типы БД
+// Кнопка вызова: 0
+// Подпись кнопки: SQLDate
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GetBaseDriver',
+  Block(
+    PARAM ('pBase', Integer, 0); // 0 - STS_DB, 1 - dbJournals, 3 - Refs
+  ),
+  Block(
+    VAR ('return', String, 0); // PARADOX, INTRBASE, ORACLE, ActiveX Data Objects (ADO), MSSQL
+    
+    CASE (pBase,
+         [0, Block(
+               // STS_DB
+               return := INIFILE ('Database', 'DbmsType', 'PARADOX');
+             ),
+          1, Block(
+               // dbJournals
+               return := INIFILE ('JournalsDB', 'Driver Name', 'PARADOX');
+             ),
+          2, Block(
+               // Refs
+               
+             )
+         ],
+         Block(
+           // по умолчанию STS_DB
+           return := INIFILE ('Database', 'DbmsType', 'PARADOX');
+         )
+    ); // CASE - //
+    
+    return;
+  )
+); // GetBaseDriver - //
+
+// Для ORACLE обрамляет дату в функцию to_date(), для других СУБД только в ковычки
+FUNC ('SQLDate',
+  Block(
+    PARAM ('pDate', String, 0);
+    PARAM ('pDriverName', String, 1);
+  ),
+  Block(
+    VAR ('return', String);
+    
+    IF (STRPOS ('-', pDate) <> 0,
+      Block(
+        IF (LENGTH (pDate) > 10,
+          Block(
+            pDate := StrToDate(COPY (pDate, 1, 10), 'YYYY-MM-DD', '-') + COPY (pDate, 11, LENGTH (pDate));
+          ),
+          Block(
+            pDate := CONVERT (StrToDate (pDate,'YYYY-MM-DD', '-'), string);
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+    
+    CASE (pDriverName, ['PARADOX', return := char(39)+ pDate +char(39),
+                        'INTRBASE', return := char(39)+ pDate +char(39),
+                        'SQL Server', return := char(39)+ pDate +char(39),
+                        'ORACLE', return := 'to_date(' +char(39)+ FDT('YYYY-MM-DD HH:MM:SS',pDate) +char(39)+ ', ' +char(39)+ 'YYYY-MM-DD HH24:MI:SS' +char(39)+ ')'
+                        ], return := char(39)+ pDate +char(39)
+    ); // CASE - //
+    return;
+  )
+), // FUNC - SQLDate() //
+
+
+
+
+
+// =======================================================================================================================================================================================
+//  ФУНКЦИИ РАБОТЫ С ДАТОЙ:
+// iLeapYear () - проверка года на високосность
+// DaysInMonth () - определение количества дней в месяце
+// DaysinMonthByDate () - определение количества дней в месяце по дате
+// AddMonths () - добавление N месяцев к дате
+// =======================================================================================================================================================================================
+
+
+// ОПРЕДЕЛЕНИЕ ВИСОКОСНОСТИ ГОДА
+FUNC ('isLeapYear',
+  Block (
+    PARAM ('pYear', Integer, 0);
+  ),
+  Block (
+    (MOD (pYear, 4) = 0) * ((MOD (pYear, 400) = 0) | (MOD (pYear, 100) <> 0));
+  )
+), // FUNC - isLeapYear ()
+
+
+// ОПРЕДЕЛЕНИЕ КОЛИЧЕСТВА ДНЕЙ В МЕСЯЦЕ
+FUNC ('DaysInMonth',
+  Block (
+    PARAM ('pYear', String, 0);
+    PARAM ('pMonth', String, 1);
+  ),
+  Block (
+    CASE (CONVERT (pMonth, Integer),
+      [1, 31,
+       2, IF (isLeapYear (CONVERT (pYear, Integer)), 29, 28),
+       3, 31,
+       4, 30,
+       5, 31,
+       6, 30,
+       7, 31,
+       8, 31,
+       9, 30,
+       10, 31,
+       11, 30,
+       12, 31],
+       30); // CASE - //
+  )
+), // FUNC - DaysInMonth ()
+
+
+// ОПРЕДЕЛЕНИЕ КОЛИЧЕСТВА ДНЕЙ В МЕСЯЦЕ ГОДА ПО ДАТЕ
+FUNC ('DaysinMonthByDate',
+  Block (
+    PARAM ('pDate', DateTime, 0);
+  ),
+  Block (
+    DaysInMonth (FDT ('YYYY', pDate), FDT ('MM', pDate));
+  )
+), // FUNC - DaysinMonthByDate () //
+
+
+// ДОБАВЛЕНИЕ МЕСЯЦЕВ К ДАТЕ
+FUNC ('AddMonths',
+  Block (
+    PARAM ('pDate', DateTime, 0);
+    PARAM ('pMonths', Float, 1);
+  ),
+  Block (
+    VAR ('dtResult', DateTime);
+    VAR ('iYear', Integer, CONVERT (FDT ('YYYY', pDate), Integer));
+    VAR ('iMonth', Integer, CONVERT (FDT ('MM', pDate), Integer));
+    VAR ('iDay', Integer, CONVERT (FDT ('DD', pDate), Integer));
+    VAR ('fMonthPart', Float, 0);
+
+    // прибавляем целое количество месяцев без учета годов в общем числе месяцев
+    iMonth := iMonth + MOD (TRUNC (pMonths), 12);
+    // прибавляем количество лет
+    iYear := iYear + TRUNC (pMonths) / 12;
+
+    // прибавляем год, если есть переход
+    IF (iMonth > 12,
+      Block (
+        iMonth := iMonth - 12;
+        iYear := iYear + 1;
+      )
+    ); // IF - //
+
+    // проверяем последние числа месяца, если надо - выравниваем
+    IF (iDay > DaysInMonth (TRIM (iYear), TRIM (iMonth)),
+       iDay := DaysInMonth (TRIM (iYear), TRIM (iMonth))
+    ); // IF - //
+
+    // прибавляем кусок месяца, если надо
+    IF (CONVERT (TRUNC (pMonths), Float) < pMonths,
+      Block (
+        // доля остатка дней до конца месяца в общем числе дней месяца
+        fMonthPart := 1 - CONVERT (iDay, Float) / CONVERT (DaysInMonth (TRIM (iYear), TRIM (iMonth)), Float);
+
+        // если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+        // прибавляемую долю уменьшим на остатко дней в предыдущем месяце
+        IF (FRAC (pMonths) > fMonthPart,
+          Block (
+            iMonth := iMonth + 1;
+            IF (iMonth > 12, iYear := iYear + 1);
+            fMonthPart := FRAC (pMonths) - fMonthPart;
+          ),
+          Block (
+            fMonthPart := FRAC (pMonths);
+          )
+        ); // IF - //
+
+        iDay := iDay + TRUNC (fMonthPart * CONVERT (DaysinMonth (TRIM (iYear), TRIM (iMonth)), Float));
+        IF (iDay > DaiysinMonth (TRIM (iYear), TRIM (iMonth)),
+           iDay := iDay - DaysinMonth (TRIM (iYear), TRIM (iMonth))
+        ); // IF - //
+
+      )
+    ); // IF - //
+
+    ENCODEDATE (iYear, iMonth, iDay);
+  )
+),
+

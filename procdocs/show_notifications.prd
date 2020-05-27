@@ -1,0 +1,69 @@
+// *****************************************************************************
+// Название: Показать непрочитанные уведомления ЭПС
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: Показать непрочитанные уведомления
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('ClearList', '',
+  Block(
+    EXECUTESQL ('dbJournals', 'UPDATE EPS_LOG SET READED=' +char(39)+ '1' +char(39));
+    SETSTATUSBARHINT ('', '', '', '');
+  )
+), // FUNC - ClearList() //
+
+FORMCREATE (fNotifications, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\notifications.cfm');
+FORMSETPROPERTY (fNotifications, 'Position', 'poScreenCenter');
+FORMSETPROPERTY (fNotifications, 'qNotifications.Active', 'True');
+//FORMSETPROPERTY (fNotifications, 'qNotifications.Filtered', 'True');
+
+VAR ('iButton', Integer);
+
+  iButton := FORMSHOWMODAL (fNotifications);
+  
+  CASE (iButton,
+    [1, Block(
+          IF (qNotifications.DOCTYPE = 'ДО-3',
+            Block(
+              //SHOWMESSAGE (TABLELIST ('dbJournals', '|'));
+              TRYEXCEPT (JRDO3.JOURNAL_MASTER_ID, RAISEEXCEPTION ('Откройте журнал ДО-3 и повторите попытку'));
+              LOCATE ('JRDO3', 'RefDocumentID', [qNotifications.DocumentId]);
+            ),
+            Block(
+            // Переходим к конкретному документу
+              LOCATE ('KRD_MAIN', 'PLACEID;ID', [qNotifications.PLACEID, qNotifications.ID]);
+              IF (qNotifications.COUNTER > 0,
+                Block(
+                  LOCATE ('REL_MAIN', 'PLACEID;ID;COUNTER', [qNotifications.PLACEID, qNotifications.ID, qNotifications.PLACEID, qNotifications.COUNTER]);
+                )
+              ); // IF - //
+            )
+          ); // IF - //
+        ),
+     2, Block(
+         // Предлагаем очистить список
+         IF (YESNO ('Отметить все сообщения как прочитанные?'),
+           Block(
+             // Очистить, сбросить текст уведомления
+             ClearList ();
+           ),
+           Block(
+             // Не очищать, просто закрываем окно
+             
+           )
+         ); // IF - //
+         
+       ),
+    5, Block(
+         // Очищаем список уведомлений
+         ClearList ();
+       ),
+       Block(
+         showmessage (iButton);
+       )
+    ]
+  ); // CASE - //
+
+  FORMDESTROY (fNotifications);

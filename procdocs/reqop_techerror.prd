@@ -1,0 +1,50 @@
+// *****************************************************************************
+// Название: Информация о недоставке заявления на проведение операций в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: ReqOperTechError
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Var('sNumber', String);
+
+VAR ('vPlaceID', String);
+VAR ('vID', String, '0');
+VAR ('vDocID', String);
+Var ('strStatus', String, '');
+Var ('strSubStatus', String, '');
+Var ('DoType', String, '');
+Var ('DoNo', String, '');
+Var ('DoDate', DateTime);
+Var ('dRegDate', DateTime);
+IF (VAREXISTS ('iRecordType') = 0, VAR ('iRecordType', Integer, 0));
+
+
+OPENTABLE ('JRREQOPER_2', 'JRREQOPER', '', 'dbJournals', 1);
+
+IF(LOCATE('JRREQOPER_2', ['DocumentId'], [XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'Do1Id'))]),
+Block(
+    VAR ('sSubStatus', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'ErrorDsc')));
+    EDITRECORD ('JRREQOPER_2');
+    SETFIELDVALUE('JRREQOPER_2', 'Status', 'Отвергнуто сервером АСТО');
+    PostRecord('JRREQOPER_2');
+    vPlaceID := JRREQOPER_2.PLACEID;
+    vID := JRREQOPER_2.ID;
+    OPENQUERY ('qGetDONo', 'STS_DB', 'SELECT NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+    DoNo     := qGetDONo.NBD;
+    DoDate   := qGetDONo.BD_DATE;
+    vDocId   := JRREQOPER_2.DocumentId;
+    DoType   := 'Заявление на проведение операций';
+    strStatus:= 'Заявление на проведение операций отвергнуто сервером АСТО';
+    dRegDate := DATE()+TIME(1);
+    sJourGuid := vDocId; 
+    iRecordType := 0;
+
+),
+// Скрипты должны работать в  "тихом" режиме, без сообщений
+//!  ShowMessage('ДО-3 с идентификатором '+XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'id'))+' не найдено!')
+);
+CLOSEDATASET ('JRREQOPER_2');                     
+
+

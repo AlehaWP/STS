@@ -1,0 +1,43 @@
+// *****************************************************************************
+// Название: ДО2 для регистрации
+// Описание: ДО2 для регистрации
+// Кнопка вызова: 0
+// Подпись кнопки: ДО2 для регистрации
+// Вызов по событию: 
+// *****************************************************************************
+//
+SETFILTER('KRD_MAIN', '');
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\DO2_List.cfm');
+FORMSETPROPERTY(frmDialog, 'dtFrom.Text', FORMATDATETIME('DD.MM.YYYY 00:00:00',NOW()));
+FORMSETPROPERTY(frmDialog, 'dtTo.Text', FORMATDATETIME('DD.MM.YYYY 23:59:59',NOW()));
+IF(FORMSHOWMODAL(frmDialog)=1,
+   BLOCK(
+     VAR('dtFrom', string, FORMGETPROPERTY(frmDialog, 'dtFrom.Text'));
+     VAR('dtTo', string, FORMGETPROPERTY(frmDialog, 'dtTo.Text'));
+     OPENQUERY('DO2', 'STS_DB', 'SELECT DISTINCT MAIN_ID,  RELEASE_NO, OUT_DOC_DATE FROM RELEASE R '+
+                                ' WHERE  OUT_DATE >=' + char(39) + dtFrom + char(39)+
+                                ' AND OUT_DATE <=' + char(39) + dtTo + char(39)+
+                                ' AND MC_STATUS IS NULL '
+                                );
+     IF(SELECTRECORDS('Выбранные ДО', 'DO2',
+                     [['RELEASE_NO', 'Номер ДО2', 10],
+                      ['OUT_DOC_DATE', 'Дата ДО2', 10]],
+                      'SELECTED_DO2', '', 'STS_DB'),
+                      BLOCK(
+                         VAR('sFilterText', memo,'');
+                         FIRST('SELECTED_DO2');
+                         WHILE(EOF('SELECTED_DO2')=0,
+                               BLOCK(
+                                 EXECUTESQL('STS_DB','UPDATE RELEASE SET MC_STATUS = '+char(39)+'0'+char(39)+' WHERE RELEASE_NO='+char(39)+SELECTED_DO2.RELEASE_NO+char(39)+ ' AND MAIN_ID='+SELECTED_DO2.MAIN_ID);
+                                 NEXT('SELECTED_DO2');
+                               )
+                         );
+                      ),
+                      RAISEEXCEPTION ('ДО2 не выбранны, выполнение прекращено')
+
+     );
+   )
+);
+
+GLOBALREFRESH();
+

@@ -1,0 +1,1039 @@
+// *****************************************************************************
+// Название: Импорт сообщений из АСТО
+// Описание: Импорт сообщений из АСТО
+// Кнопка вызова: 0
+// Подпись кнопки: ЭПС (ИМ)
+// Язык: FuncScript
+// Вызов по событию: EpsImport
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('XmlRoot', Integer, 0);
+VAR ('XmlFile', Integer, 0);
+VAR ('sSQL', String, '');
+VAR ('bAddNotification', Integer, 0);
+CONST ('sDriverName', String, UPPERSTR(INIFILE ('Database', 'DbmsType', 'PARADOX')));
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\writelog.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+
+VAR ('sProgramPath', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()));
+
+
+FUNC ('GETXMLDOCUMENT', '',
+  Block(
+    XmlFile := XMLDOCUMENTCREATE ();
+    XMLDOCUMENTROOT (XmlFile);
+  )
+), // FUNC - GETXMLDOCUMENT() //
+
+
+FUNC ('ScriptsUpdate', '',
+  Block(
+    IF (FILEEXISTS (sProgramPath + 'update.zip'),
+      Block(
+        TRYEXCEPT (
+          Block(
+            ZIPEXTRACTFILE(sProgramPath + 'update.zip', sProgramPath);
+            DELETEFILE (sProgramPath + 'update.zip');
+          ),
+          Block(
+            // nothing happens
+            // just working as usual
+          )
+        ); // TRYEXCEPT - //
+      )
+    ); // IF - //
+  )
+), // FUNC - ScriptsUpdate() //
+
+VAR ('sRZD', String, INIFILE ('RZD', 'RZD', '0'));
+if ( sRZD = '0', ScriptsUpdate (), ); //не выполнять обновления скриптов если RZD=1
+
+//EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\add_notification.prd');
+FUNC ('AddNotification', '',
+  Block(
+    OPENQUERY ('qNewMessages', 'SELECT DOCSTATUS FROM EPS_LOG WHERE READED=' +char(39)+ '0' +char(39), 'dbJournals');
+
+    VAR ('iMessageNo', Integer, RECORDCOUNT ('qNewMessages'));
+    VAR ('sMessageText', String, '');
+
+    IF (iMessageNo > 0,
+      Block(
+        LAST ('qNewMessages');
+        sMessageText := qNewMessages.DOCSTATUS;
+        //SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+        SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+    CLOSEDATASET ('qNewMessages');
+  )
+), // FUNC - AddNotification() //
+
+VAR ('sSubStatus', String, '');
+VAR ('DoDt', String, '');
+
+
+FUNC('WRITE_EPSLOG', ,
+Block(
+  WriteEpsLog (vPLACEID,
+          vID,
+          vCounter,
+          DocId,
+          DoType,
+          DoNo,
+          DoDate,
+          strStatus,
+          dRegDate,
+          sJourGUID,
+          sSubStatus,
+          EXTRACTSTR (sFileList, i, '|'),
+          iReaded,
+          DoDt
+  ); // WriteEpsLog - //
+)),
+
+
+FUNC ('DocumentExist',
+  Block(
+  
+  ),
+  Block(
+    VAR ('return', String, 0);
+    VAR ('unknown', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\unknown\');
+    
+    IF (LENGTH (XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do3id')) > 0,
+      Block(
+        sSQL := 'SELECT JOURNAL_MASTER_ID FROM JRDO3 WHERE REFDOCUMENTID=' +char(39)+ XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do3id') +char(39);
+        OPENQUERY ('qFindRefDocID', sSQL, 'dbJournals');
+        IF (FIELDISNULL ('qFindRefDocID', 'JOURNAL_MASTER_ID') = 0,
+          Block( // найдена ДО-3
+            return := 1;
+          ),
+          Block(
+            return := 0;
+          )
+        ); // IF - //
+      ),
+      Block(
+        IF ((LENGTH (XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'whid')) > 0) & (LENGTH (XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do1id')) > 0),
+          Block(
+            IF (LENGTH (XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do1id')) > 30,
+              Block(
+                sSQL := 'SELECT ID FROM ' + IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'whid') + ' AND DOCUMENTID=' +char(39)+ XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do1id') +char(39);
+                OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+                IF (FIELDISNULL ('qFindDocID', 'ID') = 0,
+                  Block( // найдена ДО-2
+                    return := 1;
+                  ),
+                  Block(
+                    sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'whid') + ' AND DOCUMENTID=' +char(39)+ XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do1id') +char(39);
+                    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+                    IF (FIELDISNULL ('qFindID', 'ID') = 0,
+                      Block(
+                        return := 1;
+                      ),
+                      Block(
+                        return := 0;
+                      )
+                    ); // IF - //
+                  )
+                ); // IF - //
+              ),
+              Block(
+                sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'whid') + ' AND DOCUMENTID=' +char(39)+ XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do1id') +char(39);
+                OPENQUERY ('qFindID', 'STS_DB', sSQL);
+                IF (FIELDISNULL ('qFindID', 'ID') = 0,
+                  Block(
+                    return := 1;
+                  ),
+                  Block(
+                    return := 0;
+                  )
+                ); // IF - //
+              )
+            ); // IF - //
+          ),
+          Block(
+            IF (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'WHId') & XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO1Id');
+              Block(
+                sSQL := 'SELECT ID FROM ' + IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'WHId')) + ' AND DOCUMENTID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO1Id')) +char(39);
+                OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+                IF (FIELDISLNULL ('qFindDocID', 'ID') = 0,
+                  Block( // найдена ДО-2
+                    return := 1;
+                  ),
+                  Block(
+                    sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'WHId')) + ' AND DOCUMENTID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO1Id')) +char(39);
+                    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+                    IF (FIELDISNULL ('qFindID', 'ID') = 0,
+                      Block(
+                        return := 1;
+                      ),
+                      Block(
+                        return := 0;
+                      )
+                    ); // IF - //
+                  )
+                ); // IF - //
+              ),
+              Block(
+                return := 0;
+              )
+            );
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+
+    IF (return = 0,
+      Block(
+        IF (DIRECTORYEXISTS (unknown) = 0, FORCEDIRECTORIES (unknown)); // IF - //
+        COPYFILE (sFileName, unknown + EXTRACTSTR (sFileList, i, '|'));
+      )
+    ); // IF - //
+    
+    return;
+  )
+),
+
+// настройка на каталог обмена
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\');
+IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+//!IF (DIRECTORYEXISTS (sDir + 'BACKUP') = 0, FORCEDIRECTORIES (sDir + 'BACKUP'));
+
+VAR ('sFileList', String, GETFILELIST (sDir, '*.xml', '|'));
+VAR ('sTmp', String, '');
+VAR ('iFileCount', Integer, SPLITSTR (sFileList, '|', sTmp));
+VAR ('vCounter', String, '0'); // для записи в журнал
+VAR ('DocId', String, '');
+VAR ('sJourGuid', String, '');
+VAR ('iReaded', Integer, 0);
+
+VAR ('i', Integer, 1);
+VAR ('sFileName', String, '');
+
+
+// прогрессбар 1 из 3
+IF ((VAREXISTS ('iShowProgressBar') = 1),
+  IF (iShowProgressBar = 1,
+  SHOWPROGRESS ('Обработка файлов ...')
+  ) // IF - //
+); //  IF - //
+
+
+WHILE (i <= iFileCount,
+  Block(
+    sFileName := INCLUDETRAILINGBACKSLASH (sDir) + EXTRACTSTR (sFileList, i, '|');
+
+    VAR ('XmlFile', Integer, XMLDOCUMENTCREATE());
+
+    TRYEXCEPT (
+      Block(
+
+        XMLDOCUMENTLOAD (XmlFile, sFileName);
+        XmlRoot := XMLDOCUMENTROOT (XmlFile);
+
+        VAR ('XmlMainNode', String, XMLNODENAME (XMLNODECHILD (XmlRoot, 0)));
+
+        CASE (XmlMainNode, ['dori:DORegInfo',
+                               Block (
+                                 IF (DocumentExist (),
+                                   Block (
+                                     EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\do_reg_info.imp');
+                                     iReaded := 0;
+                                     WRITE_EPSLOG();
+                                     bAddNotification := 1;
+                                     IF ((INIFILE ('FILLBILL', 'ExportDO1Reg', '0')='1')*(DOType='ДО-1'), EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1reg2Fillbill.prd'));
+
+
+                                     // МОРСКОЙ РЫБНЫЙ ПОРТ ==
+                                     // после получения регистрации ДО-1 и/или ДО-2 проверяем
+                                     // заданы ли в sts.ini каталоги экспорта ДО-1/ДО-2 и существуют ли они
+                                     IF (((DOType = 'ДО-1')*(INIFILE ('MRP', 'DO1_OUT', '') <> '')*(DIRECTORYEXISTS (INIFILE ('MRP', 'DO1_OUT', '')))),
+                                       Block(
+                                         LOCATE ('KRD_MAIN', 'PLACEID;ID', [vPlaceId, vId]);
+                                         // формируем ДО-1 и сохраняем его в каталог обмена
+                                         GETXMLDOCUMENT ();
+                                         EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') + '\do1_album.exp');
+                                         XMLDOCUMENTSAVE (XmlFile, INCLUDETRAILINGBACKSLASH (INIFILE ('MRP', 'DO1_OUT', '')) + 'do1_' + DoNo + '_' + DocId + '.xml');
+                                         XMLDESTROY (XmlFile);
+                                       )
+                                     ); // IF - //
+                                     IF (((DOType = 'ДО-2')*(INIFILE ('MRP', 'DO2_OUT', '') <> '')*(DIRECTORYEXISTS (INIFILE ('MRP', 'DO2_OUT', '')))),
+                                       Block(
+                                         VAR ('epsMainCounter', Integer, 0);
+                                         IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                           OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM RELEASE_ WHERE PLACEID=' + vPLACEID + ' AND MAIN_ID=' + vID + ' AND COUNTER=' + vCounter),
+                                           OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM RELEASE WHERE PLACEID=' + vPLACEID + ' AND MAIN_ID=' + vID + ' AND COUNTER=' + vCounter)
+                                         );
+                                         epsMainCounter := REL_MAIN_3.MAIN_COUNTER;
+                                         LOCATE ('KRD_MAIN', 'PLACEID;ID', [vPlaceId, vId]);
+                                         LOCATE ('RELEASE', 'PLACEID;ID;COUNTER', [vPlaceId, vId, epsMainCounter]);
+                                         // формируем ДО-2 и сохраняем его в каталог обмена
+                                         GETXMLDOCUMENT ();
+                                         EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' +  INIFILE ('XmlFormat', 'Version', '5.13.2') + '\do2_album.exp');
+                                         XMLDOCUMENTSAVE (XmlFile, INCLUDETRAILINGBACKSLASH (INIFILE ('MRP', 'DO2_OUT', '')) + 'do2_' + DoNo + '_' + DocId + '.xml');
+                                         XMLDESTROY (XmlFile);
+                                         CLOSEDATASET ('REL_MAIN_3');
+                                       )
+                                     ); // IF - //
+                                     // МОРСКОЙ РЫБНЫЙ ПОРТ ==
+
+
+                                   )
+                                 ); // IF - //
+                               ),
+                            'prch:PermitDOChange',
+                               Block(
+                                 IF (DocumentExist (),
+                                   Block(
+                                     VAR ('XmlPermitDOChange', Integer, XMLNODECHILD (XmlRoot, 0));
+
+                                     VAR ('vDO1ID', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'do1id'));
+                                     VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'whid'));
+                                     sSQL := 'SELECT ALBUM_VERSION FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+                                     
+                                     OPENQUERY ('qFindID', 'STS_DB', sSQL);
+                                     VAR ('vAlbum', String, TRIM(qFindID.ALBUM_VERSION));
+
+                                     EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + IF(vAlbum <> '', vAlbum, INIFILE ('XmlFormat', 'Version', '5.13.2')) +'\permit_do_change.imp');
+
+                                     iReaded := 0;
+                                     WRITE_EPSLOG();
+                                     bAddNotification := 1;
+                                   )
+                                 ); // IF - //
+                               ),
+                            'DO1Reg',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1_reg_info.prd');
+                               ),
+                            'DO2Reg',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do2_reg_info.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO3Reg',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do3_reg_info.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'whgd:WHGoodsDeadline',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\wh_goods_deadline.imp');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'WHGoodsDeadline',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\wh_goods_deadline.imp');
+                               ),
+                            'ResWHGoodsProlong',
+                              Block(
+                                EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\res_wh_goods_prolong.imp');
+                              ),
+                            'reswh:ResWHGoodsProlong',
+                              Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\res_wh_goods_prolong.imp');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                              ),
+                            'do3re:DO3Request',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\do3_request.imp');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+                            'DO3Request',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\do3_request.imp');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+                            'reqop:ReqOperations',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\ReqOperations.imp');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+                            'ispd:InspectorDecision',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\InspectorDesicion.imp');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+
+                            'whdi:WHDocInventory',
+                              Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\wh_doc_inventory.imp');
+
+                                IF (INIFILE ('WHDocInventory', 'CreateDo1', 0) = 1,
+                                  Block(
+                                    // автоматическое создание формы ДО-1
+                                    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\do1_from_inventory.prd');
+                                    WriteEpsLog (vPLACEID,
+                                            0,
+                                            0,
+                                            DocId,
+                                            DoType,
+                                            DoNo,
+                                            DoDate,
+                                            strStatus,
+                                            dRegDate,
+                                            sJourGUID,
+                                            sSubStatus,
+                                            EXTRACTSTR (sFileList, i, '|'),
+                                            0,
+                                            DoDt
+                                    ); // WriteEpsLog - //
+                                    bAddNotification := 1;
+                                  )
+                                ); // IF - //
+                              ),
+                            'WHGoodOut',
+                               Block (
+                                 EXECUTESCRIPT (PROGRAMPATH () + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\wh_good_out.imp');
+
+                                 // ИНЪЕКЦИЯ ДЛЯ ЭКСПОРТА В СОЛВО
+                                 VAR ('sSolvoDir', String, INIFILE ('SOLVO', 'WorkDir', ''));
+                                 IF (LENGTH (sSolvoDir) > 0,
+                                   Block (
+                                     sSolvoDir := IncludeTrailingBackslash (sSolvoDir) + 'OUTPUT\';
+                                     IF (DirectoryExists (sSolvoDir),
+                                       CopyFile (sFileName, sSolvoDir + EXTRACTSTR (sFileList, i, '|'));
+                                     );
+                                   )
+                                 ); // IF - //
+                                 // ИНЪЕКЦИЯ ДЛЯ ЭКСПОРТА В СОЛВО
+
+                                 IF (INIFILE ('Bronka', 'ExportWHGoodOut', 0) = 1, Block(
+                                   VAR('sDirExpPath', string, INIFILE ('BronkaDir', 'WHGoodOutDir', 'Z:\STMxml\WHGoodOut\'));                 
+                                   IF(DIRECTORYEXISTS(sDirExpPath)<>1,FORCEDIRECTORIES(sDirExpPath));
+                                   IF(DIRECTORYEXISTS(sDirExpPath)=1,
+                                     BLOCK(
+                                       COPYFILE (sFileName, INCLUDETRAILINGBACKSLASH (sDirExpPath) + EXTRACTSTR (sFileList, i, '|'));
+                                       IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (sDirExpPath) + EXTRACTSTR (sFileList, i, '|')) = 0, WriteLog('EPSIMP', '(' + EXTRACTSTR (sFileList, i, '|') + '): не удалось скопировать в каталог SOLVO: ' + sDirExpPath + 'Пользователь ' + USERINFO('','UserName')));
+                                     )
+                                   );
+                                 ));
+
+
+                                 // МОРСКОЙ РЫБНЫЙ ПОРТ ==
+                                 // если каталог задан (есть в ini-файле) и существует, то копируем в него пришедшее Уведомление
+                                 IF ((INIFILE ('MRP', 'WHGOU_OUT', '') <> '') * (DIRECTORYEXISTS (INIFILE ('MRP', 'WHGOU_OUT', ''))),
+                                   Block(
+                                     COPYFILE (sFileName, INCLUDETRAILINGBACKSLASH (INIFILE ('MRP', 'WHGOU_OUT', '')) + EXTRACTSTR (sFileList, i, '|'));
+             IF (FILEEXISTS (sSolvoDir + EXTRACTSTR (sFileList, i, '|')) = 0, WriteLog('EPSIMP', '(' + EXTRACTSTR (sFileList, i, '|') + '): не удалось скопировать в каталог SOLVO: ' + sSolvoDir + 'Пользователь ' + USERINFO('','UserName')));
+                                   )
+                                 ); // IF - //
+                                 // МОРСКОЙ РЫБНЫЙ ПОРТ ==
+
+
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+                            'whgou:WHGoodOut',
+                               Block (
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\wh_good_out.imp');
+
+                                 // ИНЪЕКЦИЯ ДЛЯ ЭКСПОРТА В СОЛВО
+                                 VAR ('sSolvoDir', String, INIFILE ('SOLVO', 'WorkDir', ''));
+                                 IF (LENGTH (sSolvoDir) > 0,
+                                   Block (
+                                     sSolvoDir := IncludeTrailingBackslash (sSolvoDir) + 'PERM_OUT\';
+                                     IF (DirectoryExists (sSolvoDir),
+                                       Block (          
+                                         CopyFile (sFileName, sSolvoDir + EXTRACTSTR (sFileList, i, '|'));
+           IF (FILEEXISTS (sSolvoDir + EXTRACTSTR (sFileList, i, '|')) = 0, WriteLog('EPSIMP', '(' + EXTRACTSTR (sFileList, i, '|') + '): не удалось скопировать в каталог SOLVO: ' + sSolvoDir));
+                                       )
+                                     );
+                                   )
+                                 ); // IF - //
+                                 // ИНЪЕКЦИЯ ДЛЯ ЭКСПОРТА В СОЛВО
+
+
+                                 IF (INIFILE ('Bronka', 'ExportWHGoodOut', 0) = 1, Block(
+                                   VAR('sDirExpPath', string, INIFILE ('BronkaDir', 'WHGoodOutDir', 'Z:\STMxml\WHGoodOut\'));                 
+                                    IF(DIRECTORYEXISTS(sDirExpPath)<>1,FORCEDIRECTORIES(sDirExpPath));
+                                    IF(DIRECTORYEXISTS(sDirExpPath)=1,
+          BLOCK( 
+                                         COPYFILE (sFileName, INCLUDETRAILINGBACKSLASH (sDirExpPath) + EXTRACTSTR (sFileList, i, '|'));
+                                  IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (sDirExpPath) + EXTRACTSTR (sFileList, i, '|')) = 0, WriteLog('EPSIMP', '(' + EXTRACTSTR (sFileList, i, '|') + '): не удалось скопировать в каталог SOLVO: ' + sDirExpPath + ' Пользователь ' + UserInfo('','UserName')));                  
+                                        )
+                                    );
+                                 ));
+
+
+                                 // МОРСКОЙ РЫБНЫЙ ПОРТ
+                                 // если каталог задан (есть в ini-файле) и существует, то копируем в него пришедшее Уведомление
+                                 IF ((INIFILE ('MRP', 'WHGOU_OUT', '') <> '') * (DIRECTORYEXISTS (INIFILE ('MRP', 'WHGOU_OUT', ''))),
+                                   Block(
+                                     COPYFILE (sFileName, INCLUDETRAILINGBACKSLASH (INIFILE ('MRP', 'WHGOU_OUT', '')) + EXTRACTSTR (sFileList, i, '|'));
+                                   )
+                                 ); // IF - //
+                                 // МОРСКОЙ РЫБНЫЙ ПОРТ
+
+
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1StatusChanged',
+                               Block(
+                                 IF (DocumentExist (),
+                                   Block(
+                                     EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1_status_changed.prd');
+                                     WRITE_EPSLOG();
+                                     bAddNotification := 1;
+                                   )
+                                 ); // IF - //
+                               ),
+                            'DO1ModifTechConfirm', // подтверждение доставки коммакта в АСТО
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1modif_techconfirm.prd');
+                                 iReaded := 1;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1ModifTechError', // ошибка при доставке коммакта в АСТО
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1modif_techerror.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO2TechConfirm',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do2_techconfirm.prd');
+                                 iReaded := 1;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO2TechError',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do2_techerror.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO3TechConfirm',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do3_techconfirm.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO3TechError',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do3_techerror.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            {'InventoryTechConfirm',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\inventory_techconfirm.prd');
+                                 WRITE_EPSLOG();
+                                 AddNotification ();
+                               ),
+                            'InventoryTechError',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\inventory_techerror.prd');
+                                 WRITE_EPSLOG();
+                                 AddNotification ();
+                               ),}
+
+                            'DO3Error',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do3_error.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG ();
+                                 bAddNotification := 1;
+                               ),
+                            'DO2Error',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do2_error.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO2RegError',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do2_reg_error.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1OperationsASTOTechConfirm',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\notfinish_techconfirm.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1OperationsASTOTechError',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\notfinish_techerror.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1OperationsWHReqTechConfirm',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\reqop_techconfirm.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1OperationsWHReqTechError',
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\reqop_techerror.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+
+                            'rrqo:RejectReqOperation',
+                               Block(
+                                 IF (DocumentExist (),
+                                   Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') +'\reject_req_operation.imp');
+                                     iReaded := 0;
+                                     WRITE_EPSLOG();
+                                     bAddNotification := 1;
+                                   )
+                                 ); // IF - //
+                               ),
+                            'DO1ModifRegError',
+                               Block(
+                                 IF (DocumentExist (),
+                                   Block(
+                                     EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1_modif_reg_error.prd');
+                                     iReaded := 0;
+                                     WRITE_EPSLOG();
+                                     bAddNotification := 1;
+                                   )
+                                 ); // IF - //
+                               ),
+                            'DO1ErrorsLetterRegError',    // отказ в регистрации письма
+                               Block(
+                                 IF (DocumentExist (),
+                                   Block(
+                                     EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1letter_reg_error.prd');
+                                     iReaded := 0;
+                                     WRITE_EPSLOG();
+                                     bAddNotification := 1;
+                                   )
+                                 ); // IF - //
+                               ),
+
+                            'DO1ErrorsLetterTechConfirm', // подтверждение доставки письма в АСТО
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1letter_techconfirm.prd');
+                                 iReaded := 1;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+                            'DO1ErrorsLetterTechError', // ошибка при доставке письма в АСТО
+                               Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\do1letter_techerror.prd');
+                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                               ),
+
+              'tci:TransitInfo',
+                Block(
+                  EXECUTESCRIPT (PROGRAMPATH () + 'DATA\IMPEX\SCRIPTS\' + INIFILE ('XmlFormat', 'Version', '5.13.2') + '\transit_info.imp');
+                ),
+                            'SendingError',
+                               Block(
+                                 VAR ('XmlSendingError', Integer, XMLNODECHILD (XmlRoot, 0));
+                                 VAR ('sSQLStr', String, '');
+                                 IF (XMLNODEHASATTRIBUTE (XmlSendingError, 'dotype'),
+                                   Block(
+                                     CASE (XMLNODEATTRIBUTE (XmlSendingError, 'dotype'),
+                                      ['1', Block(
+                                              sSQLStr := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Ошибка отправки ДО-1 (доб. листа к ДО-1). Попробуйте отправить документ еще раз.' +char(39)+ ' WHERE PLACEID=' + XMLNODEVALUE (XMLNODEFIND (XmlSendingError, 'WHId'))+ ' AND DOCUMENTID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlSendingError, 'DO1Id')) +char(39);
+                                            ),
+                                       '2', Block(
+                                              OPENQUERY ('qryDO2Num', 'STS_DB', 'SELECT ID, RELEASE_NO FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + XMLNODEVALUE (XMLNODEFIND (XmlSendingError, 'WHId')) + ' AND DOCUMENTID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlSendingError, 'DO1Id')) +char(39)+ ' AND COUNTER=' + XMLNODEVALUE (XMLNODEFIND (XmlSendingError, 'DO2Id')));
+                                              IF (FIELDISNULL ('qryDO2Num', 'ID') = 0,
+                                                Block(
+                                                  sSQLStr := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Ошибка отправки ДО-2 № ' + qryDO2Num.RELEASE_NO + '. Попробуйте отправить документ еще раз.' +char(39)+ ' WHERE PLACEID=' + XMLNODEVALUE (XMLNODEFIND (XmlSendingError, 'WHId'))+ ' AND ID=' + qryDO2Num.ID ;
+                                                )
+                                              ); // IF - FIELDISNULL ('qryDO2Num', 'ID') = 0 //
+                                            ),
+                                       '3', Block(
+                                              sSQLStr := '';
+                                            )
+                                       ],
+                                     ); // CASE - //
+                                     IF (sSQLStr <> '', EXECUTESQL ('STS_DB', sSQLStr));
+                                   )
+                                 ); // IF - //
+                               ),
+                            'DO1ProcessId',
+                              Block(
+                                VAR ('XmlDO1ProcessId', Integer, XMLNODECHILD (XmlRoot, 0));
+                                OPENQUERY ('qFindDO1', 'STS_DB', 'SELECT MAIN_ID, NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + XMLNODEATTRIBUTE (XmlDO1ProcessId, 'whid') + ' AND DOCUMENTID=' +char(39)+ XMLNODEATTRIBUTE (XmlDO1ProcessId, 'do1id') +char(39));
+                                
+                                WriteEpsLog (XMLNODEATTRIBUTE (XmlDO1ProcessId, 'whid'),
+                                        qFindDO1.MAIN_ID,
+                                        0,
+                                        XMLNODEATTRIBUTE (XmlDO1ProcessId, 'do1id'),
+                                        'ДО-1',
+                                        qFindDO1.NBD, // номер ДО-1
+                                        qFindDO1.BD_DATE, // дата ДО-1
+                                        'Процедура открыта', // статус
+                                        Date() + Time(1),
+                                        '',
+                                        'ProcessId= ' + XMLNODEVALUE (XMLNODEFIND (XmlDO1ProcessId, 'ProcessId')),
+                                        EXTRACTSTR (sFileList, i, '|'),
+                                        '1',
+                                        XMLNODEATTRIBUTE (XmlDO1ProcessId, 'dodt')
+                                );
+                                
+                                sSQL := 'UPDATE KRD_MAIN SET ' +
+                                        ' PROCESSID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlDO1ProcessId, 'ProcessId')) +char(39)+
+                                        ' WHERE ' +
+                                        ' PLACEID=' + XMLNODEATTRIBUTE (XmlDO1ProcessId, 'whid') +
+                                        ' AND DOCUMENTID=' +char(39)+ XMLNODEATTRIBUTE (XmlDO1ProcessId, 'do1id') +char(39);
+                                EXECUTESQL ('STS_DB', sSQL);
+                                
+                              ),
+                            'OnDocSend',
+                              Block(
+                                 EXECUTESCRIPT (PROGRAMPATH() + 'PROCDOCS\on_doc_send.prd');
+                                 IF (strStatus <> 'Отправлен запрос на открытие процедуры',
+                                   Block (
+//                                 iReaded := 0;
+                                 WRITE_EPSLOG();
+                                 bAddNotification := 1;
+                                   )
+                                 );  // IF
+                              ),
+                            'CertValidationError',
+                              Block(
+                                VAR ('XmlCertValidationError', Integer, XMLNODECHILD (XmlRoot, 0));
+                                VAR ('uPlaceId', String, 9999);
+                                
+                                IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlCertValidationError, 'Document'), 'SVHDocumentNumber'))) > 0,
+                                  Block(
+                                    OPENQUERY ('uStore', 'STS_DB', 'SELECT PLACEID FROM STORES WHERE LICENCENO=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlCertValidationError, 'Document'), 'SVHDocumentNumber')) +char(39));
+                                    IF (FIELDISNULL ('uStore', 'PLACEID') = 0, uPlaceId := uStore.PLACEID);
+                                  )
+                                );
+                                
+                                WriteEpsLog (uPlaceId,
+                                        '',
+                                        0,
+                                        '',
+                                        IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlCertValidationError, 'Document'), 'PrDocumentName'))) > 0, XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlCertValidationError, 'Document'), 'PrDocumentName')), 'Уведомление'),
+                                        XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlCertValidationError, 'Document'), 'PrDocumentNumber')),
+                                        XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlCertValidationError, 'Document'), 'PrDocumentDate')),
+                                        'Ошибка проверки сертификата ЭП',
+                                        Date() + Time(1), 
+                                        '',
+                                        XMLNODEVALUE (XMLNODEFIND (XmlCertValidationError, 'Description')),
+                                        EXTRACTSTR (sFileList, i, '|'),
+                                        '0',
+                                        XMLNODEATTRIBUTE (XmlCertValidationError, 'dodt')
+                                );  // WriteEpsLog
+                                
+                                bAddNotification := 1;
+                               ),
+                            'OnArchCreateRequest',
+                              Block(
+                                VAR ('uPlaceId', String, 9999);
+                                VAR ('XmlACR', Integer, XMLNODECHILD (XmlRoot, 0));
+                                VAR ('sReqId', String, XMLNODEVALUE (XMLNODEFIND (XmlACR, 'RequestId')));
+                                VAR ('sArchName', String, XMLNODEVALUE (XMLNODEFIND (XmlACR, 'ArchName')));
+
+
+                                sSQL := 'UPDATE JR_ARCHIVES SET REQUEST_ID=' +char(39)+ sReqId +char(39)+
+                                        ', STATUS_TEXT=' +char(39)+ 'Сгенерирован идентификатор запроса' +char(39)+
+                                        ', STATUS_ID=20 ' +
+                                        ' WHERE ARCH_NAME=' +char(39)+ sArchName +char(39)+ ' AND REQUEST_ID IS NULL';
+                                
+                                EXECUTESQL ('dbJournals', sSQL);
+
+                                WriteEpsLog (uPlaceId,
+                                             '',
+                                             0,
+                                             sReqId,
+                                             'Электронный архив',
+                                             COPY (sArchName, 0, 50),
+                                             '',
+                                             'Сгенерирован идентификатор запроса',
+                                             Date() + Time(1),
+                                             '',
+                                             'RequestId= ' + sReqId,
+                                             EXTRACTSTR (sFileList, i, '|'),
+                                             '1',
+                                             Date() + Time(1),
+                                             XMLNODEATTRIBUTE (XmlACR, 'dodt')
+                                ); // WriteEpsLog
+                              ),
+                            'OnArchStatusChanged',
+                              Block(
+                                VAR ('XmlASC', Integer, XMLNODECHILD (XmlRoot, 0));
+                                VAR ('uPlaceId', String, 9999);
+                                VAR ('sReqId', String, XmlNodeAttribute (XmlASC, 'archReqId'));
+                                VAR ('sArchName', String, '');
+                                VAR ('iType', Integer, 0);  // 0 - ЭА, 1 - ЭД
+
+                                sSQL := 'SELECT ARCH_NAME FROM JR_ARCHIVES WHERE REQUEST_ID=' +char(39)+ sReqId +char(39);
+                                OPENQUERY ('qArch', sSQL, 'dbJournals', 1);
+                                sArchName := qArch.ARCH_NAME;
+
+
+                                IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XmlASC, 'ArchId'))) > 0,
+                                  sSQL := sSQL + 'ARCH_ID=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlASC, 'ArchId')) +char(39)+ ', '
+                                ); // IF
+                                CASE (XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')),
+                                  ['Отправлен запрос на создание архива',
+                                   Block(
+                                     sSQL := 'UPDATE JR_ARCHIVES SET ';
+                                     sSQL := sSQL + ' STATUS_ID=30, ';
+                                     sSQL := sSQL + ' STATUS_TEXT=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')) +char(39)+
+                                                    ' WHERE REQUEST_ID=' +char(39)+ sReqId +char(39);
+                                     EXECUTESQL ('dbJournals', sSQL);
+                                   ),
+                                   'АСТО: архив создан успешно',
+                                   Block(
+                                     sSQL := 'UPDATE JR_ARCHIVES SET ';
+                                     sSQL := sSQL + ' STATUS_ID=40, ';
+                                     sSQL := sSQL + ' STATUS_TEXT=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')) +char(39)+
+                                                    ' WHERE REQUEST_ID=' +char(39)+ sReqId +char(39);
+                                     EXECUTESQL ('dbJournals', sSQL);
+                                   ),
+                                   'Отправлен запрос на добавление документа в архив',
+                                   Block(
+                                     sSQL := 'UPDATE JR_BILLOFLOADING SET ';
+                                     sSQL := sSQL + ' STATUS_ID=40, ';
+                                     sSQL := sSQL + ' STATUS_TEXT=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')) +char(39)+
+                                                    ' WHERE REQUEST_ID=' +char(39)+ sReqId +char(39);
+                                     iType := 1;
+                                   ),
+                                   'АСТО: документ успешно добавлен в архив',
+                                   Block(
+                                     sSQL := 'UPDATE JR_BILLSOFLOADING SET ';
+                                     sSQL := sSQL + ' STATUS_ID=40, ';
+                                     sSQL := sSQL + ' STATUS_TEXT=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')) +char(39)+
+                                                    ' WHERE REQUEST_ID=' +char(39)+ sReqId +char(39);
+                                     iType := 1;
+                                   )
+                                   ]
+                                );
+                                
+                                IF (iType = 0,
+                                  Block(
+                                    WriteEpsLog (uPlaceId,
+                                            '',
+                                            XMLNODEVALUE (XMLNODEFIND (XmlASC, 'OriginalMsgId')),
+                                            sReqId,
+                                            'Электронный архив',
+                                            IF (FIELDISNULL ('qArch', 'ARCH_NAME') = 0, qArch.ARCH_NAME, ''),
+                                            '',
+                                            XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')),
+                                            Date() + Time(1),
+                                            '',
+                                            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XmlASC, 'ArchId'))) > 0, 'ArchId= ' + XMLNODEVALUE (XMLNODEFIND (XmlASC, 'ArchId')), ''),
+                                            EXTRACTSTR (sFileList, i, '|'),
+                                            '1',
+                                            Date() + Time(1),
+                                            XMLNODEATTRIBUTE (XmlASC, 'dodt')
+                                    ); // WriteEpsLog
+                                  ),
+                                  Block(
+                                  {
+                                    WriteEpsLog (uPlaceId,
+                                            '',
+                                            XMLNODEVALUE (XMLNODEFIND (XmlASC, 'OriginalMsgId')),
+                                            sReqId,
+                                            'Электронный документ',
+                                            IF (FIELDISNULL ('qArch', 'ARCH_NAME') = 0, qArch.ARCH_NAME, ''),
+                                            '',
+                                            XMLNODEVALUE (XMLNODEFIND (XmlASC, 'StatusText')),
+                                            Date() + Time(1),
+                                            '',
+                                            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XmlASC, 'ArchId'))) > 0, 'ArchId= ' + XMLNODEVALUE (XMLNODEFIND (XmlASC, 'ArchId')), ''),
+                                            EXTRACTSTR (sFileList, i, '|'),
+                                            '1',
+                                            Date() + Time(1),
+                                            XMLNODEATTRIBUTE (XmlASC, 'dodt')
+                                    ); // WriteEpsLog
+                                  }
+                                  )
+                                ); // IF
+
+                                CLOSEDATASET ('qArch');
+                               ),
+                             'OnArchDocAdded',
+                               Block(
+                                 VAR ('XmlADA',           Integer, XMLNODECHILD (XmlRoot, 0));
+                                 VAR ('uPlaceId',         String,  9999);
+                                 VAR ('sArchCreateReqId', String,  XMLNODEVALUE (XMLNODEFIND (XmlADA, 'ArchCreateReqId')));
+                                 VAR ('sAddDocReqId',     String,  XMLNODEVALUE (XMLNODEFIND (XmlADA, 'AddDocReqId')));
+                                 VAR ('sArchDocId',       String,  XMLNODEVALUE (XMLNODEFIND (XmlADA, 'ArchDocId')));
+
+                                 sSQL := 'SELECT PLACEID FROM JR_ARCHIVES WHERE REQUEST_ID=' +char(39)+ sArchCreateReqId +char(39);
+                                 OPENQUERY ('qJrArch', 'dbJournals', sSQL, 1);
+                                 IF (FIELDISNULL ('qJrArch', 'PLACEID') = 0, uPlaceId := qJrArch.PLACEID);
+                                 CLOSEDATASET ('qJrArch');
+
+                                 sSQL := 'SELECT DOCUMENTID, PRDOCUMENTNAME, PRDOCUMENTNUMBER, PRDOCUMENTDATE, ARCHIVE_ID, ADDDOC_REQUESTID ' +
+                                         ' FROM JR_BILLOFLOADING ' +
+                                         ' WHERE ADDDOC_REQUESTID=' +char(39)+ sAddDocReqId +char(39);
+                                 OPENQUERY ('qJrBOL', 'dbJournals', sSQL, 1);
+
+                                 sSQL := 'UPDATE JR_BILLOFLOADING SET ' +
+                                         ' STATUS_ID=40' +
+                                         ', STATUS_TEXT=' +char(39)+ 'АСТО: документ успешно добавлен в архив' +char(39)+
+                                         ' WHERE DOCUMENTID=' +char(39)+ qJrBOL.DOCUMENTID +char(39);
+                                 EXECUTESQL ('dbJournals', sSQL);
+
+                                 WriteEpsLog (uPlaceId,
+                                             '',
+                                             0,
+                                             qJrBOL.DOCUMENTID,
+                                             'Электронный документ',
+                                             qJrBOL.PRDOCUMENTNUMBER,
+                                             qJrBOL.PRDOCUMENTDATE,
+                                             'АСТО: документ успешно добавлен в архив',
+                                             Date() + Time(1),
+                                             '',
+                                             'ArchDocId= ' + sArchDocId,
+                                             EXTRACTSTR (sFileList, i, '|'),
+                                             '1',
+                                             Date() + Time(1),
+                                             XMLNODEATTRIBUTE (XmlADA, 'dodt')
+                                 ); // WriteEpsLog
+
+                                 CLOSEDATASET ('qJrBOL');
+                               ),
+                             'OnArchAddDocRequest',
+                               Block(
+                                 VAR ('XmlAADR',          Integer, XMLNODECHILD (XmlRoot, 0));
+                                 VAR ('uPlaceId',         string,  9999);
+                                 VAR ('sArchCreateReqId', String,  XMLNODEVALUE (XMLNODEFIND (XmlAADR, 'ArchCreateReqId')));
+                                 VAR ('sAddDocReqId',     String,  XMLNODEVALUE (XMLNODEFIND (XmlAADR, 'ArchAddDocReqId')));
+                                 VAR ('sDocumentId',      String,  XMLNODEVALUE (XMLNODEFIND (XmlAADR, 'DocumentId')));
+
+                                 sSQL := 'SELECT PLACEID FROM JR_ARCHIVES WHERE REQUEST_ID=' +char(39)+ sArchCreateReqId +char(39);
+                                 OPENQUERY ('qJrArch', 'dbJournals', sSQL, 1);
+                                 IF (FIELDISNULL ('qJrArch', 'PLACEID') = 0, uPlaceId := qJrArch.PLACEID);
+                                 CLOSEDATASET ('qJrArch');
+
+                                 sSQL := 'UPDATE JR_BILLOFLOADING SET ' +
+                                         ' ADDDOC_REQUESTID=' +char(39)+ sAddDocReqId +char(39)+
+                                         ', STATUS_ID=20' +
+                                         ', STATUS_TEXT=' +char(39)+ 'Отправлен запрос на добавление документа в архив' +char(39)+
+                                         ' WHERE DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+                                 EXECUTESQL ('dbJournals', sSQL);
+
+                                 sSQL := 'SELECT DOCUMENTID, PRDOCUMENTNAME, PRDOCUMENTNUMBER, PRDOCUMENTDATE, ARCHIVE_ID, ADDDOC_REQUESTID ' +
+                                         ' FROM JR_BILLOFLOADING ' +
+                                         ' WHERE DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+                                 OPENQUERY ('qJrBOL', 'dbJournals', sSQL, 1);
+
+                                 WriteEpsLog (uPlaceId,
+                                             '',
+                                             0,
+                                             sDocumentId,
+                                             'Электронный документ',
+                                             qJrBOL.PRDOCUMENTNUMBER,
+                                             qJrBOL.PRDOCUMENTDATE,
+                                             'Отправлен запрос на добавление документа в архив',
+                                             Date() + Time(1),
+                                             '',
+                                             'AddDocReqId= ' + sAddDocReqId,
+                                             EXTRACTSTR (sFileList, i, '|'),
+                                             '1',
+                                             Date() + Time(1),
+                                             XMLNODEATTRIBUTE (XmlAADR, 'dodt')
+                                 ); // WriteEpsLog
+
+                                 CLOSEDATASET ('qJrBOL');
+                               )
+                           ],
+
+        ); // CASE
+        DocId     := '';
+        vCounter  := '0';
+        sJourGuid := '';
+      ),
+      Block(
+        //showmessage (EXCEPTIONMESSAGE ());
+        WriteLog('EPSIMP', '(' + EXTRACTSTR (sFileList, i, '|') + '): ' + EXCEPTIONMESSAGE ());
+        
+        FORCEDIRECTORIES (sDir + 'Errors\');
+        COPYFILE (sFileName, sDir + 'Errors\' + EXTRACTSTR (sFileList, i, '|'));
+      )
+    ); // TRYEXCEPT - //
+
+    DELETEFILE (sFileName);
+    i := i + 1;
+
+    // прогрессбар 2 из 3
+    IF ((VAREXISTS ('iShowProgressBar') = 1),
+      IF (iShowProgressBar = 1,
+      Block(
+        SETPROGRESS (i, 100, iFileCount);
+
+        // проверяем не нажал ли пользователь "Отмену"
+        IF (CANCELPRESSED (),
+          Block(
+            HIDEPROGRESS ();
+            iShowProgressBar := 0;
+            RAISEEXCEPTION ('Обработка отменена пользователем..');
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+    ); // IF - //
+
+  )
+);
+
+// прогрессбар 3 из 3
+IF ((VAREXISTS ('iShowProgressBar') = 1),
+  IF (iShowProgressBar = 1,
+  Block(
+    HIDEPROGRESS ();
+    iShowProgressBar := 0;
+  )
+); // IF - //
+); // IF - //
+
+
+IF (bAddNotification, AddNotification ());
+
+WRITEINIFILE ('STS-MED', 'iout', sDir);
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,66 @@
+// *****************************************************************************
+// Название: Подтверждение доставки письма в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO1LetterTechConfirm
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//VAR ('XmlRoot', Integer, GETXMLDOCUMENT ());
+
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'DO1ErrorsLetterTechConfirm'));
+VAR ('sSQL', String);
+
+IF (XmlDoc,
+  Block(
+    VAR ('strStatus', String, 'Письмо об ошибках обработано АСТО');
+    VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+    VAR ('vDO1Id', String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+    VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlDoc, 'dodt'));
+    VAR ('DoType', String, '');
+    VAR ('DoNo', String, '');
+    VAR ('DoDate', DateTime);
+    VAR ('dRegDate', DateTime);
+    VAR ('sSubStatus', String, '');
+    
+    sSQL := 'SELECT ID, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID + ' ORDER BY PART_NO');
+    //showmessage (sSQL);
+    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+    FIRST ('qFindID');
+    
+    VAR ('vID', String, qFindID.ID);
+    VAR ('DocId', String, qFindID.DOCUMENTID);
+    
+    sSQL := 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DODT > ' +char(39)+ DoDt +char(39);
+    //showmessage (sSQL);
+    OPENQUERY ('qCheck', sSQL, 'dbJournals');
+    IF (RECORDCOUNT ('qCheck') <= 0,
+      Block(
+        sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ strStatus +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID;
+        //showmessage (sSQL);
+        EXECUTESQL ('STS_DB', sSQL);
+      )
+    ); // IF - //
+
+
+
+    
+    OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN');
+    IF (LOCATE ('KRD_MAIN_3', 'PLACEID;ID', [vPlaceId, vId]) = 1,
+      Block(
+         DoNo := KRD_MAIN_3.NBD;
+         DoDate := KRD_MAIN_3.BD_DATE;
+         DoType   := 'ДО-1';
+         dRegDate := DATE()+TIME(1);
+         OPENQUERY ('qryNUM', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+         sJourGuid :=qryNUM.JOURGUID;
+      )
+    );
+    CloseDataset('KRD_MAIN_3');
+         
+  )
+);
+
+

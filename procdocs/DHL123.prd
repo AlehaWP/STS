@@ -1,0 +1,78 @@
+// *****************************************************************************
+// Название: Создание ДО1 DHL
+// Описание: Создание ДО1 DHL
+// Кнопка вызова: 0
+// Подпись кнопки: Создание ДО1 DHL
+// *****************************************************************************
+//
+Var('vPlaceID', String, INIFILE ('RegistBook', 'CurrentPlaceid', '1', PROGRAMPATH() + 'STS.ini'));
+VAR('vID', integer, 968523123);
+APPENDRECORD('KRD_MAIN_2');
+EDITRECORD('KRD_MAIN_2');
+SETFIELDVALUE('KRD_MAIN_2',
+              'PLACEID', vPlaceid,
+              'ID', vID,
+              'G082', 'CTM',
+              'A_MODE', 7,
+              'G083', 'СПб'
+);
+POST('KRD_MAIN_2');
+
+APPENDRECORD('KRD_PAPERS_2');
+EDITRECORD('KRD_PAPERS_2');
+SETFIELDVALUE('KRD_PAPERS_2',
+              'PLACEID', vPlaceid,
+              'ID', vID,
+              'COUNTER', 1,
+              'PAPERNO', '12345',
+              'PAPERDATE', DATE(),
+              'PAPERNAME', 'CMR',
+              'PAPERCODE', '02015'
+);
+POST('KRD_PAPERS_2');
+
+APPENDRECORD('KRD_COMM_2');
+EDIT('KRD_COMM_2');
+SETFIELDVALUE('KRD_COMM_2',
+             'PLACEID', vPLACEID,
+             'ID', vID,
+             'G32', 1,
+             'GN', 1,
+             'NBD', '005777',
+             'G33', '8205',
+             'G312', 'Инструменты ручные',
+             'G311', 5,
+             'G35', 35,
+             'G42', 5000,
+             'G42_CURRENCY', '978',
+             'ACCEPTDATE', NOW(),
+             'STORAGE_DATE', DATE()+ 61,
+             'STORAGE_TYPE', 'НОР',
+             'STORE_PERIOD', 61,
+             //'BOXNO', qryExcel."Уникальный номер грузового места",
+             'N_TTN', 1,
+             'N_TTN_G32', 1
+);
+POST('KRD_COMM_2');
+
+APPENDRECORD('KRD_COMM_PAPERS_2');
+EDIT('KRD_COMM_PAPERS_2');
+SETFIELDVALUE('KRD_COMM_PAPERS_2',
+             'PLACEID', vPlaceid,
+             'ID', vID,
+             'G32', 1,
+             'DOC_TYPE', 13,
+             'DOC_COUNTER', 1
+);
+POST('KRD_COMM_PAPERS_2');
+
+APPENDRECORD('KRD_TRANSP_2');
+EDITRECORD('KRD_TRANSP_2');
+SETFIELDVALUE('KRD_TRANSP_2',
+              'PLACEID', vPlaceid,
+              'ID', vID,
+              'COUNTER', 1,
+              'TRANSP_COD', '30',
+              'CARNO', 'а123аа178'
+);
+POST('KRD_TRANSP_2');

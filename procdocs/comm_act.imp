@@ -1,0 +1,925 @@
+// *****************************************************************************
+// Название: загрузку Коммерческого Акта с диска
+// Описание: Загрузка Коммерческого Акта в формате СВХ.АЛЬБОМ
+// Кнопка вызова: 1
+// Подпись кнопки: Прочитать Комм. акт
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+VAR ('sLogFile', String, 'ca_import.log');
+CREATELOGFILE (sLogFile, 0);
+
+VAR ('Success', Integer, 0);
+VAR ('Errors', Integer, 0);
+
+
+// Импортируем функцию SQLDate ([ДатаВремя], GetBaseDriver ([База данных (0 - ВЭД-Склад, 1 - СТМ-Журналы, 2 - Справочники)]))
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sqldate.prd');
+// Импортируем функцию INSERT ([Имя таблицы], [Имя поля], [Значение поля], [Тип данных (0 - Строка, 1 - Число, 2 - ДатаВремя])
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sql_insert.prd');
+
+VAR ('sReadedDir', String, INIFILE ('CommActImport', 'Directory', ''));
+VAR ('sSQL', String, '');
+VAR ('sFileList', String, '');
+VAR ('iFileCount', Integer, 0);
+VAR ('iFileIndex', Integer, 1);
+VAR ('sFileName', String, '');
+VAR ('xDoc', Integer);
+VAR ('sNBD', String, '');
+VAR ('sBDDate', String, '');
+VAR ('sActNumber', String, '');
+VAR ('sActDate', String, '');
+VAR ('sLicenceNo', String, '');
+VAR ('sLicenceDate', String, '');
+VAR ('bAddAct', Integer, 1);
+VAR ('bLoadAct', Integer, 0);
+
+FUNC ('OpenXml',
+ Block(
+   PARAM ('pFileName', String, 0);
+ ),
+ Block(
+    xDoc := XMLDOCUMENTCREATE();
+    XMLDOCUMENTLOAD (xDoc, sReadedDir + sFileName);
+    xDoc := XMLDOCUMENTROOT (xDoc);
+    xDoc := XMLNODECHILD (xDoc, 0);
+ )
+), // FUNC - OpenXml
+
+FUNC ('ImportCommAct',
+  Block(
+    PARAM ('pNBD', String, 0);
+    PARAM ('pBDDate', String, 1);
+  ),
+  Block(
+    bLoadAct := 1;
+    // Ищем ДО-1
+    sSQL := 'SELECT' +
+            ' PLACEID, MAIN_ID, ID' +
+            ' FROM KRD_MAIN' +
+            ' WHERE' +
+            ' NBD=' +char(39)+ pNBD +char(39)+
+            ' AND BD_DATE BETWEEN ' +char(39)+ REMOVECHAR (pBDDate, char(39)) + ' 00:00:00' +char(39)+
+            ' AND ' +char(39)+ REMOVECHAR (pBDDate, char(39)) + ' 23:59:59' +char(39)+
+            ' AND PLACEID IN (SELECT PLACEID FROM STORES WHERE LICENCENO=' +char(39)+ sLicenceNo +char(39)+ ' AND LICENCEDATE=' + SQLDate(sLicenceDate, GetBaseDriver(0)) + ')';
+    OPENQUERY ('qFindDO', 'STS_DB', sSQL);
+    IF (RECORDCOUNT ('qFindDO') = 0,
+      Block(
+        APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + 'Загрузка коммерческого акта № ' + LEFTPAD (sActNumber, 7, ' ') + ' от ' + REMOVECHAR (sActDate, char(39)) + ' невозможна!' +char(13)+ 'Причина: ДО-1 № ' + pNBD + ' от ' + REMOVECHAR (pBDDate, char(39)) + ' не найдена в БД');
+        //RAISEEXCEPTION ('Загрузка коммерческого акта № ' + sActNumber + ' от ' + REMOVECHAR (sActDate, char(39)) + ' невозможна!' +char(13)+ 'Причина: ДО-1 № ' + pNBD + ' от ' + REMOVECHAR (pBDDate, char(39)) + ' не найдена в БД');
+        bLoadAct := 0;
+      )
+    ); // IF
+
+    // Ищем комм. акт
+    sSQL := 'SELECT' +
+            ' PLACEID, ID' +
+            ' FROM KRD_DOP' +
+            ' WHERE' +
+            ' PLACEID=' + qFindDO.PLACEID +
+            ' AND DOC_NO=' +char(39)+ sActNumber +char(39)+
+            ' AND DOC_DATETIME BETWEEN ' +char(39)+ REMOVECHAR (sActDate, char(39)) + ' 00:00:00' +char(39)+
+            ' AND ' +char(39)+ REMOVECHAR (sActDate, char(39)) + ' 23:59:59' +char(39)+
+            ' AND DOC_ORDER_NUMBER=' + xDoc.ActDetails.ActOrderNumber +
+            ' AND PLACEID=' + qFindDO.PLACEID + ' AND ID=' + qFindDO.MAIN_ID;
+    OPENQUERY ('qFindAct', 'STS_DB', sSQL);
+    IF (bLoadAct * (RECORDCOUNT ('qFindAct') > 0),
+      Block(
+        APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + 'Коммерческий акт № ' + LEFTPAD (sActNumber, 7, ' ') + ' от ' + REMOVECHAR (sActDate, char(39)) + ' уже существует');
+        //RAISEEXCEPTION ('Коммерческий акт № ' + sActNumber + ' от ' + REMOVECHAR (sActDate, char(39)) + ' уже существует');
+        bLoadAct := 0;
+      )
+    ); // IF
+
+    sSQL := 'SELECT' +
+            ' DOC_ORDER_NUMBER' +
+            ' FROM KRD_DOP' +
+            ' WHERE' +
+            ' PLACEID=' + qFindDO.PLACEID +
+            ' AND ID IN (' + UNIONVALUES ('qFindDO', ['ID'], ',', '') + ')' +
+            ' AND DOC_ORDER_NUMBER >= ' + xDoc.ActDetails.ActOrderNumber;
+    OPENQUERY ('qOrderNo', 'STS_DB', sSQL);
+    IF (bLoadAct * (RECORDCOUNT ('qOrderNo') > 0),
+      Block(
+        APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + 'В базе данных уже есть коммерческий акт с порядковым номером (' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xDoc, 'ActDetails'), 'ActOrderNumber')) + ') или больше. Акт № ' + LEFTPAD (sActNumber, 7, ' ') + ' от ' + REMOVECHAR (sActDate, char(39)) + ' (к ДО-1 ' + pNBD + ' от ' + REMOVECHAR (pBDDate, char(39)) + ') не загружен');
+        //RAISEEXCEPTION ('В базе данных уже есть коммерческий акт с порядковым номером (' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xDoc, 'ActDetails'), 'ActOrderNumber')) + ') или больше');
+        bLoadAct := 0;
+      )
+    ); // IF
+    
+    IF (bLoadAct,
+      Block(
+
+        VAR ('sStage', String, IF (xDoc.DiscrepancyInfo.Stage = 'mist_AtAcceptance', 0, 1));
+        VAR ('sMistDateTime', String, REMOVECHAR (SQLDate (xDoc.DiscrepancyInfo.Date + ' ' + xDoc.DiscrepancyInfo.Time, GetBaseDriver (0)), char(39)));
+
+        VAR ('iDICount', Integer, XMLNODECHILDCOUNT (xDoc.DiscrepancyInfo));
+        VAR ('iDIIndex', Integer, 0);
+
+        WHILE (iDIIndex <= iDICount,
+          Block(
+            VAR ('XmlGood', Integer, 0);
+            CASE (XMLNODENAME (XMLNODECHILD (xDoc.DiscrepancyInfo, iDIIndex), 1),
+                 ['MissingGoods',
+                     Block(
+                       XmlGood := XMLNODECHILD (xDoc.DiscrepancyInfo, iDIIndex);
+
+                       sSQL := 'SELECT' +
+                               ' PLACEID, ID, GN, G32, G35, G311, G315A, G315C, G315CN, G42, G42_CURRENCY, G33, G312' +
+                               ' FROM KRD_COMM' +
+                               ' WHERE' +
+                               ' PLACEID=' + qFindDO.PLACEID +
+                               ' AND ID IN (' + UNIONVALUES ('qFindDO', ['ID'], ',', '') + ')' +
+                               ' AND GN=' + XMLNODEVALUE (XMLNODEFIND (XmlGood, 'DO1GoodNumber'));
+                       OPENQUERY ('qFindComm', 'STS_DB', sSQL);
+
+                       IF (RECORDCOUNT ('qFindComm') > 0,
+                         Block(
+                           sSQL := 'SELECT' +
+                                   ' MAX(COUNTER) MC' +
+                                   ' FROM KRD_DOP' +
+                                   ' WHERE' +
+                                   ' PLACEID=' + qFindComm.PLACEID +
+                                   ' AND ID=' + qFindComm.ID;
+                           OPENQUERY ('qMaxCounter', 'STS_DB', sSQL);
+                           VAR ('iMC', Integer, qMaxCounter.MC);
+
+                           IF (bAddAct,
+                             Block(
+                               VAR ('sLeaksDescr', String, '');
+                               VAR ('iNodeCount', Integer, XMLNODECHILDCOUNT (xDoc.DiscrepancyDetails));
+                               VAR ('iNodeIndex', Integer, 0);
+                               WHILE (iNodeIndex < iNodeCount,
+                                 Block(
+                                   IF (XMLNODENAME (XMLNODECHILD (xDoc.DiscrepancyDetails, iNodeIndex), 1) = 'LeaksDescription',
+                                      Block(
+                                        sLeaksDescr := sLeaksDescr + XMLNODEVALUE (XMLNODECHILD (xDoc.DiscrepancyDetails, iNodeIndex), 1);
+                                      )
+                                   ); // IF
+                                   iNodeIndex := iNodeIndex + 1;
+                                 )
+                               ); // WHILE
+
+                               VAR ('sStage', String, '0');
+                               sStage := CASE (xDoc.DiscrepancyInfo.Stage,
+                                      [
+                                        'mist_AtAcceptance', 0,
+                                        'mist_AtKeeping', 1,
+                                      ], 0);
+                               VAR ('dtSDM_DateTime', DateTime);
+                               dtSDM_DateTime := STRTODATE (xDoc.DiscrepancyInfo.Date, 'YYYY-MM-DD', '-');
+                               IF (LENGTH (xDoc.DiscrepancyInfo.Time) > 0,
+                                 dtSDM_DateTime := dtSDM_DateTime + (' ' + xDoc.DiscrepancyInfo.Time);
+                               );
+
+                               iMC := iMC + 1;
+                               
+                               // Добавляем запись в KRD_DOP
+                               PrepareInsert2 ();
+                               Insert2 ('PLACEID',                 qFindComm.PLACEID, 1);
+                               Insert2 ('ID',                      qFindComm.ID, 1);
+                               Insert2 ('COUNTER',                 iMC, 1);
+                               Insert2 ('DOC_NO',                  CONVERT (sActNumber, String));
+                               Insert2 ('DOC_DATETIME',            CONVERT (sActDate, String), 2);
+                               Insert2 ('DOC_NAME',                CONVERT (xDoc.ActDetails.ActName, String));
+                               Insert2 ('DOC_ORDER_NUMBER',        CONVERT (xDoc.ActDetails.ActOrderNumber, String), 1);
+                               Insert2 ('DOC_SDM_STAGE',           sStage);
+                               Insert2 ('DOC_SDM_DATETIME',        dtSDM_DateTime, 2);
+                               Insert2 ('WAREHOUSEPERSON_SURNAME', CONVERT (xDoc.WareHousePerson.PersonSurname, String));
+                               Insert2 ('WAREHOUSEPERSON_NAME',    CONVERT (xDoc.WareHousePerson.PersonName, String));
+                               Insert2 ('WAREHOUSEPERSON_MDLNAME', CONVERT (xDoc.WareHousePerson.PersonMiddleName, String));
+                               Insert2 ('WAREHOUSEPERSON_POST',    CONVERT (xDoc.WareHousePerson.PersonPost, String));
+                               Insert2 ('REASONS',                 CONVERT (xDoc.DiscrepancyInfo.Reasons, String));
+                               Insert2 ('RECIPIENTPERSON_FLAG',    CONVERT (xDoc.DiscrepancyDetails.RecipientFlag, String), 1);
+                               Insert2 ('CARRIERPERSON_FLAG',      CONVERT (xDoc.DiscrepancyDetails.CarrierFlag, String), 1);
+                               Insert2 ('LEAKS_FLAG',              CONVERT (xDoc.DiscrepancyDetails.LeaksFlag, String), 1);
+                               Insert2 ('LEAKS_DESCRIPTION',       sLeaksDescr);
+                               Insert2 ('DOCUMENTID',              xDoc.DocumentID);
+                               Insert2 ('', '', 0, 'KRD_DOP', 'STS_DB');
+                               // Выставляем значение 0, чтобы не добавлять больше один и тот же акт
+                               bAddAct := 0;
+                             )
+                           );
+                           // Добавляем запись в KRD_CSDM
+                           PrepareInsert2 ();
+                           Insert2 ('PLACEID',  qFindComm.PLACEID, 1);
+                           Insert2 ('ID',               qFindComm.ID, 1);
+                           Insert2 ('G32',              qFindComm.G32, 1);
+                           Insert2 ('COUNTER',          iMC, 1);
+                           Insert2 ('SDM_DATETIME',     CONVERT (sMistDateTime, String), 2);
+                           Insert2 ('SDM_STAGE',        CONVERT (sStage, String));
+                           Insert2 ('SDM_KIND',         '1');
+                           Insert2 ('DOC_G312',         CONVERT (qFindComm.G312, String));
+                           Insert2 ('DOC_G33',          CONVERT (qFindComm.G33, String));
+                           Insert2 ('DOC_G311',         CONVERT (qFindComm.G311, Float), 1);
+                           Insert2 ('DOC_G35',          CONVERT (qFindComm.G35, Float), 1);
+                           Insert2 ('DOC_G42',          CONVERT (qFindComm.G42, Float), 1);
+                           Insert2 ('DOC_G42_CURRENCY', CONVERT (qFindComm.G42_CURRENCY, String));
+                           Insert2 ('', '', 0, 'KRD_CSDM', 'STS_DB');
+                           //REFRESH ('KRD_DOP');
+                           
+                           // Обновляем "Информацию о товаре" по факту (KRD_COMM)
+                           sSQL := 'UPDATE KRD_COMM' +
+                                   ' SET' +
+                                   ' G42=NULL, G311=NULL, G315A=NULL, G35=NULL, G315C=NULL, G33=NULL, G315CN=NULL, G312=NULL' +
+                                   ' WHERE' +
+                                   ' PLACEID=' + qFindComm.PLACEID +
+                                   ' AND ID=' + qFindComm.ID +
+                                   ' AND G32=' + qFindComm.G32;
+                           EXECUTESQL ('STS_DB', sSQL);
+                         )
+                       ); // IF
+                     ),
+                  'DiscrepantGoods',
+                     Block(
+                       XmlGood := XMLNODECHILD (xDoc.DiscrepancyInfo, iDIIndex);
+
+                       sSQL := 'SELECT' +
+                               ' PLACEID, ID, GN, G32, G35, G311, G315A, G315C, G315CN, G42, G42_CURRENCY, G33, G312' +
+                               ' FROM KRD_COMM' +
+                               ' WHERE' +
+                               ' PLACEID=' + qFindDO.PLACEID +
+                               ' AND ID IN (' + UNIONVALUES ('qFindDO', ['ID'], ',', '') + ')' +
+                               ' AND GN=' + XMLNODEVALUE (XMLNODEFIND (XmlGood, 'DO1GoodNumber'));
+                       OPENQUERY ('qFindComm', 'STS_DB', sSQL);
+
+                       IF (RECORDCOUNT ('qFindComm') > 0,
+                         Block(
+                           sSQL := 'SELECT' +
+                                   ' MAX(COUNTER) MC' +
+                                   ' FROM KRD_DOP' +
+                                   ' WHERE' +
+                                   ' PLACEID=' + qFindComm.PLACEID +
+                                   ' AND ID=' + qFindComm.ID;
+                           OPENQUERY ('qMaxCounter', 'STS_DB', sSQL);
+                           VAR ('iMC', Integer, qMaxCounter.MC);
+
+                           IF (bAddAct,
+                             Block(
+                               VAR ('sLeaksDescr', String, '');
+                               VAR ('iNodeCount', Integer, XMLNODECHILDCOUNT (xDoc.DiscrepancyDetails));
+                               VAR ('iNodeIndex', Integer, 0);
+                               WHILE (iNodeIndex < iNodeCount,
+                                 Block(
+                                   IF (XMLNODENAME (XMLNODECHILD (xDoc.DiscrepancyDetails, iNodeIndex), 1) = 'LeaksDescription',
+                                      Block(
+                                        sLeaksDescr := sLeaksDescr + XMLNODEVALUE (XMLNODECHILD (xDoc.DiscrepancyDetails, iNodeIndex));
+                                      )
+                                   ); // IF
+                                   iNodeIndex := iNodeIndex + 1;
+                                 )
+                               ); // WHILE
+
+                               VAR ('sStage', String, '0');
+                               sStage := CASE (xDoc.DiscrepancyInfo.Stage,
+                                      [
+                                        'mist_AtAcceptance', 0,
+                                        'mist_AtKeeping', 1,
+                                      ], 0);
+                               VAR ('dtSDM_DateTime', DateTime);
+                               dtSDM_DateTime := STRTODATE (xDoc.DiscrepancyInfo.Date, 'YYYY-MM-DD', '-');
+                               IF (LENGTH (xDoc.DiscrepancyInfo.Time) > 0,
+                                 dtSDM_DateTime := dtSDM_DateTime + (' ' + xDoc.DiscrepancyInfo.Time);
+                               );
+                               
+                               iMC := iMC + 1;
+                               // Добавляем запись в KRD_DOP
+                               PrepareInsert2 ();
+                               Insert2 ('PLACEID',          qFindComm.PLACEID, 1);
+                               Insert2 ('ID',                      qFindComm.ID, 1);
+                               Insert2 ('COUNTER',                 iMC, 1);
+                               Insert2 ('DOC_SDM_STAGE',           sStage);
+                               Insert2 ('DOC_SDM_DATETIME',        dtSDM_DateTime, 2);
+                               Insert2 ('DOC_NO',                  CONVERT (sActNumber, String));
+                               Insert2 ('DOC_DATETIME',            CONVERT (sActDate, String), 2);
+                               Insert2 ('DOC_NAME',                CONVERT (xDoc.ActDetails.ActName, String));
+                               Insert2 ('DOC_ORDER_NUMBER',        CONVERT (xDoc.ActDetails.ActOrderNumber, String), 1);
+                               Insert2 ('WAREHOUSEPERSON_SURNAME', CONVERT (xDoc.WareHousePerson.PersonSurname, String));
+                               Insert2 ('WAREHOUSEPERSON_NAME',    CONVERT (xDoc.WareHousePerson.PersonName, String));
+                               Insert2 ('WAREHOUSEPERSON_MDLNAME', CONVERT (xDoc.WareHousePerson.PersonMiddleName, String));
+                               Insert2 ('WAREHOUSEPERSON_POST',    CONVERT (xDoc.WareHousePerson.PersonPost, String));
+                               Insert2 ('REASONS',                 CONVERT (xDoc.DiscrepancyInfo.Reasons, String));
+                               Insert2 ('RECIPIENTPERSON_FLAG',    CONVERT (xDoc.DiscrepancyDetails.RecipientFlag, String), 1);
+                               Insert2 ('CARRIERPERSON_FLAG',      CONVERT (xDoc.DiscrepancyDetails.CarrierFlag, String), 1);
+                               Insert2 ('LEAKS_FLAG',              CONVERT (xDoc.DiscrepancyDetails.LeaksFlag, String), 1);
+                               Insert2 ('LEAKS_DESCRIPTION',       sLeaksDescr);
+                               Insert2 ('DOCUMENTID',              xDoc.DocumentID);
+                               Insert2 ('', '', 0, 'KRD_DOP', 'STS_DB');
+                               //REFRESH ('KRD_MAIN');
+                               // Выставляем значение 0, чтобы не добавлять несколько раз один и тот же акт
+                               bAddAct := 0;
+                             )
+                           ); // IF - bAddAct
+
+                           // !! описание товара нужно "склеивать" в цикле
+                           VAR ('iNodeCount', Integer, XMLNODECHILDCOUNT (XMLNODEFIND (XmlGood, 'GoodsDescription')));
+                           VAR ('iNodeIndex', Integer, 0);
+                           VAR ('sDescrByDocs', String, '');
+                           VAR ('sDescrByFact', String, '');
+                           WHILE (iNodeIndex < iNodeCount,
+                             Block(
+                               CASE (XMLNODENAME (XMLNODECHILD (XMLNODEFIND (XmlGood, 'GoodsDescription'), iNodeIndex), 1),
+                                 ['GoodsDescriptionByDocs', sDescrByDocs := sDescrByDocs + XMLNODEVALUE (XMLNODECHILD (XMLNODEFIND (XmlGood, 'GoodsDescription'), iNodeIndex)),
+                                  'GoodsDescriptionByFact', sDescrByFact := sDescrByFact + XMLNODEVALUE (XMLNODECHILD (XMLNODEFIND (XmlGood, 'GoodsDescription'), iNodeIndex)),
+                                 ],
+                               ); // CASE
+                               iNodeIndex := iNodeIndex + 1;
+                             )
+                           ); // WHILE
+
+                           VAR ('factG33',          String, XmlGood.GoodsTNVEDCode.TNVEDCodeByFact);
+                           VAR ('factG42',          String, XmlGood.InvoiceCost.InvoiceCostByFact.CostAmount);
+                           VAR ('factG311',         String, XmlGood.PlaceNumber.PlaceNumberByFact);
+                           VAR ('factG315A',        String, XmlGood.GoodsQuantityByFact.GoodsQuantity);
+                           VAR ('factG35',          String, XmlGood.BruttoVolQuant.BruttoVolQuantByFact.GoodsQuantity);
+                           VAR ('factG315C',        String, XmlGood.BruttoVolQuant.BruttoVolQuantByFact.GoodsQuantity);
+                           VAR ('factG315CN',       String, XmlGood.BruttoVolQuant.BruttoVolQuantByFact.MeasureUnitQualifierCode);
+                           VAR ('factG312',         String, sDescrByFact);
+                           VAR ('factG42_CURRENCY', String, CURRENCYCODE (XmlGood.InvoiceCost.InvoiceCostByDocs.CostCurrencyCode));
+                           
+                           IF ((LENGTH (XmlGood.PlaceNumber.PlaceNumberByDocs) = 0) *
+                               (LENGTH (factG311) = 0),
+                             factG311 := qFindComm.G311
+                           ); // IF
+                           
+                           IF ((LENGTH (XmlGood.BruttoVolQuant.BruttoVolQuantByDocs.GoodsQuantity) = 0) *
+                               (LENGTH (factG35) = 0),
+                             factG35 := qFindComm.G35
+                           ); // IF
+                           
+                           IF (XmlGood.InvoiceCost.InvoiceCostByDocs.CostAmount * (LENGTH (factG42) = 0),
+//                           IF ((LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostAmount'))) = 0) *
+//                               (LENGTH (factG42) = 0),
+                             factG42 := qFindComm.G42
+                           ); // IF
+                           
+                           IF (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostCurrencyCode') * (LENGTH (factG42_CURRENCY) = 0),
+//                           IF ((LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostCurrencyCode'))) = 0) *
+//                               (LENGTH (factG42_CURRENCY) = 0),
+                             factG42_CURRENCY := qFindComm.G42_CURRENCY
+                           ); // IF
+                           
+                           IF ((LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'GoodsTNVEDCode'), 'TNVEDCodeByDocs'))) = 0) *
+                               (LENGTH (factG33) = 0),
+                             factG33 := qFindComm.G33
+                           ); // IF
+
+                           // Добавляем запись в KRD_CSDM
+                           PrepareInsert2 ();
+                           Insert2 ('PLACEID',          qFindComm.PLACEID, 1);
+                           Insert2 ('ID',               qFindComm.ID, 1);
+                           Insert2 ('G32',              qFindComm.G32, 1);
+                           Insert2 ('COUNTER',          iMC, 1);
+                           Insert2 ('SDM_DATETIME',     CONVERT (sMistDateTime, String), 2);
+                           Insert2 ('SDM_STAGE',        CONVERT (sStage, String));
+                           Insert2 ('SDM_KIND',         '0');
+                           IF (XMLNODEFIND (XMLNODEFIND (XmlGood, 'PlaceNumber'), 'PlaceNumberByDocs'),
+                             Insert2 ('DOC_G311',       CONVERT (XmlGood.PlaceNumber.PlaceNumberByDocs, String), 1),
+                             Insert2 ('DOC_G311',       CONVERT (qFindComm.G311, String), 1),
+                           ); // IF
+                           Insert2 ('FACT_G311',        CONVERT (factG311, String), 1);
+                           IF (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'BruttoVolQuantByDocs'), 'GoodsQuantity'),
+                             Insert2 ('DOC_G35',        CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'BruttoVolQuantByDocs'), 'GoodsQuantity')), String), 1),
+                             Insert2 ('DOC_G35',        CONVERT (qFindComm.G35, String), 1);
+                           ); // IF
+                           Insert2 ('FACT_G35',         CONVERT (factG35, String), 1);
+                           IF (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostAmount'),
+                             Insert2 ('DOC_G42',        CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostAmount')), String), 1),
+                             Insert2 ('DOC_G42',        CONVERT (qFindComm.G42, String), 1),
+                           ); // IF
+                           Insert2 ('FACT_G42',       CONVERT (factG42, String), 1);
+                           IF (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostCurrencyCode'),
+                             Insert2 ('DOC_G42_CURRENCY', CURRENCYCODE (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlGood, 'InvoiceCost'), 'InvoiceCostByDocs'), 'CostCurrencyCode')))),
+                             Insert2 ('DOC_G42_CURRENCY', CONVERT (qFindComm.G42_CURRENCY, String));
+                           ); // IF
+                           Insert2 ('FACT_G42_CURRENCY', CONVERT (factG42_CURRENCY, String));
+                           IF (XMLNODEFIND (XMLNODEFIND (XmlGood, 'GoodsTNVEDCode'), 'TNVEDCodeByDocs'),
+                             Insert2 ('DOC_G33',        CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'GoodsTNVEDCode'), 'TNVEDCodeByDocs')), String)),
+                             Insert2 ('DOC_G33',        CONVERT (qFindComm.G33, String))
+                           ); // IF
+                           Insert2 ('FACT_G33',       CONVERT (factG33, String));
+
+                           IF (LENGTH (sDescrByDocs) > 0,
+                             Block(
+                               Insert2 ('DOC_G312',         sDescrByDocs);
+                             ),
+                             Block(
+                               Insert2 ('DOC_G312',         qFindComm.G312);
+                             )
+                           ); // IF
+
+                           IF (LENGTH (sDescrByFact) > 0,
+                             Block(
+                               Insert2 ('FACT_G312',        sDescrByFact);
+                             ),
+                             Block(
+                               IF (LENGTH (sDescrByDocs) = 0,
+                                 Insert2 ('FACT_G312',        qFindComm.G312);
+                               ); // IF
+                             )
+                           ); // IF
+
+                           Insert2 ('SDM_REASONS',      CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlGood, 'Comments')), String));
+                           Insert2 ('', '', 0, 'KRD_CSDM', 'STS_DB');
+                           //REFRESH ('KRD_DOP');
+
+                           // Обновляем "Информацию о товаре" по факту (KRD_COMM)
+                           sSQL := 'UPDATE KRD_COMM SET ';
+                           // Код ТН ВЭД
+                           sSQL := sSQL + 'G33=' +char(39)+ factG33 +char(39);
+                           // Описание товара
+                           IF (LENGTH (sDescrByFact) > 0, sSQL := sSQL + ', G312=' +char(39)+ sDescrByFact +char(39));
+                           // Стоимость
+                           sSQL := sSQL + ', G42=' + CONVERT (factG42, Float);
+                           // Количество грузовых мест
+                           sSQL := sSQL + ', G311=' + CONVERT (factG311, Float);
+                           // Количество в доп. еденицах измерения
+                           sSQL := sSQL + ', G315A=' + CONVERT (factG315A, Float);
+                           // Вес брутто/Объём
+                           IF (factG315CN = '166',
+                             Block(
+                               sSQL := sSQL + ', G35=' + CONVERT (factG35, Float);
+                             ),
+                             Block(
+                               sSQL := sSQL + ', G315C=' + CONVERT (factG315C, Float);
+                               sSQL := sSQL + ', G315CN=' +char(39)+ CONVERT (factG315CN, String) +char(39);
+                             )
+                           );
+                           sSQL := sSQL + ' WHERE PLACEID=' + qFindComm.PLACEID + ' AND ID=' + qFindComm.ID + ' AND G32=' +qFindComm.G32;
+                           EXECUTESQL ('STS_DB', sSQL);
+                         )
+                       ); // IF
+                     ),
+                  'ExtraGoods',
+                     Block(
+                       VAR ('XmlExtraGoods', Integer, XMLNODECHILD (xDoc.DiscrepancyInfo, iDIIndex));
+                       VAR ('iExtraGoodsChildCount', Integer, XMLNODECHILDCOUNT (XmlExtraGoods));
+                       VAR ('iExtraGoodsChildIndex', Integer, 0);
+
+                       VAR ('sPaperCode',   String, CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlExtraGoods, 'PresentedDocumentModeCode')), String));
+                       VAR ('sPaperName',   String, CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlExtraGoods, 'PrDocumentName')), String));
+                       VAR ('sPaperDate',   String, REMOVECHAR (SQLDate (CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlExtraGoods, 'PrDocumentDate')), String), GetBaseDriver (0)), char(39)));
+                       VAR ('sPaperNumber', String, CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlExtraGoods, 'PrDocumentNumber')), String));
+
+                       //IF (LENGTH (sPaperCode) = 0, sPaperCode := REFERENCE ('PAPERS', 'PAPERNAME', sPaperName, 'PAPER_DOCG44_CODE'));
+                       IF (LENGTH (REFERENCE('PAPERS', 'PAPERFULLNAME', sPaperName, 'PAPERNAME')) > 0,
+                         sPaperName := REFERENCE('PAPERS', 'PAPERFULLNAME', sPaperName, 'PAPERNAME')
+                       ); // IF
+
+                       sSQL := 'SELECT MAX (COUNTER) AS MC FROM KR_PAPER WHERE PLACEID=' + qFindDO.PLACEID + ' AND ID=' + qFindDO.ID;
+                       OPENQUERY ('qMaxC', 'STS_DB', sSQL);
+                       VAR ('iMC', Integer, (qMaxC.MC + 1));
+                       // Добавляем новую накладную (даже если такая уже была в БД)
+                       PrepareInsert2 ();
+                       Insert2 ('PLACEID', qFindDO.PLACEID, 1);
+                       Insert2 ('ID',              qFindDO.ID, 1);
+                       Insert2 ('COUNTER',         iMC, 1);
+                       Insert2 ('PAPERNO',         CONVERT (sPaperNumber, String));
+                       Insert2 ('PAPERNAME',       CONVERT (sPaperName, String));
+                       Insert2 ('PAPERDATE',       CONVERT (sPaperDate, String), 2);
+                       Insert2 ('PAPERCODE',       CONVERT (sPaperCode, String));
+                       Insert2 ('', '', 0, 'KR_PAPER', 'STS_DB');
+                       //REFRESH ('KR_PAPER');
+
+    //!!
+    {
+                       VAR ('iExtraCount', Integer, XMLNODECHILDCOUNT (XmlExtraGoods));
+                       VAR ('iExtraIndex', Integer, 0);
+                       VAR ('iExtraSubIndex', Integer, 0);
+                       VAR ('tmpXml', Integer, XMLDOCUMENTCREATE());
+                       VAR ('tmpGood', Integer, 0);
+                       tmpXml := XMLDOCUMENTROOT (tmpXml);
+
+                       WHILE (iExtraIndex < iExtraCount,
+                         Block(
+                           IF (XMLNODENAME (XMLNODECHILD (XmlExtraGoods, iExtraIndex), 1) = 'Goods',
+                             Block(
+                               tmpGood := XMLNODEADDCHILD (tmpXml, 'Good');
+                               WHILE (iExtraSubIndex < iExtraCount,
+                                 Block(
+
+                                   iExtraSubIndex := iExtraSubIndex + 1;
+                                 )
+                               ); // WHILE
+                             )
+                           ); // IF
+                           iExtraIndex := iExtraIndex + 1;
+                         )
+                       ); // WHILE
+    }
+    //!!
+                       WHILE (iExtraGoodsChildIndex < iExtraGoodsChildCount,
+                         Block(
+                           IF (XMLNODENAME (XMLNODECHILD (XmlExtraGoods, iExtraGoodsChildIndex), 1) = 'Goods',
+                             Block(
+
+                               XmlGood := XMLNODECHILD (XmlExtraGoods, iExtraGoodsChildIndex);
+
+                               sSQL := 'SELECT MAX (GN) AS MC FROM KRD_COMM WHERE PLACEID=' + qFindDO.PLACEID + ' AND ID=' + qFindDO.ID;
+                               OPENQUERY ('qMaxCC', 'STS_DB', sSQL);
+                               VAR ('iMCC', Integer, (qMaxCC.MC + 1));
+                               // Добавляем товар на новую накладную
+                               PrepareInsert2 ();
+                               Insert2 ('PLACEID', qFindDO.PLACEID, 1);
+                               Insert2 ('ID',              qFindDO.ID, 1);
+                               Insert2 ('G32',             iMCC, 1);
+                               Insert2 ('GN',              iMCC, 1);
+                               Insert2 ('G311',            CONVERT (XmlGood.CargoPlace.PlaceNumber, String), 1);
+                               Insert2 ('G313',            CONVERT (XmlGood.CargoPlace.PlaceDescription, String));
+                               // !! описание товара нужно "склеивать" в цикле
+                               VAR ('iNodeCount', Integer, XMLNODECHILDCOUNT (XmlGood));
+                               VAR ('iNodeIndex', Integer, 0);
+                               VAR ('sDescrByFact', String, '');
+                               WHILE (iNodeIndex < iNodeCount,
+                                 Block(
+                                   IF (XMLNODENAME (XMLNODECHILD (XmlGood, iNodeIndex), 1) = 'GoodsDescription',
+                                     Block(
+                                      sDescrByFact := sDescrByFact + XMLNODEVALUE (XMLNODECHILD (XmlGood, iNodeIndex)),
+                                     )
+                                   ); // IF
+                                   iNodeIndex := iNodeIndex + 1;
+                                 )
+                               ); // WHILE
+
+                               Insert2 ('G312',            sDescrByFact, 0);
+                               Insert2 ('G33',             CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlGood, 'GoodsTNVEDCode')), String), 0);
+                               // Определяем что это - объём или вес брутто?
+                               IF (CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'MeasureUnitQualifierCode')), String) = '166',
+                                 Block(
+                                   Insert2 ('G35',         CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'GoodsQuantity')), String), 1);
+                                 ),
+                                 Block(
+                                   Insert2 ('G35',         0, 1);
+                                   Insert2 ('G315C',       CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'GoodsQuantity')), String), 1);
+                                   Insert2 ('G315CN',      CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'MeasureUnitQualifierName')), String));
+                                   Insert2 ('G31_82',      CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'BruttoVolQuant'), 'MeasureUnitQualifierCode')), String));
+                                 )
+                               ); // IF
+                               // Загружаем количество в дополнительных еденицах измерения
+                               Insert2 ('G315A',           CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'MeasureQuantity'), 'GoodsQuantity')), String), 1);
+                               Insert2 ('G315',            CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'MeasureQuantity'), 'MeasureUnitQualifierName')), String));
+                               Insert2 ('G41A',            CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'MeasureQuantity'), 'MeasureUnitQualifierCode')), String));
+                               Insert2 ('G42',             CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlGood, 'InvoiceCost')), String), 1);
+                               Insert2 ('G42_CURRENCY',    CONVERT (CURRENCYCODE (XMLNODEVALUE (XMLNODEFIND (XmlGood, 'CurrencyCode'))), String));
+                               Insert2 ('BOXNO',           CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlGood, 'GoodsWHNumber')), String));
+                               Insert2 ('N_TTN',           iMC, 1);
+                               Insert2 ('N_TTN_G32',       (iExtraGoodsChildIndex + 1), 1);
+                               Insert2 ('ACCEPTDATE',      REMOVECHAR (SQLDate (CONVERT ((XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'AcceptDate')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'AcceptTime'))), String), GetBaseDriver (0)), char(39)), 2);
+                               Insert2 ('STORAGE_TYPE',    CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'StoringDateType')), String));
+                               Insert2 ('STORAGE_DATE',    REMOVECHAR (SQLDate (CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'DeadLineDate')), String), GetBaseDriver (0)), char(39)), 2);
+                               Insert2 ('', '', 0, 'KRD_COMM', 'STS_DB');
+                               //REFRESH ('KRD_COMM');
+
+                               sSQL := 'SELECT' +
+                                       ' MAX(COUNTER) MC' +
+                                       ' FROM KRD_DOP' +
+                                       ' WHERE' +
+                                       ' PLACEID=' + qFindDO.PLACEID +
+                                       ' AND ID=' + qFindDO.ID;
+                               OPENQUERY ('qMaxCounter', 'STS_DB', sSQL);
+                               VAR ('iMCounter', Integer, qMaxCounter.MC);
+
+                               IF (bAddAct,
+                                 Block(
+                                   VAR ('sLeaksDescr', String, '');
+                                   VAR ('iNodeCount', Integer, XMLNODECHILDCOUNT (xDoc.DiscrepancyDetails));
+                                   VAR ('iNodeIndex', Integer, 0);
+                                   WHILE (iNodeIndex < iNodeCount,
+                                     Block(
+                                       IF (XMLNODENAME (XMLNODECHILD (xDoc.DiscrepancyDetails, iNodeIndex), 1) = 'LeaksDescription',
+                                          Block(
+                                            sLeaksDescr := sLeaksDescr + XMLNODEVALUE (XMLNODECHILD (xDoc.DiscrepancyDetails, iNodeIndex));
+                                          )
+                                       ); // IF
+                                       iNodeIndex := iNodeIndex + 1;
+                                     )
+                                   ); // WHILE
+
+                                   VAR ('sStage', String, '0');
+                                   sStage := CASE (xDoc.DiscrepancyInfo.Stage,
+                                          [
+                                            'mist_AtAcceptance', 0,
+                                            'mist_AtKeeping', 1,
+                                          ], 0);
+                                   VAR ('dtSDM_DateTime', DateTime);
+                                   dtSDM_DateTime := STRTODATE (xDoc.DiscrepancyInfo.Date, 'YYYY-MM-DD', '-');
+                                   IF (LENGTH (xDoc.DiscrepancyInfo.Time) > 0,
+                                     dtSDM_DateTime := dtSDM_DateTime + (' ' + xDoc.DiscrepancyInfo.Time);
+                                   ); // IF
+                                   
+                                   iMCounter := iMCounter + 1;
+                                   // Добавляем запись в KRD_DOP
+                                   PrepareInsert2 ();
+                                   Insert2 ('PLACEID',                 qFindDO.PLACEID, 1);
+                                   Insert2 ('ID',                      qFindDO.ID, 1);
+                                   Insert2 ('COUNTER',                 iMCounter, 1);
+                                   Insert2 ('DOC_SDM_STAGE',           sStage);
+                                   Insert2 ('DOC_SDM_DATETIME',        dtSDM_DateTime, 2);
+                                   Insert2 ('DOC_NO',                  CONVERT (sActNumber, String));
+                                   Insert2 ('DOC_DATETIME',            CONVERT (sActDate, String), 2);
+                                   Insert2 ('DOC_NAME',                CONVERT (xDoc.ActDetails.ActName, String));
+                                   Insert2 ('DOC_ORDER_NUMBER',        CONVERT (xDoc.ActDetails.ActOrderNumber, String), 1);
+                                   Insert2 ('WAREHOUSEPERSON_SURNAME', CONVERT (xDoc.WareHousePerson.PersonSurname, String));
+                                   Insert2 ('WAREHOUSEPERSON_NAME',    CONVERT (xDoc.WareHousePerson.PersonName, String));
+                                   Insert2 ('WAREHOUSEPERSON_MDLNAME', CONVERT (xDoc.WareHousePerson.PersonMiddleName, String));
+                                   Insert2 ('WAREHOUSEPERSON_POST',    CONVERT (xDoc.WareHousePerson.PersonPost, String));
+                                   Insert2 ('REASONS',                 CONVERT (xDoc.DiscrepancyInfo.Reasons, String));
+                                   Insert2 ('RECIPIENTPERSON_FLAG',    CONVERT (xDoc.DiscrepancyDetails.RecipientFlag, String), 1);
+                                   Insert2 ('CARRIERPERSON_FLAG',      CONVERT (xDoc.DiscrepancyDetails.CarrierFlag, String), 1);
+                                   Insert2 ('LEAKS_FLAG',              CONVERT (xDoc.DiscrepancyDetails.LeaksFlag, String), 1);
+                                   Insert2 ('LEAKS_DESCRIPTION',       sLeaksDescr);
+                                   Insert2 ('DOCUMENTID',              xDoc.DocumentID);
+                                   Insert2 ('', '', 0, 'KRD_DOP', 'STS_DB');
+                                   //REFRESH ('KRD_MAIN');
+                                   // Выставляем значение 0, чтобы не добавлять несколько раз один и тот же акт
+                                   bAddAct := 0;
+                                 )
+                               ); // IF - bAddAct
+
+                               // Добавляем запись в KRD_CSDM
+                               PrepareInsert2 ();
+                               Insert2 ('PLACEID',          qFindDO.PLACEID, 1);
+                               Insert2 ('ID',               qFindDO.ID, 1);
+                               Insert2 ('G32',              iMCC, 1);
+                               Insert2 ('COUNTER',          iMCounter, 1);
+                               Insert2 ('SDM_DATETIME',     CONVERT (sMistDateTime, String), 2);
+                               Insert2 ('SDM_STAGE',        CONVERT (sStage, String));
+                               Insert2 ('SDM_KIND',         '2');
+                               Insert2 ('FACT_G311',         CONVERT (XmlGood.CargoPlace.PlaceNumber, String), 1);
+                               Insert2 ('FACT_G35',          CONVERT (XmlGood.BruttoVolQuant.GoodsQuantity, String), 1);
+                               Insert2 ('FACT_G42',          CONVERT (XmlGood.InvoiceCost, String), 1);
+                               Insert2 ('FACT_G42_CURRENCY', CONVERT (CURRENCYCODE (XmlGood.CurrencyCode), String));
+                               Insert2 ('FACT_G33',          CONVERT (XmlGood.GoodsTNVEDCode, String));
+                               // !! описание товара нужно "склеивать" в цикле
+                               Insert2 ('FACT_G312',         sDescrByFact);
+//                               Insert2 ('FACT_G312',         sDescrByFact);
+                               Insert2 ('FACT_ACCEPTDATE',   REMOVECHAR (SQLDate (CONVERT ((XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'AcceptDate')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'AcceptTime'))), String), GetBaseDriver (0)), char(39)), 2);
+                               Insert2 ('FACT_STORAGE_TYPE', CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'StoringDateType')), String));
+                               Insert2 ('FACT_STORAGE_DATE', REMOVECHAR (SQLDate (CONVERT (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGood, 'KeepingLimit'), 'DeadLineDate')), String), GetBaseDriver (0)), char(39)), 2);
+                               Insert2 ('FACT_BOXNO',        CONVERT (XMLNODEVALUE (XMLNODEFIND (XmlGood, 'GoodsWHNumber')), String));
+                               Insert2 ('', '', 0, 'KRD_CSDM', 'STS_DB');
+                               //REFRESH ('KRD_DOP');
+
+                             )
+                           ); // IF
+
+                           iExtraGoodsChildIndex := iExtraGoodsChildIndex + 1;
+                         )
+                       ); // WHILE
+
+                     )
+                 ]
+            ); // CASE
+
+            iDIIndex := iDIIndex + 1;
+          )
+        ); // WHILE
+        APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + 'Коммерческий акт № ' + LEFTPAD (sActNumber, 7, ' ') + ' от ' + REMOVECHAR (sActDate, char(39)) + ' успешно загружен.');
+        CopyFile (sReadedDir + sFileName, sReadedDir + 'Done\' + sFileName);
+        DeleteFile (sReadedDir + sFileName);
+        Success := Success + 1;
+      ),
+      Block(
+        CopyFile (sReadedDir + sFileName, sReadedDir + 'Error\' + sFileName);
+        DeleteFile (sReadedDir + sFileName);
+        Errors := Errors + 1;
+      )
+    );
+  )
+), // FUNC - ImportCommAct
+
+  IF (SELECTDIRECTORY ('sReadedDir') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+  WRITEINIFILE ('CommActImport', 'Directory', sReadedDir);
+  sReadedDir := INCLUDETRAILINGBACKSLASH (sReadedDir);
+  ForceDirectories (sReadedDir + 'Done');
+  ForceDirectories (sReadedDir + 'Error');
+
+  sFileList := GETFILELIST (sReadedDir, '*.xml', '|');
+  IF (LENGTH (TRIM (sFileList)) = 0, RAISEEXCEPTION ('В выбранном каталоге отсутствуют xml-файлы для загрузки'));
+
+  // Открываем временную БД "dbTemp"
+  // Проверяем есть ли в ней таблица "FILE_LIST"
+  // Если есть - удаляем, после чего создаём заново
+  // Если нет, то просто создаём
+  OPENDATABASE ('dbTemp', 'STANDARD', 'PATH=' + INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()));
+
+  TRYEXCEPT (
+    Block(
+      IF (TABLEEXISTS ('FILE_LIST', 'dbTemp'),
+        Block(
+          sSQL := 'DROP TABLE FILE_LIST';
+          EXECUTESQL ('dbTemp', sSQL);
+        )
+      ); // IF
+      sSQL := 'CREATE TABLE FILE_LIST (FILE_NAME VARCHAR(255), ' +
+                                      'DO_NUMBER VARCHAR(255), ' +
+                                      'DO_DATE VARCHAR(255), ' +
+                                      'ACT_NUMBER VARCHAR(255), ' +
+                                      'ACT_DATE VARCHAR(255), ' +
+                                      'LICENCENO VARCHAR(255), ' +
+                                      'LICENCEDATE VARCHAR(255))';
+      EXECUTESQL ('dbTemp', sSQL);
+
+      // Для показа списка файлов пользователю - добавляем пути к файлам во временную таблицу
+      iFileCount := SPLITSTR (sFileList, '|', sSQL);
+      WHILE (iFileIndex <= iFileCount,
+        Block(
+          sSQL := '';
+          sFileName := EXTRACTSTR (sFileList, iFileIndex, '|');
+          OpenXml (sFileName);
+
+          CASE (XMLNODENAME (xDoc, 1),
+               ['ED_Container',
+                  Block(
+                    xDoc := xDoc.ContainerDoc.DocBody;
+                    IF (XMLNODEFIND (xDoc, 'CommercialAct'),
+                      Block(
+                        xDoc := xDoc.CommercialAct;
+                        sSQL := 'INSERT INTO FILE_LIST VALUES (' +char(39)+ sFileName +char(39)+
+                                                                 ',' +char(39)+ xDoc.DO1ReportLinkData.ReportNumber +char(39)+
+                                                                 ',' + SQLDate (CONVERT (xDoc.DO1ReportLinkData.ReportDate, String), GetBaseDriver(0)) +
+                                                                 ',' +char(39)+ xDoc.ActDetails.ActNumber +char(39)+
+                                                                 ',' + SQLDate (CONVERT (xDoc.ActDetails.ActDate, String), GetBaseDriver(0)) +
+                                                                 ',' +char(39)+ xDoc.WarehouseOwner.WarehouseLicense.CertificateNumber +char(39)+
+                                                                 ',' + SQLDate (CONVERT (xDoc.WarehouseOwner.WarehouseLicense.CertificateDate, String), GetBaseDriver(0)) +
+                                                                 ')';
+                      )
+                    ); // IF
+                  ),
+                'ED_Container',
+                  Block(
+                    xDoc := xDoc.ContainerDoc.DocBody;
+                    IF (XMLNODEFIND (xDoc, 'CommercialAct'),
+                      Block(
+                        xDoc := xDoc.CommercialAct;
+                        sSQL := 'INSERT INTO FILE_LIST VALUES (' +char(39)+ sFileName +char(39)+
+                                                                 ',' +char(39)+ xDoc.DO1ReportLinkData.ReportNumber +char(39)+
+                                                                 ',' + SQLDate (CONVERT (xDoc.DO1ReportLinkData.ReportDate, String), GetBaseDriver(0)) +
+                                                                 ',' +char(39)+ xDoc.ActDetails.ActNumber +char(39)+
+                                                                 ',' + SQLDate (CONVERT (xDoc.ActDetails.ActDate, String), GetBaseDriver(0)) +
+                                                                 ',' +char(39)+ xDoc.WarehouseOwner.WarehouseLicense.CertificateNumber +char(39)+
+                                                                 ',' + SQLDate (CONVERT (xDoc.WarehouseOwner.WarehouseLicense.CertificateDate, String), GetBaseDriver(0)) +
+                                                                 ')';
+                      )
+                    ); // IF - //
+                  ),
+                'CommercialAct',
+                  Block(
+                    //xDoc := XMLNODEFIND (xDoc, 'CommercialAct');
+                    sSQL := 'INSERT INTO FILE_LIST VALUES (' +char(39)+ sFileName +char(39)+
+                                                           ',' +char(39)+ xDoc.DO1ReportLinkData.ReportNumber +char(39)+
+                                                           ',' + SQLDate (CONVERT (xDoc.DO1ReportLinkData.ReportDate, String), GetBaseDriver(0)) +
+                                                           ',' +char(39)+ xDoc.ActDetails.ActNumber +char(39)+
+                                                           ',' + SQLDate (CONVERT (xDoc.ActDetails.ActDate, String), GetBaseDriver(0)) +
+                                                           ',' +char(39)+ xDoc.WarehouseOwner.WarehouseLicense.CertificateNumber +char(39)+
+                                                           ',' + SQLDate (CONVERT (xDoc.WarehouseOwner.WarehouseLicense.CertificateDate, String), GetBaseDriver(0)) +
+                                                           ')';
+                  ),
+                'CommercialAct',
+                  Block(
+                    xDoc := xDoc.CommercialAct;
+                    sSQL := 'INSERT INTO FILE_LIST VALUES (' +char(39)+ sFileName +char(39)+
+                                                           ',' +char(39)+ xDoc.DO1ReportLinkData.ReportNumber +char(39)+
+                                                           ',' + SQLDate (CONVERT (xDoc.DO1ReportLinkData.ReportDate, String), GetBaseDriver(0)) +
+                                                           ',' +char(39)+ xDoc.ActDetails.ActNumber +char(39)+
+                                                           ',' + SQLDate (CONVERT (xDoc.ActDetails.ActDate, String), GetBaseDriver(0)) +
+                                                           ',' +char(39)+ xDoc.WarehouseOwner.WarehouseLicense.CertificateNumber +char(39)+
+                                                           ',' + SQLDate (CONVERT (xDoc.WarehouseOwner.WarehouseLicense.CertificateDate, String), GetBaseDriver(0)) +
+                                                           ')';
+                  )
+               ],
+          ); // CASE
+
+          IF (LENGTH (sSQL) > 0, EXECUTESQL ('dbTemp', sSQL));
+          iFileIndex := iFileIndex + 1;
+          XmlDestroy (xDoc);
+        )
+      ); // WHILE
+
+      OPENTABLE ('tFILE_LIST', 'FILE_LIST', '', 'dbTemp', 0);
+      OPENQUERY ('qFILE_LIST', 'SELECT * FROM FILE_LIST', 'dbTemp');
+
+      TRYEXCEPT (
+        Block(
+          IF (RECORDCOUNT ('tFILE_LIST', 1) = 0, RAISEEXCEPTION ('В выбранном каталоге нет файлов коммерческих актов'));
+
+{
+          IF (SELECTVALUES ('Выберите коммерческий акт для загрузки', 'FILE_LIST', [['ACT_NUMBER', 'Номер Комм. акта', 20],
+                                                                                    ['ACT_DATE', 'Дата Комм. акта', 20],
+                                                                                    ['DO_NUMBER', 'Номер ДО-1', 20],
+                                                                                    ['DO_DATE', 'Дата ДО-1', 20],
+                                                                                    ['FILE_NAME', 'Имя файла', '100']],
+                                                                                   [['FILE_NAME', 'sFileName'],
+                                                                                    ['DO_NUMBER', 'sNBD'],
+                                                                                    ['DO_DATE', 'sBDDate'],
+                                                                                    ['ACT_NUMBER', 'sActNumber'],
+                                                                                    ['ACT_DATE', 'sActDate']], '',  'dbTemp') = 0,
+              RAISEEXCEPTION ('Отменено пользователем')
+          ); // IF
+}
+
+
+          IF (SELECTRECORDS ('Выбертите коммерческие акты', 'FILE_LIST', [['ACT_NUMBER', 'Номер Комм. акта', 20],
+                        ['ACT_DATE', 'Дата Комм. акта', 20],
+                        ['DO_NUMBER', 'Номер ДО-1', 20],
+                        ['DO_DATE', 'Дата ДО-1', 20],
+                        ['FILE_NAME', 'Имя файла', 100],
+                        ['LICENCENO', 'Номер свидетельства СВХ', 40],
+                        ['LICENCEDATE', 'Дата свидетельства СВХ', 20]],
+                        'qSelectedList', '', 'dbTemp') = 0,
+              RAISEEXCEPTION ('Отменено пользователем')
+          );
+
+          SHOWPROGRESS ('Загрузка коммерческих актов..');
+          TRYEXCEPT (
+            Block(
+
+              VAR ('iSIndex', Integer, 0);
+              VAR ('iSCount', Integer, RECORDCOUNT ('qSelectedList'));
+              FIRST ('qSelectedList');
+              WHILE (EOF ('qSelectedList') = 0,
+                Block(
+                  sFileName  := qSelectedList.FILE_NAME;
+                  sNBD       := qSelectedList.DO_NUMBER;
+                  sBDDate    := qSelectedList.DO_DATE;
+                  sActNumber := qSelectedList.ACT_NUMBER;
+                  sActDate   := qSelectedList.ACT_DATE;
+                  sLicenceNo := qSelectedList.LICENCENO;
+                  sLicenceDate := qSelectedList.LICENCEDATE;
+
+                  OpenXml (sFileName);
+
+                  CASE (XMLNODENAME (xDoc, 1),
+                       ['ED_Container',
+                          Block(
+                            xDoc := xDoc.ContainerDoc.DocBody;
+                            IF (xDoc.CommercialAct,
+                              Block(
+                                xDoc := xDoc.CommercialAct;
+                                ImportCommAct (sNBD, SQLDate (sBDDate, GetBaseDriver(0)));
+                              )
+                            ); // IF
+                          ),
+                        'ED_Container',
+                          Block(
+                            xDoc := xDoc.ContainerDoc.DocBody;
+                            IF (xDoc.CommercialAct,
+                              Block(
+                                xDoc := xDoc.CommercialAct;
+                                ImportCommAct (sNBD, SQLDate (sBDDate, GetBaseDriver(0)));
+                              )
+                            ); // IF
+                          ),
+                        'CommercialAct',
+                          Block(
+                            //xDoc := XMLNODEFIND (xDoc, 'CommercialAct');
+                            ImportCommAct (sNBD, SQLDate (sBDDate, GetBaseDriver(0)));
+                          ),
+                        'CommercialAct',
+                          Block(
+                            //xDoc := XMLNODEFIND (xDoc, 'CommercialAct');
+                            APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + 'Коммерческий акт не загружен, т.к. отсутствует префикс пространства имён ""');
+                            //RAISEEXCEPTION ('Коммерческий акт не загружен, т.к. отсутствует префикс пространства имён ""');
+                            //ImportCommAct (sNBD, SQLDate(sBDDate, GetBaseDriver(0)));
+                          )
+                       ],
+                  ); // CASE
+                  XmlDestroy (xDoc);
+                  bAddAct := 1;
+                  SETPROGRESS (iSIndex, 100, iSCount);
+                  iSIndex := iSIndex + 1;
+                  NEXT ('qSelectedList');
+
+                  // CopyFile (sReadedDir + sFileName, sReadedDir + 'Done\' + sFileName);
+                )
+              ); // WHILE
+            ),
+            Block(              
+              SHOWMESSAGE (EXCEPTIONMESSAGE (), 2, 'Загрузка комм. актов');
+            )
+          ); // TRYEXCEPT
+          HIDEPROGRESS ();
+        ),
+        Block(
+          CLOSEDATASET ('tFILE_LIST');
+          SHOWMESSAGE (EXCEPTIONMESSAGE (), 2, 'Загрузка комм. актов');
+        )
+      ); // TRYEXCEPT
+    ),
+    Block(
+      CLOSEDATABASE ('dbTemp');
+      SHOWMESSAGE (EXCEPTIONMESSAGE (), 2, 'Загрузка комм. актов');
+    )
+  ); // IF
+
+
+GLOBALREFRESH ();
+
+APPENDLOGFILE (sLogFile, '');
+APPENDLOGFILE (sLogFile, 'Загружено актов: ' + Success);
+APPENDLOGFILE (sLogFile, 'Не загружено: ' + Errors);
+
+SHOWLOGFILE (sLogFile, 'Результат загрузки коммерческих актов');

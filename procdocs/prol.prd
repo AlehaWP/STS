@@ -1,0 +1,31 @@
+// *****************************************************************************
+// Название: Просмотр документов о продлении сроков временного хранения
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: Док-ты о продл. ВХ
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'print.ini');
+VAR ('sPlaceID', String, KRD_MAIN.PLACEID);
+VAR ('sID', String, KRD_MAIN.ID);
+VAR ('sCounter', String, '');
+
+  OPENQUERY ('qryProl', 'STS_DB', 'SELECT * FROM KRD_PROL WHERE PLACEID=' + sPlaceID + ' AND ID=' + sID);
+
+  IF (RECORDCOUNT ('qryProl') > 0,
+    Block(
+      IF(SELECTVALUES ('Выберите документ для просмотра', 'qryProl', [['DOC_TYPE', 'Тип документа', 20], ['DOC_NO', 'Номер документа', 20], ['DOC_DATE', 'Дата документа', 20]], [['PLACEID', sPlaceID], ['ID', sID], ['COUNTER', sCounter]], 'PLACEID;ID;COUNTER', 'STS_DB'),
+        Block(
+          WRITEINIFILE ('KRD_PROL', 'PLACEID', sPlaceID, sIniFile);
+          WRITEINIFILE ('KRD_PROL', 'ID', sID, sIniFile);
+          WRITEINIFILE ('KRD_PROL', 'COUNTER', sCounter, sIniFile);
+          PRINTDOCUMENT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'fr\fr3\prol.fr3', 1, 1);
+        )
+      )
+    ),
+    Block(
+      RAISEEXCEPTION ('Нет документов о продлении сроков ВХ');
+    )
+  );

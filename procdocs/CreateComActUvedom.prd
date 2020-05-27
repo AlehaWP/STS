@@ -1,0 +1,586 @@
+// *****************************************************************************
+// Название: Создать ком. акт из уведомления
+// Описание: Создать ком. акт из уведомления
+// Кнопка вызова: 0
+// Подпись кнопки: Создать ком. акт из уведомления
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC('FindUvedomlenia',,
+     BLOCK(
+          OPENQUERY('GET_TTN', 'STS_DB', ' SELECT PAPERNO, PAPERDATE FROM KR_PAPER WHERE PLACEID='+iPlaceid+' AND ID='+iID+
+                                         ' UNION '+
+                                         ' SELECT PAPERNO, PAPERDATE FROM KRD_DCD WHERE PLACEID='+iPlaceid+' AND ID='+iID
+          );
+
+          VAR('TTNList', string, '');//UNIONVALUES возвращал значения с пробелами char(39)+ TRIM(UNIONVALUES ('GET_TTN', ['PAPERNO'], char(39)+','+char(39), ''))+char(39));
+          FIRST('GET_TTN');
+          WHILE(EOF('GET_TTN')=0,
+                BLOCK(
+                  TTNList := TTNList + IF(TTNList<>'', ',') + char(39) + Get_TTN.PAPERNO + char(39);
+                  NEXT('GET_TTN');
+                )
+          );
+          IF(TTNList = '', RAISEEXCEPTION('В указанном ДО отсутствую транспортные документы'));
+          // Получаем список уведомлений где встречаются ТТН из текущего ДО1
+          OPENQUERY('GET_UV_ID', 'SELECT DISTINCT JOURNAL_MASTER_ID as JMI FROM TransportDoc WHERE PrDocumentNumber IN ('+TTNList+')', 'dbJournals');
+          IF(RECORDCOUNT('GET_UV_ID')=0, RAISEEXCEPTION ('Уведомления к указанному ДО не найдены'));
+
+          VAR('JMIDList', string, TRIM(UNIONVALUES('GET_UV_ID', ['JMI'], '', ',')));
+
+          OPENQUERY('GET_DT', 'SELECT JOURNAL_MASTER_ID as JMID, PrDocumentNumber, prDocumentDate, PrDocumentName FROM jrGoodOut WHERE JOURNAL_MASTER_ID IN ('+JMIDList+')', 'dbJournals');
+
+          //Проверяем наличие ДТ в ком.актах по этой ДО
+          JMIDList := '';
+          FIRST('GET_DT');
+          WHILE(EOF('GET_DT')=0,
+                BLOCK(
+                   OPENQUERY('FIND_DT_CSDM', 'STS_DB', 'SELECT ID FROM KRD_CSDM WHERE COMMERCEACT LIKE '+ CHAR (39)+ '%' + GET_DT.PrDocumentNumber + '%' + CHAR (39)+' AND PLACEID='+iPlaceid+' AND ID='+iID);
+                   IF(RECORDCOUNT('FIND_DT_CSDM')=0, JMIDList := JMIDList + IF(JMIDList<>'', ',')+ GET_DT.JMID);
+                   NEXT('GET_DT');
+                )
+          );
+          //Делаем запрос заново
+          CLOSEDATASET('GET_DT');
+
+          IF(JMIDList = '', RAISEEXCEPTION ('На имеющиеся в базе уведомления уже создан ком.акт'));
+          OPENQUERY('GET_DT', 'SELECT JOURNAL_MASTER_ID as JMID, PrDocumentNumber, prDocumentDate, PrDocumentName FROM jrGoodOut WHERE JOURNAL_MASTER_ID IN ('+JMIDList+')', 'dbJournals');
+     )
+),
+
+FUNC('Dialog',,
+     BLOCK(
+        //Предлагаем пользователю выбрать уведомления на основании которых создадим ДО
+        IF(SELECTRECORDS ('Укажите ДТ для создания ком. акта', 'GET_DT',
+                       [
+                         ['PrDocumentNumber', 'Номер ДТ', 30],
+                         ['PrDocumentDate', 'Дата ДТ', 15]
+                       ],
+                       'SELECTED_DT', , 'STS_DB'
+           )=0,
+           RAISEEXCEPTION('Не выбраны ДТ. Выполнение прекращено')
+        );
+
+        //Получаем список товаров из выбранных ДТ
+        OPENQUERY('GET_DT_GOODS', 'SELECT * FROM GoodInfo where Journal_Master_ID IN ('+UNIONVALUES ('SELECTED_DT', ['JMID'], ',', '')+')', 'dbJournals');
+        VAR('vChangeFirst', integer,0);
+
+        vChangeFirst:=CHOICEVARIANT ('Найдено новых товаров : '+Recordcount('GET_DT_GOODS')+'. Что делать с товарами?', 2, 1, ['Добавить как новые ', 'Заменить товары ДО товарами из ДТ'], );
+        vChangeFirst
+     )
+),
+
+FUNC('FindOldActs',,
+     BLOCK(
+        VAR('iActCounter', integer, 1);
+        //Смотрим старые акты, и получаем текущий counter
+        OPENQUERY('OLD_ACTS', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KRD_DOP WHERE PLACEID='+ iPlaceid + ' AND ID='+iID);
+        IF(RECORDCOUNT('OLD_ACTS')<>0, iActCounter := OLD_ACTS.COUNTER + 1);
+        CLOSEDATASET('OLD_ACTS');
+        iActCounter
+     )
+),
+
+
+FUNC('CreateNewComAct',PARAM('ActCounter', integer, 0),
+       EXECUTESQL('STS_DB', 'INSERT INTO KRD_DOP '+
+                            '('+
+                            {1}'PLACEID, ID, COUNTER, '+//Doc_Order_Number, '+
+                            {2}'DOC_NAME, DOC_NO, DOC_DATETIME '+
+                            ') '+
+                            'VALUES '+
+                            '('+
+                             {1}iPlaceid+', '+iID+', '+ActCounter+', '+ //iCaOrderCounter + ', '+//1
+                             {2}char(39)+'Коммерческий акт'+char(39)+ ', '+char(39)+SOLVE (LEFTPAD(GENNO('CA_KPS'+iPlaceid, '№ комм. акта'), 7, '0'))+char(39)+', '+char(39)+FormatDateTime('DD.MM.YYYY', DATE())+char(39)+//2
+                            ') '
+       )
+),
+
+FUNC('OneComActWhereDOasDT',,
+    BLOCK(
+         OPENQUERY('GETDOGOODS', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+ ' AND ID='+iID);
+
+         VAR('iDoGoodsCount', integer, RECORDCOUNT('GETDOGOODS'));
+         VAR('iDTGoodsCount', integer, RECORDCOUNT('GET_DT_GOODS'));
+
+
+        //Создаем новый акт
+         CreateNewComAct(iActCounter);
+         
+         FIRST('GET_DT_GOODS');
+         FIRST('GETDOGOODS');
+         
+         WHILE(EOF('GETDOGOODS')=0,
+               BLOCK(
+                 VAR('sComments', string, GetComments(GET_DT_GOODS.JOURNAL_MASTER_ID));
+                 NEXT('GET_DT_GOODS');
+                 AddCommsInCSDM('0', GETDOGOODS.G32);
+                 NEXT('GETDOGOODS');
+               )
+         );
+
+         VAR('AddTov', integer, iDoGoodsCount);
+         //Добавляем новые товары
+         WHILE(AddTov<iDTGoodsCount,
+               BLOCK(
+                    VAR('sComments', string, GetComments(GET_DT_GOODS.JOURNAL_MASTER_ID));
+                    NEXT('GET_DT_GOODS');
+                    AddTov := AddTov + 1;
+                    AddCommsInCSDM('2', AddTov);
+              )
+         );
+         //Получаем номер последней в ДО ТТН, на неё и будем добавлять товар
+         OPENQUERY('LastTTNCOUNTER', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KR_PAPER WHERE Placeid='+iPlaceid+ ' AND ID='+iID+' AND PAPERCODE LIKE'+ CHAR (39)+ '02%' + CHAR (39));
+         VAR('iPaperCounter', integer, LastTTNCOUNTER.COUNTER);
+
+
+         OPENQUERY('FirstComm', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND G32=1');
+         VAR('sAcceptDate', string, FirstComm.Acceptdate);
+         VAR('sStorageDate', string, FirstComm.storage_date);
+         VAR('sStorageType', string, FirstComm.storage_type);
+         CLOSEDATASET('FirstComm');
+
+         VAR('iDTGoodsCounter', integer, 0);
+         FIRST('GET_DT_GOODS');
+         WHILE(EOF('GET_DT_GOODS')=0,
+               BLOCK(
+                  iDTGoodsCounter := iDTGoodsCounter + 1;
+                  OPENQUERY('GET_G32', 'STS_DB', 'SELECT MAX(G32) as G32 FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID);
+                  VAR('iG32', integer, GET_G32.G32);
+                  CLOSEDATASET('GET_G32');
+
+                  OPENQUERY('GET_GN','STS_DB', 'SELECT MAX(GN) AS GN FROM KRD_COMM WHERE PLACEID IN (SELECT PLACEID FROM KRD_MAIN WHERE MAIN_ID='+KRD_MAIN.MAIN_ID+')');
+                  VAR('iGN', integer, GET_GN.GN);
+                  CLOSEDATASET('GET_GN');
+
+                  OPENQUERY('FindKRDCOMM', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+' AND G32='+iDTGoodsCounter);
+
+                  VAR('sGoodsDescript', string, FindKRDCOMM.G312);
+                  VAR('sG33', string,FindKRDCOMM.G33);
+                  VAR('dG311', float,FindKRDCOMM.G311);
+                  VAR('sG313', string,FindKRDCOMM.G313);
+                  VAR('dG35', float, FindKRDCOMM.G35);
+                  VAR('dG315A', float, FindKRDCOMM.G315A);
+                  VAR('sG41A', string, FindKRDCOMM.G41A);
+                  VAR('sG315CN', string, FindKRDCOMM.G315CN);
+                  VAR('dG315C', float, FindKRDCOMM.G315C);
+                  VAR('sG31_82', string, FindKRDCOMM.G31_82);
+                  VAR('sG315', string, FindKRDCOMM.G315);
+                  VAR('dG42', float, FindKRDCOMM.G42);
+                  VAR('sG42Curr', string, FindKRDCOMM.G42_CURRENCY);
+
+
+                  IF(GET_DT_GOODS.GoodsDescription<>'', sGoodsDescript:=GET_DT_GOODS.GoodsDescription);
+                  IF(GET_DT_GOODS.GoodsTNVEDCode<>'', sG33:=GET_DT_GOODS.GoodsTNVEDCode);
+                  IF(GET_DT_GOODS.PlaceNumber<>'NULL',dG311:=GET_DT_GOODS.PlaceNumber);
+                  IF(GET_DT_GOODS.PlaceDescription<>'',sG313:=GET_DT_GOODS.PlaceDescription);
+                  IF(GET_DT_GOODS.BruttoVolQuantity<>'NULL',
+                  BLOCK(
+                        IF(GET_DT_GOODS.BruttoVolCode = '166',
+                           dG35 := GET_DT_GOODS.BruttoVolQuantity,
+                           BLOCK(
+                             dG315C:=GET_DT_GOODS.BruttoVolQuantity;
+                             sG31_82:=GET_DT_GOODS.BruttoVolCode;
+                             sG315:=GET_DT_GOODS.BruttoVolName;
+                           )
+                        )
+    				        )
+                  );
+
+                  IF(GET_DT_GOODS.MeasureQuantity<>'NULL',dG315A:=GET_DT_GOODS.MeasureQuantity);
+                  IF(GET_DT_GOODS.MeasureCode<>'',sG41A:=GET_DT_GOODS.MeasureCode);
+                  IF(GET_DT_GOODS.MeasureName<>'',sG315CN:=GET_DT_GOODS.MeasureName);
+
+                  IF(GET_DT_GOODS.InvoiceCost<>'NULL',dG42:=GET_DT_GOODS.InvoiceCost);
+                  IF(FIELDVALUE ('GET_DT_GOODS','CurrencyCode')<>'',sG42Curr:=FIELDVALUE ('GET_DT_GOODS','CurrencyCode'));
+                  //showmessage(RECORDCOUNT('FindKRDCOMM'));
+                  IF(RECORDCOUNT('FindKRDCOMM')<>0,
+                     UpdateKRDCOMM(iDTGoodsCounter),
+                     AppendRecKRD_COMM(iDTGoodsCounter, iDTGoodsCounter);
+                  );
+                  //showmessage(2);
+                  NEXT('GET_DT_GOODS');
+               )
+         );
+
+
+    )
+),
+
+FUNC('AddComAct',,
+     BLOCK(
+        CreateNewComAct(iActCounter);
+
+        VAR('dSumDT_G311', float,0);
+        VAR('dSumDT_G35', float, 0);
+        VAR('dSumDT_G315A', float, 0);
+        VAR('dSumDT_G315C', float, 0);
+        VAR('dSumDT_G42', float, 0);
+        
+        OPENQUERY('FirstTov','STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+' AND G32=1');
+        VAR('sAcceptDate', string, FirstTov.Acceptdate);
+        VAR('sStorageDate', string, FirstTov.storage_date);
+        VAR('sStorageType', string, FirstTov.storage_type);
+         
+        VAR('sFirstTov_GoodsDescript', string, FirstTov.G312);
+        VAR('sFirstTov_G33', string,FirstTov.G33);
+        VAR('dFirstTov_G311', float,FirstTov.G311);
+        VAR('sFirstTov_G313', string,FirstTov.G313);
+        VAR('dFirstTov_G35', float, FirstTov.G35);
+        VAR('dFirstTov_G315A', float, FirstTov.G315A);
+        VAR('sFirstTov_G41A', string, FirstTov.G41A);
+        VAR('sFirstTov_G315CN', string, FirstTov.G315CN);
+        VAR('dFirstTov_G315C', float, FirstTov.G315C);
+        VAR('sFirstTov_G31_82', string, FirstTov.G31_82);
+        VAR('sFirstTov_G315', string, FirstTov.G315);
+        VAR('dFirstTov_G42', float, FirstTov.G42);
+        VAR('sFirstTov_G42Curr', string, FirstTov.G42_CURRENCY);
+
+        VAR('sGoodsDescript', string, '');
+        VAR('sG33', string,'');
+        VAR('dG311', float,'NULL');
+        VAR('sG313', string,'');
+        VAR('dG35', float, 'NULL');
+        VAR('dG315A', float, 'NULL');
+        VAR('sG41A', string, '');
+        VAR('sG315CN', string, '');
+        VAR('dG315C', float, 'NULL');
+        VAR('sG31_82', string, '');
+        VAR('sG315', string, '');
+        VAR('dG42', float, 'NULL');
+        VAR('sG42Curr', string, '');
+
+        //Получаем номер последней в ДО ТТН, на неё и будем добавлять товар
+        OPENQUERY('LastTTNCOUNTER', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KR_PAPER WHERE Placeid='+iPlaceid+ ' AND ID='+iID+' AND PAPERCODE LIKE'+ CHAR (39)+ '02%' + CHAR (39));
+        VAR('iPaperCounter', integer, LastTTNCOUNTER.COUNTER);
+
+        
+        OPENQUERY('MAXIMUMVALUE', 'STS_DB', 'SELECT MAX(G32) as G32 FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID);
+        VAR('iNewG32', integer, MAXIMUMVALUE.G32);
+        VAR('iDTCounter', integer,0);
+        VAR('iFirstTovSetAsLast', integer, 0);
+        
+        VAR('iDTGoodsCount', integer, RECORDCOUNT('GET_DT_GOODS'));
+        WHILE(EOF('GET_DT_GOODS')=0,
+              BLOCK(
+                iNewG32 := iNewG32 + 1;
+                iDTCounter := iDTCounter + 1;
+
+                IF(GET_DT_GOODS.GoodsDescription<>'', sGoodsDescript:=GET_DT_GOODS.GoodsDescription);
+                IF(GET_DT_GOODS.GoodsTNVEDCode<>'', sG33:=GET_DT_GOODS.GoodsTNVEDCode);
+                IF(GET_DT_GOODS.PlaceNumber<>'NULL',dG311:=GET_DT_GOODS.PlaceNumber);
+                IF(GET_DT_GOODS.PlaceDescription<>'',sG313:=GET_DT_GOODS.PlaceDescription);
+                IF(GET_DT_GOODS.BruttoVolQuantity<>'NULL',
+                BLOCK(
+                      IF(GET_DT_GOODS.BruttoVolCode = '166',
+                         dG35 := GET_DT_GOODS.BruttoVolQuantity,
+                         BLOCK(
+                           dG315C:=GET_DT_GOODS.BruttoVolQuantity;
+                           sG31_82:=GET_DT_GOODS.BruttoVolCode;
+                           sG315:=GET_DT_GOODS.BruttoVolName;
+                         )
+                      )
+  				        )
+                );
+
+                IF(GET_DT_GOODS.MeasureQuantity<>'NULL',dG315A:=GET_DT_GOODS.MeasureQuantity);
+                IF(GET_DT_GOODS.MeasureCode<>'',sG41A:=GET_DT_GOODS.MeasureCode);
+                IF(GET_DT_GOODS.MeasureName<>'',sG315CN:=GET_DT_GOODS.MeasureName);
+
+                IF(GET_DT_GOODS.InvoiceCost<>'NULL',dG42:=GET_DT_GOODS.InvoiceCost);
+                IF(FIELDVALUE ('GET_DT_GOODS','CurrencyCode')<>'',sG42Curr:=FIELDVALUE ('GET_DT_GOODS','CurrencyCode'));
+
+
+                //Суммируем всё, что есть в ДТ и проверяем остается ли что-нибудь в первом товаре ДО1
+                IF(dG311<>'NULL', dSumDT_G311:=dSumDT_G311+dG311);
+                IF(dG35<>'NULL', dSumDT_G35:=dSumDT_G35+dG35);
+                IF(dG315A<>'NULL', dSumDT_G315A:=dSumDT_G315A+dG315A);
+                IF(dG315C<>'NULL', dSumDT_G315C:=dSumDT_G315C+dG315C);
+                IF(dG42<>'NULL', dSumDT_G42:=dSumDT_G42+dG42);
+
+
+                
+                
+                VAR('sComments', string, GetComments(GET_DT_GOODS.JOURNAL_MASTER_ID));
+                
+                IF(iDTCounter=iDTGoodsCount,//Если последний товар проверяем остатки и меняем значения первого товара, либо на остатки (если остатки положительны), либо на значения последнего товара ДТ (отрицательные остатки)
+                   BLOCK(
+                     //showmessage('AddFirstTovInCSDM');
+                     AddFirstTovInCSDM();
+                    //showmessage('Успешно');
+                     //Если выдается больше чем есть, устанавливаем первому товару характеристики последнего в ДТ
+                     IF((dFirstTov_G311<=dSumDT_G311)*(dFirstTov_G311>'NULL')*(dFirstTov_G311>0),
+                         iFirstTovSetAsLast:=1;
+                     );
+                     IF((dFirstTov_G35<=dSumDT_G35)*(dFirstTov_G35>'NULL')*(dFirstTov_G35>0),
+                         iFirstTovSetAsLast:=1;
+                     );
+                     IF((dFirstTov_G315A<=dSumDT_G315A)*(dFirstTov_G315A>'NULL')*(dFirstTov_G315A>0),
+                         iFirstTovSetAsLast:=1;
+                     );
+                     IF((dFirstTov_G315C<=dSumDT_G315C)*(dFirstTov_G315C>'NULL')*(dFirstTov_G315C>0),
+                         iFirstTovSetAsLast:=1;
+                     );
+                     IF((dFirstTov_G42<=dSumDT_G35)*(dFirstTov_G42>'NULL')*(dFirstTov_G42>0),
+                         iFirstTovSetAsLast:=1;
+                     );
+                     
+                     IF(iFirstTovSetAsLast,
+                        BLOCK(
+                           UpdateKRDCOMM(1);
+                        ),
+                        BLOCK(
+                           //Добавляем последний товар
+                           AddCommsInCSDM('2', iNewG32);
+                           AppendRecKRD_COMM(iNewG32);
+                           //Меняем текущие значения
+                           IF(dFirstTov_G311<>'NULL', dG311:=dFirstTov_G311-dSumDT_G311, dG311:='NULL');
+                           IF(dFirstTov_G35<>'NULL', dG35:=dFirstTov_G35-dSumDT_G35, dG35:='NULL');
+                           IF(dFirstTov_G315A<>'NULL', dG315A:=dFirstTov_G315A-dSumDT_G315A, dG315A:='NULL');
+                           IF(dFirstTov_G315C<>'NULL', dG315C:=dFirstTov_G315C-dSumDT_G315C, dG315C:='NULL');
+                           IF(dFirstTov_G42<>'NULL', dG42:=dFirstTov_G42-dSumDT_G42, dG42:='NULL');
+
+                           sGoodsDescript:=sFirstTov_GoodsDescript;
+                           sG33:=sFirstTov_G33;
+                           sG313:=sFirstTov_G313;
+                           sG41A:=sFirstTov_G41A;
+                           sG315CN:=sFirstTov_G315CN;
+                           sG31_82:=sFirstTov_G31_82;
+                           sG315:=sFirstTov_G315;
+                           sG42Curr:=sFirstTov_G42Curr;
+                           //Обновляем характеристики первого товара
+                           UpdateKRDCOMM(1);
+                      )
+                     );
+                   ),//Если товар не последний, то просто добавляем новый товар в KRD_COMM
+                   BLOCK(
+                    // showmessage(iNewG32);
+                    // showmessage('AddCommsInCSDM');
+                     AddCommsInCSDM('2', iNewG32);
+                    // showmessage('AppendRecKRD_COMM');
+                     AppendRecKRD_COMM(iNewG32);
+                    // showmessage('Успешно');
+                   )
+                );
+                
+                
+                NEXT('GET_DT_GOODS');
+              )
+        );
+       
+     )
+),
+
+FUNC('AddCommsInCSDM',
+      BLOCK(
+       PARAM('sKind', string,0),
+       PARAM('iFuncG32', integer, 1)
+      ),
+      BLOCK(
+
+        IF(sKIND='0',
+           BLOCK(
+              VAR('iPlaceid', integer, iPlaceid);
+              VAR('iID', integer, iID);
+              VAR('sAddGoodsDescript', string, GETDOGOODS.G312);
+              VAR('sAddG33', string,GETDOGOODS.G33);
+              VAR('dAddG311', float,GETDOGOODS.G311);
+              VAR('dAddG35', float, GETDOGOODS.G35);
+              VAR('dAddG315A', float, GETDOGOODS.G315A);
+              VAR('sAddG41A', string, GETDOGOODS.G41A);
+              VAR('sAddG315CN', string, GETDOGOODS.G315CN);
+              VAR('dAddG315C', float, GETDOGOODS.G315C);
+              VAR('sAddG31_82', string, GETDOGOODS.G31_82);
+              VAR('sAddG315', string, GETDOGOODS.G315);
+              VAR('dAddG42', float, GETDOGOODS.G42);
+              VAR('sAddG42Curr', string, GETDOGOODS.G42_CURRENCY);
+              
+              EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                                   '('+
+                                   {1}'PLACEID, ID, G32, '+
+                                   {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                                   {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                                   {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                                   {5}'DOC_G311, DOC_G315A, DOC_G35, '+
+                                   {6}'DOC_G315C, DOC_G315CN, DOC_G31_82, COMMERCEACT '+
+                                   ') '+
+                                   'VALUES '+
+                                   '('+
+                                    {1}iPlaceid+', '+iID+', '+iFuncG32+', '+
+                                    {2}iActCounter+ ', '+char(39)+sKind+char(39)+', '+char(39)+'1'+char(39)+', '+//2
+                                    {3}char(39)+FormatDateTime('DD.MM.YYYY HH:MM:SS', NOW()) + char(39)+', '+char(39)+sComments+char(39)+', '+char(39)+sAddG33+char(39)+', '+
+                                    {4}char(39)+sAddGoodsDescript+char(39)+', '+dAddG42+', '+ char(39)+sAddG42CURR+char(39)+', '+
+                                    {5}dAddG311+', '+dAddG315A+', '+dAddG35+', '+
+                                    {6}dAddG315C+', '+ char(39)+sAddG315CN+char(39)+', '+char(39)+sAddG31_82+char(39)+', '+char(39)+sComments+char(39)+
+                                   ') '
+              );
+           )
+        );
+
+        IF(sKIND='2',
+           BLOCK(
+             EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                                '('+
+                                {1}'PLACEID, ID, G32, '+
+                                {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                                {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                                {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                                {5}'DOC_G311, DOC_G315A, DOC_G35, '+
+                                {6}'DOC_G315C, DOC_G31_82, COMMERCEACT '+
+                                ') '+
+                                'VALUES '+
+                                '('+
+                                 {1}iPlaceid+', '+iID+', '+iFuncG32+', '+
+                                 {2}iActCounter+ ', '+char(39)+sKind+char(39)+', '+char(39)+'1'+char(39)+', '+//2
+                                 {3}char(39)+FormatDateTime('DD.MM.YYYY HH:MM:SS', NOW()) + char(39)+', '+char(39)+sComments+char(39)+', NULL, '+
+                                 {4}'NULL, NULL, NULL, '+
+                                 {5}'NULL, NULL, NULL, '+
+                                 {6}'NULL , NULL'+', '+char(39)+sComments+char(39)+
+                                ') '
+             );
+           )
+        );
+      )
+),
+
+FUNC('UpdateKRDCOMM', PARAM('iDTGoodsCounter', integer, 0),
+     BLOCK(
+        EXECUTESQL('STS_DB', ' UPDATE KRD_COMM SET '+
+                             ' G33='+char(39)+sG33+char(39)+
+                             ' , G312='+char(39)+sGoodsDescript+char(39)+
+                             ' , G311='+dG311+
+                             ' , G313='+char(39)+sG313+char(39)+
+                             ' , G35='+dG35+
+                             ' , G315A='+dG315A+
+                             ' , G41A='+char(39)+sG41A+char(39)+
+                             ' , G315CN='+char(39)+sG315CN+char(39)+
+                             ' , G315C='+dG315C+
+                             ' , G31_82='+char(39)+sG31_82+char(39)+
+                             ' , G315='+char(39)+sG315+char(39)+
+                             ' , G42='+dG42+
+                             ' , G42_CURRENCY='+char(39)+CURRENCYCODE(sG42Curr)+char(39)+
+                             ' , VALCODE='+char(39)+sG42Curr+char(39)+
+                             ' WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND G32='+iDTGoodsCounter
+        );
+
+     )
+),
+
+FUNC('AppendRecKRD_COMM',PARAM('iDTGoodsCounter', integer, 0),
+     BLOCK(
+     
+       // Получаем порядковый номер товара в накладной
+       OPENQUERY( 'LastComminTTN','STS_DB', 'SELECT MAX(N_TTN_G32) as N_TTN_G32 FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND N_TTN='+iPaperCounter);
+       VAR('iNTTNG32', integer, LastComminTTN.N_TTN_G32+1);
+       //showmessage('ADDCOMM');
+       EXECUTESQL('STS_DB', 'INSERT INTO KRD_COMM '+
+                            '('+
+                            {1}'PLACEID, ID, G32, GN, G311, G313, '+
+                            {2}'G33, G312, G35, '+
+                            {3}'G315A, G41A, G315CN,'+
+                            {4}'G315C, G31_82, G315, '+
+                            {5}'G42, G42_CURRENCY, VALCODE, ACCEPTDATE, '+
+                            {6}'STORAGE_DATE, N_TTN, N_TTN_G32, STORAGE_TYPE '+
+                            ') '+
+                            'VALUES '+
+                            '('+
+                             {1}iPlaceid+', '+iID+', '+iDTGoodsCounter+', '+iDTGoodsCounter+', '+dG311+', '+char(39)+sG313+char(39)+', '+
+                             {2}char(39)+sG33+ char(39)+', '+char(39)+sGoodsDescript+char(39)+', '+dG35+', '+
+                             {3}dG315A+', '+char(39)+sG41A+char(39)+', '+ char(39)+sG315CN+char(39)+', '+
+                             {4}dG315C+', '+char(39)+sG31_82+char(39)+', '+char(39)+sG315+char(39)+', '+
+                             {5}dG42+', '+ char(39)+CURRENCYCODE(sG42Curr)+char(39)+', '+ char(39)+sG42Curr+char(39)+', '+char(39)+sAcceptDate+char(39)+', '+
+                             {5}char(39)+sStorageDate+char(39)+', '+iPaperCounter+', '+iNTTNG32+', ' +char(39)+ sStorageType+char(39)+
+                            ') '
+       );
+      // showmessage('ADDCRCP');
+       EXECUTESQL('STS_DB', 'INSERT INTO KR_C_P'+
+                            '('+
+                            {1}'PLACEID, ID, G32, '+
+                            {2}'DOC_COUNTER, DOC_TYPE'+
+                            ') '+
+                            'VALUES '+
+                            '('+
+                             {1}iPlaceid+', '+iID+', '+iDTGoodsCounter+', '+
+                             {2}iPaperCounter+', '+char(39)+'13'+char(39)+
+                            ') '
+       );
+     //  showmessage('Успешно');
+
+     )
+),
+
+FUNC('AddFirstTovInCSDM',,
+    BLOCK(
+        //Ищем в старых ком. актах документальные сведения о товаре. Если находим, то просто копируем запись, если нет, добавляем новую
+        OPENQUERY('Find_Goods_CSDM', 'STS_DB', 'SELECT * FROM KRD_CSDM WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND G32=1');
+        IF(RECORDCOUNT('Find_Goods_CSDM')=0,
+           BLOCK(
+                 OPENQUERY('GETDOGOODS', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+ ' AND ID='+iID+' AND G32=1');
+                 AddCommsInCSDM('0', 1);
+                 CLOSEDATASET('GETDOGOODS');
+           ),
+           COPYRECORD ('Find_Goods_CSDM', 'KRD_CSDM_2',
+                                          'PLACEID=Find_Goods_CSDM.PLACEID',
+                                          'ID=Find_Goods_CSDM.ID',
+                                          'G32=Find_Goods_CSDM.G32',
+                                          'COUNTER=iActCounter',
+                                          'SDM_KIND=Find_Goods_CSDM.SDM_KIND',
+                                          'SDM_STAGE=Find_Goods_CSDM.SDM_STAGE',
+                                          'SDM_DATETIME=Find_Goods_CSDM.SDM_DATETIME',
+                                          'SDM_REASONS=Find_Goods_CSDM.SDM_REASONS',
+                                          'DOC_G33=Find_Goods_CSDM.DOC_G33',
+                                          'DOC_G312=Find_Goods_CSDM.DOC_G312',
+                                          'DOC_G42=Find_Goods_CSDM.DOC_G42',
+                                          'DOC_G42_CURRENCY=Find_Goods_CSDM.DOC_G42_CURRENCY',
+                                          'DOC_G311=Find_Goods_CSDM.DOC_G311',
+                                          'DOC_G315A=Find_Goods_CSDM.DOC_G315A',
+                                          'DOC_G35=Find_Goods_CSDM.DOC_G35',
+                                          'DOC_G315C=Find_Goods_CSDM.DOC_G315C',
+                                          'DOC_G315CN=Find_Goods_CSDM.DOC_G315CN',
+                                          'DOC_G31_8=Find_Goods_CSDM.DOC_G31_8',
+                                          'COMMERCEACT=sComments'
+           )
+        );
+    )
+),
+
+FUNC('GetComments',PARAM('iJID', integer, 0),
+     BLOCK(
+         OPENQUERY('GET_DT', 'SELECT PrDocumentName, PrDocumentNumber, PrDocumentDate FROM  jrGoodOut WHERE JOURNAL_MASTER_ID='+iJID,'dbJournals');
+         VAR('sComments', string, GET_DT.PrDocumentName + ','+GET_DT.PrDocumentNumber+','+FDT('DD.MM.YYYY', GET_DT.PrDocumentDate));
+         sComments
+     )
+),
+
+//---------------------------------------------------------------Начало программы ------------------------------------------------------------------------------------------------------------------------------------------
+
+VAR('iPlaceid', integer, KRD_MAIN.PLACEID);
+VAR('iID', integer, KRD_MAIN.ID);
+
+//Находим уведомления к ДО1
+FindUvedomlenia();
+
+//Предлагаем пользователю выбрать уведомления на основании которых создадим ДО
+//Получаем список товаров из выбранных ДТ
+//Предлагаем пользователю выбрать вариант загрузки
+VAR('vChangeFirst', integer,Dialog());
+
+//Смотрим старые акты, и получаем текущий counter
+VAR('iActCounter', integer, FindOldActs());
+
+
+
+IF(vChangeFirst,//Если пользователь выбрал "Заменить товары ДО товарами из ДТ"
+   IF(iActCounter > 1,//Если есть старые акты, то заканчиваем выполнение
+      RAISEEXCEPTION('На данное ДО уже создан ком. акт, подгрузка способом замены невозможна. Удалите предшествующие ком.акты, после чего выполните загрузку еще раз!'),
+      OneComActWhereDOasDT()
+   )
+);
+IF(vChangeFirst=0,//Если пользователь выбрал "Добавить как новые"
+   AddComAct()//Добавляем коммерческий акт. Товары из ДТ добавляем как новые. Уменьшаем количественные характеристики первого товара. Т.е. меняем характеристики первого товара на Текущие - сумма значений добавленных из ДТ товаров
+);
+
+GLOBALREFRESH();
+
+

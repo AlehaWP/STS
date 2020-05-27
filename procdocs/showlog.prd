@@ -1,0 +1,317 @@
+// *****************************************************************************
+// Название: показ лога сообщений ЭПС
+// Описание: Выводит на экран протокол обмена сообщений через ЭПС
+// Кнопка вызова: 0
+// Подпись кнопки: Лог ЭПС
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+// подключение функции GetBackupFile
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd');
+VAR ('sBackupFile', String);
+
+VAR ('sNewEpsLogScript', String, IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\eps_showlog\eps_showlog.ssproj');
+IF (FILEEXISTS (sNewEpsLogScript),
+  Block(
+    ExecuteProject (sNewEpsLogScript,);
+  ),
+  Block(
+
+
+    VAR ('iForm',  Integer, 0);
+    VAR ('iForm2',  Integer, 0);
+    //VAR ('iLoadRegExists', Integer, FILEEXISTS(INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'procdocs\load_reg_data_monitor.prd'));
+    //IF (iLoadRegExists = 1, EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'procdocs\load_reg_data_monitor.prd'));
+    VAR ('iLoadRegExists', Integer, FILEEXISTS(INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'procdocs\refresh_eps.prd'));
+    IF (iLoadRegExists = 1, EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'procdocs\refresh_eps.prd'));
+
+    VAR ('CSIDL_WINDOWS', Integer, 36);
+    Const('CSIDL_PROGRAM_FILES_COMMON', Integer, 43);
+
+    //VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_WINDOWS)) + 'ctm.ini');
+    VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_PROGRAM_FILES_COMMON))+'CTM\ctm.cfg');
+    VAR ('sConnString', String, '');
+
+    IF (REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcType', '0') = 1,
+        BLOCK(
+           sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcDir', '')+'MONITORED.MDB;Persist Security Info=False';
+        ),
+        IF(REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcType', '0') = 2,
+           BLOCK(
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'ServerName', '') + ';Initial Catalog=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'DBName', '') + ';';
+                IF (REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'IntegratedSecurity', '') = '1',
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Login', '') + ';Password=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Password', '');
+                  )
+                ); // IF - //
+           )
+        )
+    );
+
+
+    IF(sConnString='',
+       BLOCK(
+          VAR ('sMonPath', String);
+
+          sMonPath := INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath);
+
+          // смотрим указанный пользователем каталог(запоминаем его в ini склада)
+          IF (sMonPath = '', sMonPath :=INIFILE('MONITOR_ED', 'InstallPath', ''));
+          // если не нашли по CTM.INI - работаем в терминале, спрашиваем пользователя
+          IF(sMonPath = '', Block(
+            SELECTDIRECTORY ('sMonPath');
+            WRITEINIFILE('MONITOR_ED', 'InstallPath', sMonPath);
+          ));
+
+          If(FILEEXISTS(INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI')=0, sMonPath := '');
+          IF(sMonPath = '', RAISEEXCEPTION ('Не найден Монитор ЭД'));
+
+          VAR ('sMonitorIniPath', String, INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI');
+
+            IF (INIFILE ('DB', 'ArcType', '1', sMonitorIniPath) = 1,
+              Block(
+                // База данных Access
+                VAR ('sDBPath', String, INIFILE ('DB', 'ArcDir', '', sMonitorIniPath) + 'MONITORED.MDB');
+                IF (sDBPath = '', RAISEEXCEPTION ('Не найден путь к базе Монитора ЭД'));
+                sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sDBPath +';Persist Security Info=False';
+              ),
+              Block(
+                // База данных SQL Server
+          //      INIFILE ('DB', 'Arc_SQL_ServerName', '');
+          //      INIFILE ('DB', 'Arc_SQL_DBName', '');
+          //      INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0');
+          //      INIFILE ('DB', 'Arc_SQL_Login', '');
+          //      INIFILE ('DB', 'Arc_SQL_Password', '');
+          //      INIFILE ('DB', 'Arc_SQL_CommonDir', '');
+
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + INIFILE ('DB', 'Arc_SQL_ServerName', '', sMonitorIniPath) + ';Initial Catalog=' + INIFILE ('DB', 'Arc_SQL_DBName', '', sMonitorIniPath) + ';';
+                IF (INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0', sMonitorIniPath) = '1',
+
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + INIFILE ('DB', 'Arc_SQL_Login', '', sMonitorIniPath) + ';Password=' + INIFILE ('DB', 'Arc_SQL_Password', '', sMonitorIniPath);
+                  )
+                ); // IF - //
+              )
+            ); // IF - //
+        )
+    );
+
+    VAR ('vPlaceID', Integer, KRD_MAIN.PLACEID);
+    VAR ('vID', String, KRD_MAIN.ID);
+    VAR ('vtPlaceID', Integer); // временные
+    VAR ('vtID', String);     //   идентификаторы
+    VAR ('vSel', Integer); // кол-во выделенных
+
+    VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+
+    VAR ('sSQL', String, '');
+    VAR ('sText', String, '');
+    VAR ('sText1', String, '');
+
+    //OPENQUERY ('qEPS', 'SELECT * FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+    FORMCREATE (frmEPS, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'forms\epslog.cfm');
+
+    sSQL := 'SELECT * FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID+' ORDER BY DODT, REGDATE';
+
+    FORMSETPROPERTY (frmEPS, 'tEPS.Active', 'False');
+    FORMSETPROPERTY (frmEPS, 'tEPS.SQL', sSQL);
+    FORMSETPROPERTY (frmEPS, 'tEPS.Active', 'True');
+
+    WHILE(iForm <> 2,
+    Block(
+      iForm := FORMSHOWMODAL (frmEPS);
+      sText1 := 'Документ '+tEPS.DOCTYPE+' №'+ tEPS.DOCNO;
+
+      CASE (iForm,
+      [6, Block( // подробный протокол
+          FORMCREATE ('frmMonitor', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'forms\monitor.cfm');
+          FORMSETPROPERTY (frmMonitor, 'dbMonitor.Connected', 'False');
+          FORMSETPROPERTY (frmMonitor, 'dbMonitor.DriverName', 'ActiveX Data Objects (ADO)');
+          FORMSETPROPERTY (frmMonitor, 'dbMonitor.Params', sConnString);
+          FORMSETPROPERTY (frmMonitor, 'dbMonitor.Connected', 'True');
+
+          sSQL := 'SELECT ' +
+                  ' E2.[MsgId], E2.[ProcessedAt], E2.[Incoming], E2.[PreparedAt], E2.[StatusText], E2.[SubStatusText], E2.[SpecVersion], E2.[FmtVersion], ' +
+                  ' U.[Name], P.[Name], P.[ParticipantId], E2.[CustomsCode], E2.[BackupFile], E2.[INCOMING], E2.[WHId], E2.[WHDocId], E2.[WHDocId2], E2.[WHProcessId], E2.[EnvelopeId], E2.[InitEnvelopeId] ' +
+                  'FROM ' +
+                  ' ([Users] U RIGHT JOIN ([ED_ProcMessages] E2 LEFT JOIN [Profiles] P ON (E2.[UserProfileId] = P.[Id])) ON (U.[Id] = E2.[UserId])) ' +
+                  'WHERE ' +
+                  ' E2.[WHId]=' + vPlaceID + ' AND E2.[WHDocID]=' +char(39)+ tEPS.DOCUMENTID +char(39)+ ' AND E2.WHDocID2=' + tEPS.COUNTER + ' ' +
+                  ' ORDER BY E2.[ProcessedAt]';
+
+          FORMSETPROPERTY (frmMonitor, 'qMonitor.Active', 'False');
+          FORMSETPROPERTY (frmMonitor, 'qMonitor.SQL', sSQL);
+          FORMSETPROPERTY (frmMonitor, 'qMonitor.Active', 'True');
+
+          sSQL := 'SELECT ' +
+                  ' Count(E2.[MsgId]) as RCOUNT ' +
+                  'FROM ' +
+                  ' ([Users] U RIGHT JOIN ([ED_ProcMessages] E2 LEFT JOIN [Profiles] P ON (E2.[UserProfileId] = P.[Id])) ON (U.[Id] = E2.[UserId])) ' +
+                  'WHERE ' +
+                  ' E2.[WHId]=' + vPlaceID + ' AND E2.[WHDocID]=' +char(39)+ tEPS.DOCUMENTID +char(39)+ ' AND E2.WHDocID2=' + tEPS.COUNTER;
+
+          FORMSETPROPERTY (frmMonitor, 'qCount.Active', 'False');
+          FORMSETPROPERTY (frmMonitor, 'qCount.SQL', sSQL);
+          FORMSETPROPERTY (frmMonitor, 'qCount.Active', 'True');
+
+          //IF (Convert(FORMGETPROPERTY (frmMonitor, 'qMonitor.Recordcount'), Integer) > 0, FORMSETPROPERTY (frmMonitor, 'btnStatus.Enabled', 'True'), FORMSETPROPERTY (frmMonitor, 'btnStatus.Enabled', 'False'));
+          //IF (qCount.RCOUNT > 0, FORMSETPROPERTY (frmMonitor, 'btnStatus.Enabled', 'True'), FORMSETPROPERTY (frmMonitor, 'btnStatus.Enabled', 'False'));
+          iForm2 := 0;
+          WHILE(iForm2 <> 2,
+          Block(
+            iForm2 := FORMSHOWMODAL (frmMonitor);
+            sText := '';
+
+            CASE (iForm2,
+            [6, Block( // показ статуса сообщения
+               FORMCREATE ('frmStatus', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'forms\monitor_ex.cfm');
+               sText := sText1 + CHAR(13)+CHAR(10)+'Статус сообщения:  '+qMonitor.StatusText;
+               FORMSETPROPERTY (frmStatus, 'rtMemo2.Lines', sText);
+               sText := qMonitor.SubStatusText;
+               FORMSETPROPERTY (frmStatus, 'rtMemo1.Lines', sText);
+               sBackupFile := GetBackupFile (qMonitor.BACKUPFILE, qMonitor.INCOMING);
+               IF (FILEEXISTS (sBackupFile)=0,
+                 Block(
+                   FORMSETPROPERTY (frmStatus, 'rtHyperLink.LinkColor', 255);
+                   FORMSETPROPERTY (frmStatus, 'rtGP2.Caption', 'Файл сообщения не существует!');
+               ));
+               FORMSETPROPERTY (frmStatus, 'rtHyperLink.Text', sBackupFile);
+               FORMSHOWMODAL (frmStatus);
+               ),
+             4, Block(
+               sBackupFile := GetBackupFile (qMonitor.BACKUPFILE, qMonitor.INCOMING);
+               IF (FILEEXISTS(sBackupFile),
+                 Block(
+                   VAR ('XmlDoc', Integer);
+                   VAR ('XmlObject', Integer);
+                   VAR ('XmlBody', Integer);
+                   VAR ('sXmlFileToSave', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'xmltoxslt.xml');
+                   XMLDoc := XMLDOCUMENTCREATE();
+                   XMLDOCUMENTLOAD (XMLDoc, sBackupFile);
+//                   XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object'), 'Envelope'), 'Body'), 'Signature'), 'Object');
+                   XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+                   IF (XMLNODEFIND (XmlObject, 'ED_Container'), XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlObject, 'ED_Container'), 'ContainerDoc'), 'DocBody'), 'Signature'), 'Object'));
+                   XMLBody := XMLNODECHILD (XmlObject, 0);
+
+                   XMLNODESAVE (XMLBody, sXmlFileToSave);
+                   VAR ('ext', Variant, CREATEOLEOBJECT ('svh.Extention'));
+
+                   ext.GetXSLT2 (sXmlFileToSave, XMLNODEATTRIBUTE (XMLBody, 'DocumentModeID'), qMonitor.FmtVersion);
+                   ext.Transformate();
+                   ext.ShowDocument();
+                 ),
+                 Block(
+                   showmessage ('Отсутствует файл резервной копии.');
+                 )
+               ); // IF
+             ),
+            ]);
+          ));
+        ),
+      5, Block(
+           CASE (FORMGETPROPERTY (frmEps, 'cbAction.Text'),
+             ['Показать протокол в Монитор ЭД',
+               Block(
+                 VAR ('XmlShowLog', Integer, XMLDOCUMENTCREATE());
+                 VAR ('XmlShowLogRoot', Integer);
+                 VAR ('sShowLogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+                 IF (USERINFO ('', 'UserUUID') <> '', sShowLogFile := sShowLogFile + USERINFO ('', 'UserUUID') + '\');
+                 IF (tEPS.DocType = 'ДО-1',
+                   Block(
+                     sShowLogFile := sShowLogFile + 'SHOWLOGDO1_' + vPlaceID + '_' + tEPS.DOCUMENTID + '_' + tEPS.COUNTER + '.xml';
+                   ),
+                   Block(
+                     sShowLogFile := sShowLogFile + 'SHOWLOGDO2_' + vPlaceID + '_' + tEPS.DOCUMENTID + '_' + tEPS.COUNTER + '.xml';
+                   )
+                 );
+                 XmlShowLogRoot := XMLDOCUMENTROOT (XmlShowLog);
+                 XMLNODESETVALUE (XMLNODEADDCHILD (XmlShowLogRoot, 'ShowLog'), 'Просмотр протокола ДО-1');
+
+                 XMLDOCUMENTSAVE (XmlShowLog,  sShowLogFile);
+         ),
+              'Обновить статус ЭПС',
+               Block(
+          // загрузка регистраций из базы Монитора
+          // LoadLostRegInfoDO('','')
+            vtPlaceID := vPlaceID;
+            vtID := vId;
+            vSel :=  GetSelectedCount();
+            IF (vSel > 1,
+              IF (YesNo('В книге учета выделено '+vSel+' документ(-а,-ов).'+Char(13)+Char(10)+
+                       'Выполнить обновление статуса для выделенных документов?'),
+                Block(
+                  GetSelectedDocs('KRD', 'PLACEID', 'ID');
+                  FIRST ('KRD');
+                  while(eof('KRD')<>1,
+                    Block(
+                      IF(LOCATE ('KRD_MAIN', 'PLACEID;ID', [FIELDVALUE ('KRD.PLACEID'), FIELDVALUE ('KRD.ID')]),
+                        Block
+                        (
+                          vPlaceID := KRD_MAIN.PLACEID;
+                          vID := KRD_MAIN.ID;
+                          RefreshEps();
+                        )
+                      );
+                      NEXT('KRD');
+                    )
+                  );
+                  GLOBALREFRESH ();
+                  vPlaceID := vtPlaceID;
+                   vID := vtId;
+                  LOCATE ('KRD_MAIN', 'PLACEID;ID', [vPlaceId, vId]);
+                ),
+                RefreshEps()
+              ),
+              RefreshEps()
+            );
+
+          RefreshEps();
+          //ShowMessage('загрузка регистраций из базы Монитора')
+        ),
+              'Сохранить протокол в XML-файл',
+               Block(
+                 EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\epslog_save.prd');
+               ),
+              'Переотправка ДО-2',
+               Block(
+                 EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\do2_resend.prd');
+               ),
+           'Восстановить протокол',
+           Block(
+             EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\fix_protocol.prd');
+           ),
+           'Запросить историю процедуры',
+           Block(
+             EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\history_request.prd');
+           ),
+              'Развернуть окно Монитор ЭД',
+               Block(
+                 // развернуть Монитор ЭД
+                 VAR ('sShowMonitorFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+                 IF (USERINFO ('', 'UserUUID') <> '', sShowMonitorFile := sShowMonitorFile + USERINFO ('', 'UserUUID') + '\');
+                 sShowMonitorFile := sShowMonitorFile + 'SHOWMONITORED.xml';
+                 VAR ('stringList', Integer, STRINGLISTCREATE ());
+                 STRINGLISTADDITEM (stringList, '<SHOWMONITORED></SHOWMONITORED>');
+                 STRINGLISTSAVETOFILE (stringList, sShowMonitorFile);
+                 STRINGLISTDESTROY(stringList);
+               )
+               ],
+           ); // CASE - //
+        )
+      ]
+      ); // end Case
+    ));  // end While
+
+
+  )
+); // IF --
+

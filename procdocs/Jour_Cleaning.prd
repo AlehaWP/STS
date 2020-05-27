@@ -1,0 +1,125 @@
+// *****************************************************************************
+// Название: Очистка журналов
+// Описание: Очистка журналов
+// Кнопка вызова: 1
+// Подпись кнопки: jr
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\writelog.prd');
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'ProcDocs\Backup_database.prd');
+
+FUNC ('QuoteDateTime',
+  Block(
+    PARAM ('pDate', DateTime, 0);
+    PARAM ('pDbName', String, 1, 'dbJournals');
+    PARAM ('pIsQuery', Integer, 2, 1);
+  ),
+  Block(
+    DBFORMATDATETIME (pDate, GETDATABASETYPE (pDbName), 1, pIsQuery, 1);
+  )
+); // FUNC - QuoteDateTime
+
+FUNC ('DeleteAndPack',
+  Block(
+    PARAM ( 'pTablList', String,  0);
+    PARAM ( 'pDays',     Integer, 1, 60);
+    PARAM ( 'pDbName',   String,  2, 'dbJournals');
+  ),
+  Block(
+        VAR ( 'sSQL',         String, '');
+        VAR ( 'sCurrenTable', String, '');
+        VAR ( 'iJMID',        Integer, 0);
+        VAR ( 'iCountTable',  Integer, 0);
+        VAR ( 'iTotalTables', Integer, 0);
+        iTotalTables := SPLITSTR ( pTablList, '|', sTemp);
+        iCountTable := 1;
+        iJMID := 0;
+        SHOWPROGRESS ('Обработка ' + EXTRACTSTR ( pTablList, 1, '|') + ' ...');
+        while ( iCountTable < iTotalTables+1,
+         Block(
+               sCurrenTable := EXTRACTSTR ( pTablList, iCountTable, '|');
+               //showmessage('sCurrenTable=' + sCurrenTable);
+               IF (iCountTable = 1 ,
+                  Block(
+                        sSQL := 'SELECT JOURNAL_MASTER_ID AS JMID FROM '+ sCurrenTable +' WHERE CREATED_AT <= ' + QuoteDateTime ( ((DATE ()+TIME (1)) - pDays)) + ' ORDER BY JOURNAL_MASTER_ID DESC';
+                        //showmessage (sSQL);
+                        OPENQUERY ('Q_JR', sSQL, pDbName,1);
+                        FIRST('Q_JR');
+                        //showmessage (Q_JR.JMID);
+                        iJMID := Q_JR.JMID;
+                        CLOSEDATASET ('Q_JR');
+                        sSQL := 'DELETE FROM '+ sCurrenTable +' WHERE JOURNAL_MASTER_ID <= ' + iJMID;
+                        //showmessage (sSQL);
+                        EXECUTESQL (pDbName, sSQL);
+                        IF (iMakeBackup, PACKTABLE (sCurrenTable), );
+                  ),
+                  Block(
+                        sSQL := 'DELETE FROM '+ sCurrenTable +' WHERE JOURNAL_MASTER_ID <= ' + iJMID;
+                        //showmessage (sSQL);
+                        EXECUTESQL (pDbName, sSQL);
+                        IF (iMakeBackup, PACKTABLE (sCurrenTable), );
+                  )
+               );//if
+               SETPROGRESS ( ((iCountTable * 100)/ iTotalTables+1) );
+               iCountTable := iCountTable + 1;
+               if ( CANCELPRESSED (),
+                 Block(
+                       HIDEPROGRESS ();
+                       RAISEEXCEPTION ('Обработка остановлена');
+                 ),//block
+               ); //if
+         )//block
+        );//while
+        HIDEPROGRESS ();
+  )
+); // FUNC - DeletePack
+
+VAR ( 'sJRGOODOUT2',  String, 'JRGOODOUT2|DTTRANSPDOC2|DTCONT2|TRANSPORT2|GOODINFO2|CONTAINER2|TRANSPORTDOC2|GOODSGROUP2|GROUPINFO2|DTGROUPINFO2' );
+VAR ( 'sEPS_LOG',     String, 'EPS_LOG' );
+VAR ( 'sINVENTORY',   String, 'INVENTORY|DOCS' );
+VAR ( 'sJRREQOPER',   String, 'JRREQOPER|INSPECTORDECISION' );
+VAR ( 'mListVars',    Memo,   'sJRGOODOUT2|sEPS_LOG|sINVENTORY|sJRREQOPER' );
+//VAR ( 'mListVars',    Memo,   'sJRGOODOUT2' );
+VAR ( 'sTemp',        String, '' );
+VAR ( 'sCurrenVar',   String, '' );
+VAR ( 'iDays',        Integer, 60 );
+VAR ( 'sDays',        String, '60' );
+VAR ( 'iTotalVars',   Integer, 0 );
+VAR ( 'iCount',       Integer, 0 );
+VAR ('sTypeJourBase', String, INIFILE ('JournalsDB', 'Driver Name', ''));
+VAR ('iMakeBackup', Integer, 0);
+VAR ('sPathJourBase', String, '');
+VAR ('sPathJourBaseBackup', String, ProgramPath () + INIFILE ('JournalsBackup', 'Path', 'JOURNALS\BACKUP'));
+IF  ( ShiftPressed (), sDays := INPUTTEXT ('Период очистки журналов', 'Укажите кол-во дней, которые надо оставить :', 60), );
+//WriteLog('Message.log', ':' + sDays);
+IF  ( Trim(sDays) = '', RAISEEXCEPTION ('Отмена выполнения'), iDays := Convert(sDays, Integer) );
+IF ( (sTypeJourBase = 'STANDARD') |
+     ((sTypeJourBase = '{ ProgramDatabase }') * (INIFILE ('StsDB', 'Driver Name', '') = 'STANDARD')),
+     iMakeBackup := 1 ,
+     iMakeBackup := 0
+);//if
+IF ( sTypeJourBase = 'STANDARD', sPathJourBase := INIFILE ('JournalsDB', 'PATH', ''), );
+IF ( (sTypeJourBase = '{ ProgramDatabase }') * (INIFILE ('StsDB', 'Driver Name', '') = 'STANDARD'), sPathJourBase := INIFILE ('StsDB', 'PATH', ''), );
+IF ( DirectoryExists (sPathJourBase) = 0 ,
+    sPathJourBase := IF ( COPY (sPathJourBase,1,1) <> '\',
+                         IncludeTrailingBackslash (ProgramPath ()) + sPathJourBase ,
+                         IncludeTrailingBackslash (ProgramPath ()) + COPY (sPathJourBase,2,LENGTH (sPathJourBase)-1)),
+    );//if
+IF ( DirectoryExists (sPathJourBase) = 0 , RAISEEXCEPTION ('Не удалось определить папку с базой журналов.') , );
+IF (iMakeBackup, BackupBase( sPathJourBaseBackup, sPathJourBase, 0),);
+
+iTotalVars := SPLITSTR ( mListVars, '|', sTemp);
+iCount := 1;
+while ( iCount < iTotalVars+1,
+ Block(
+       sCurrenVar := EXTRACTSTR ( mListVars, iCount, '|');
+       DeleteAndPack(VALUE (EXTRACTSTR ( mListVars, iCount, '|')), iDays);
+       iCount := iCount + 1;
+ )//block
+);//while
+showmessage('Очистка журналов завершина.');

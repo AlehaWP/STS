@@ -1,0 +1,78 @@
+// *****************************************************************************
+// Название: Отправка ДО3
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: Отправка ДО3
+// *****************************************************************************
+//
+VAR ('sPlaceId', String);
+VAR ('sPeriodStart', String);
+VAR ('sPeriodEnd', String);
+VAR ('mSQL', Memo, '');
+
+VAR ('sXmlVersion', String, INIFILE ('XMLFormat', 'Version', '5.0.7'));
+
+If(sXmlVersion = '5.0.3', sXMLVersion := '5.0.7');
+If(sXmlVersion = '5.0.5', sXMLVersion := '5.0.7');
+
+
+If (RECORDCOUNT ('jrDO3')<>0,
+  Block(
+    IF (JRDO3.ReportNumber <> '',
+      If(JRDO3.CustomState <> 'Зарегистрирован',
+        Block( // выгружаем
+          //IF (INPUTDATERANGE ('sPeriodStart', 'sPeriodEnd', 'Задайте период') <> 1, RAISEEXCEPTION ('Отменено пользователем'));
+
+          If((FIELDISNULL ('JRDO3', 'CERTIFICATEDATE'))|(FIELDISNULL ('JRDO3', 'CERTIFICATENUMBER')),
+            mSQL := 'SELECT * FROM  STORES S WHERE (S.PLaceId=0) and (S.PLaceId=1)',
+            mSQL := 'SELECT * FROM  STORES S ' +
+                    ' WHERE ' +
+                    ' S.LICENCEDATE = '+char(39)+FDT('DD.MM.YYYY', JRDO3.CERTIFICATEDATE)+char(39)+' AND ' +
+                    ' S.LICENCENO = '+char(39)+JRDO3.CERTIFICATENUMBER+char(39)
+          );
+          OPENQUERY ('qryStores', 'STS_DB', mSQL);
+          IF ((RECORDCOUNT ('qryStores') > 1)|(RECORDCOUNT ('qryStores') < 1),
+            IF (SELECTVALUES ('Выберите лицензию', 'STORES', [['NAME', 'Наименование', 40], ['LICENCENO', 'Номер лицензии', 30]], [['PLACEID', 'sPlaceID']], '', 'STS_DB') <> 1,  RAISEEXCEPTION ('Отменено пользователем')),
+            sPlaceId := qryStores.PLACEID
+          );
+          LOCATE ('STORES_2', 'PLACEID', [sPlaceId]);
+          EditRecord('JRDO3');
+          SETFIELDVALUE ('JRDO3', 'PLACEID', sPLACEID);
+          SETFIELDVALUE ('JRDO3', 'WHCertificateNumber', STORES_2.LICENCENO);
+          SETFIELDVALUE ('JRDO3', 'WHCertificateDate', STORES_2.LICENCEDATE);
+          SETFIELDVALUE ('JRDO3', 'RECORDTYPE', 'Отчет ДО3');
+          PostRecord('JRDO3');
+          sPeriodStart := FDT('DD.MM.YYYY', JRDO3.ReportBeginDate);
+          sPeriodEnd := FDT('DD.MM.YYYY', JRDO3.ReportEndDate);
+          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sXMLVersion + '\do3_album.exp');
+	  EditRecord('JRDO3');
+	  SETFIELDVALUE ('JRDO3', 'CustomState', 'Рассматривается инспектором');
+          PostRecord('JRDO3');
+
+          OPENTABLE ('EPS_LOG_2', 'EPS_LOG', '', 'dbJournals', 1);
+          EDITRECORD ('EPS_LOG_2');
+          APPENDRECORD ('EPS_LOG_2');
+          OPENQUERY ('qryNUM', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM EPS_LOG ', 'dbJournals');
+          VAR('iMaxID', Integer, qryNUM.MAX_ID + 1);
+          SETFIELDVALUE('EPS_LOG_2', 'JOURNAL_MASTER_ID', iMaxId);    // Ключевое поле //
+          SETFIELDVALUE ('EPS_LOG_2', 'PLACEID', sPLACEID);
+          SETFIELDVALUE ('EPS_LOG_2', 'DocumentID', JRDO3.RefDocumentId);
+          SETFIELDVALUE ('EPS_LOG_2', 'DocType', 'ДО3');
+          SETFIELDVALUE ('EPS_LOG_2', 'DocNo', JRDO3.ReportNumber);
+          SETFIELDVALUE ('EPS_LOG_2', 'DocDate', JRDO3.ReportDate);
+          SETFIELDVALUE ('EPS_LOG_2', 'DocStatus', 'ДО3 отправлена');
+          SETFIELDVALUE ('EPS_LOG_2', 'RegDate', DATE()+TIME(1));
+          SETFIELDVALUE ('EPS_LOG_2', 'LICENCENO', STORES_2.LICENCENO);
+          SETFIELDVALUE ('EPS_LOG_2', 'LICENCEDATE', STORES_2.LICENCEDATE);
+          PostRecord('EPS_LOG_2');
+          CloseDataset('EPS_LOG_2');          
+
+
+        ),
+        Showmessage('Текущий ДО3 уже зарегистрирован в таможне!')
+      ),
+      Showmessage('Выберите в журнале ДО3')
+    );
+  ),
+  Showmessage('Журнал ДО3 закрыт.')
+);

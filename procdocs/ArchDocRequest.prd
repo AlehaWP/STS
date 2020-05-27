@@ -1,0 +1,44 @@
+// *****************************************************************************
+// Название: Запрос документов из архива
+// Описание: Запрос документов из архива
+// Кнопка вызова: 0
+// Подпись кнопки: Запросить документы
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('Counter', integer, 0);
+Var('sPathToSave', string, '');
+SELECTDIRECTORY ('sPathToSave');
+OPENQUERY('NeedDoc', 'SELECT * FROM jrInventory JI INNER JOIN jrInventDocument JID '+
+                     'ON (JI.JOURNAL_MASTER_ID =JID.JOURNAL_MASTER_ID ) '+
+                     ' WHERE '+
+                     ' GETDOC = 1 ' +
+                     ' ORDER BY InvDocDate','dbJournals');
+//showmessage(RECORDCOUNT('NeedDoc'));
+FIRST('NeedDoc');
+WHILE(EOF('NeedDoc')= 0,
+      BLOCK(
+        counter:= counter + 1;
+        VAR ('sXmlDocEncoding', String, 'UTF-8');
+        VAR ('XMLDoc', Integer, XMLDocumentCreate());
+        XMLDOCUMENTENCODING (XMLDoc, sXmlDocEncoding);
+        VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+        VAR ('XMLArchDocRequest', Integer, XMLNodeAddChild(XMLDocRoot, 'adr:ArchDocRequest'));
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'DocumentModeID', '1005006E');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xsi:schemaLocation', 'urn:customs.ru:Information:EArchDocuments:ArchDocRequest:5.0.7 ArchDocRequest.xsd');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:adr', 'urn:customs.ru:Information:EArchDocuments:ArchDocRequest:5.0.7');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:catArch_ru', 'urn:customs.ru:Information:ElectronicArchiveDocumentsDocuments:ElectronicArchiveCommonAggregateTypes:5.0.7');
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'cat_ru:DocumentID'), GENERATEUUID());
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'cat_ru:RefDocumentID'), GENERATEUUID());
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchDeclID'), '111');
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchID'), NeedDoc.ArchID);
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchDocID'), NeedDoc.ArchDocID);
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchDocumentID'), NeedDoc.InventDocumentID);//??????????????????????
+        
+        XMLDOCUMENTSAVE(XMLDoc, sPathToSave + '\ArchDocRequest_'+Counter+'.xml');
+        NEXT('NeedDoc');
+      )
+);
+CLOSEDATASET('NeedDoc');

@@ -1,0 +1,659 @@
+// *****************************************************************************
+// Название: Сохранение ДО12(мв) в XML
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: ДО в XML
+// *****************************************************************************
+//
+
+Func('ReplaceStr',
+Block(
+  Param('strLine', String, 0),
+  Param('sWhat', String, 1),
+  Param('sWith', String, 2),
+),
+Block(
+  Var('iPos', Integer, STRPOS (sWhat, strLine));
+  WHILE(iPos <= Length(strLine), Block(
+    IF(COPY(strLine, iPos, Length(sWhat)) = sWhat,
+      strLine := COPY (strLine, 1, iPos - 1) + sWith + COPY (strLine, iPos + Length(sWhat), Length(strLine) - iPos - 1 + Length(sWhat))
+    );
+    iPos := iPos + 1;
+  ));
+  strLine
+));
+
+Func('CorrectFileName',
+  Param('sFileName', String, 0),
+Block(
+
+  VAR('sResult', String, '');
+
+  sResult := sFileName;
+
+  sResult := REMOVECHAR (sResult, '/');
+  sResult := REMOVECHAR (sResult, '\');
+  sResult := REMOVECHAR (sResult, ':');
+  sResult := REMOVECHAR (sResult, '*');
+  sResult := REMOVECHAR (sResult, '?');
+  sResult := REMOVECHAR (sResult, '"');
+  sResult := REMOVECHAR (sResult, '<');
+  sResult := REMOVECHAR (sResult, '>');
+  sResult := REMOVECHAR (sResult, '|');
+  
+  sResult
+));
+
+Func('ExcludeNumPart', Block(
+  Param('sNum', String, 0),
+  Param('sDelim', String, 1),
+  Param('iPart', Integer, 2),
+), Block(
+
+  VAR('sResult', String, '');
+  
+  IF(STRPOS(sDelim, sNum),
+    sResult := EXTRACTSTR (sNum, iPart, sDelim),
+    sResult := sNum
+  );
+  
+  sResult
+));
+
+Func('LogMessage', Block(
+  Param('sStoreNo', String, 0),
+  Param('sCustomCode', String, 1),
+  Param('dtDate', DateTime, 2),
+  Param('aMode', Integer, 3),
+  Param('sNBD', String, 4),
+  Param('sStatus', String, 5),
+),        { функция для вывода строки в журнал }
+  AppendlogFile(sLogFile, '|' + CENTER(TRIM(sStoreNo), 8) + '| ' +
+                                CENTER(sCustomCode, 9) + '| ' +
+                                CENTER(FORMATDATETIME ('DD.MM.YYYY', dtDate), 13) + '| ' +
+                                CENTER(CASE(aMode,
+                                             [0, 'ДУ',
+                                              1, 'ДУ авиагр.',
+                                              2, 'УВ',
+                                              3, 'ДУ морск.',
+                                              4, 'ДУ (пр. 290)',
+                                              5, 'ПП',
+                                              6, 'ДО1',
+                                              7, 'ДО1мв',
+                                              8, 'ДУ ЗТК',
+                                              9, 'ДО2',
+                                              10, 'ДО2мв'],
+                                              ''), 13) + '| ' +
+                                CENTER(sNBD, 23) + ' | ' +
+                                CENTER(CASE(sStatus,
+                                             ['И', 'Рассматривается',
+                                              '3', 'Зарегистрирован',
+                                              '0', 'Для регистрации'],
+                                              'Без статуса'), 20) + ' | ')
+);
+
+FUNC('ExportRow', Block(
+  Param('sTableName', String, 0),
+  Param('XMLNodeParent', Integer, 1),
+  Param('sExceptFields', Memo, 2),
+), Block(
+
+  VAR ('XMLNodeParam', Integer);
+
+  VAR ('sCurField', String, '');
+  VAR ('iFldCount', Integer, SPLITSTR (FIELDLIST (sTableName, '|'), '|', sCurField));
+  VAR ('i', Integer, 1);
+
+  WHILE(i <= iFldCount, Block(
+
+    sCurField := EXTRACTSTR (FIELDLIST (sTableName, '|'), i, '|');
+
+    IF(FIELDEXISTS (sTableName, sCurField) * (STRPOS ('|' + sCurField + '|', sExceptFields) = 0) * (COPY(sCurField, 1, 2) <> 'C_'), Block(
+      XMLNodeParam := XMLNodeAddChild(XMLNodeParent, sCurField);
+      IF (FIELDISNULL(sTableName, sCurField),
+        XMLNodeSetAttribute(XMLNodeParam, 'xsi:null', 'true'),
+        XMLNodeSetValue(XMLNodeParam, FIELDVALUE (sTableName, sCurField))
+      );
+    ));
+    
+    i := i + 1;
+  ));
+  
+  i
+));
+
+FUNC('ExportTable', Block(
+  Param('sTableName', String, 0),
+  Param('sNodeName', String, 1),
+  Param('XMLNodeParent', Integer, 2),
+  Param('sExceptFields', Memo, 3),
+  Param('sNumField', String, 4),
+  Param('iPlaceId', String, 5),
+  Param('iId', String, 6),
+), Block(
+
+  VAR ('XMLNodeItemParent', Integer, 0);
+  VAR ('XMLNodeItem', Integer, 0);
+
+  VAR ('iFldCnt', Integer, 0);
+
+  SETRANGE (sTableName, [iPlaceId, iId]);
+
+  IF(RECORDCOUNT(sTableName) > 0,
+    XMLNodeItemParent := XMLNodeAddChild(XMLNodeParent, sNodeName);
+  );
+  
+  FIRST(sTableName);
+  WHILE(EOF(sTableName) = 0, Block(
+
+    XMLNodeItem := XMLNodeAddChild(XMLNodeItemParent, 'ROW');
+    XMLNodeSetAttribute(XMLNodeItem, 'rownum', FIELDVALUE(sTableName, sNumField));
+
+    iFldCnt := ExportRow(sTableName, XMLNodeItem, sExceptFields);
+
+    NEXT(sTableName);
+  ));
+
+  CANCELRANGE (sTableName);
+));
+
+
+
+FUNC('ExportTableDO2', Block(
+  Param('sTableName', String, 0),
+  Param('sNodeName', String, 1),
+  Param('XMLNodeParent', Integer, 2),
+  Param('sExceptFields', Memo, 3),
+  Param('sNumField', String, 4),
+  Param('iPlaceId', String, 5),
+  Param('iId', String, 6),
+  Param('iCounter', String, 7),
+), Block(
+
+  VAR ('XMLNodeItemParent', Integer, 0);
+  VAR ('XMLNodeItem', Integer, 0);
+
+  VAR ('iFldCnt', Integer, 0);
+  
+  SETRANGE (sTableName, [iPlaceId, iId, iCounter]);
+
+  IF(RECORDCOUNT(sTableName) > 0,
+    XMLNodeItemParent := XMLNodeAddChild(XMLNodeParent, sNodeName);
+  );
+
+  FIRST(sTableName);
+  WHILE(EOF(sTableName) = 0, Block(
+
+    XMLNodeItem := XMLNodeAddChild(XMLNodeItemParent, 'ROW');
+    XMLNodeSetAttribute(XMLNodeItem, 'rownum', FIELDVALUE(sTableName, sNumField));
+
+    iFldCnt := ExportRow(sTableName, XMLNodeItem, sExceptFields);
+
+    NEXT(sTableName);
+  ));
+
+  CANCELRANGE (sTableName);
+));
+
+FUNC('ExportDO1', Block(
+  Param('iPlaceId', Integer, 0),
+  Param('iId', Integer, 1),
+  Param('sMainTableName', String, 2),
+), Block(
+
+  APPENDLOGFILE (sLogFileTmp, 'Экспорт документа: ' + FIELDVALUE (sMainTableName, 'NBD'));
+
+  Var('sDO1Filename', String);
+
+  VAR ('XMLDoc', Integer, XMLDocumentCreate());
+  XMLDOCUMENTENCODING (XMLDoc, sXmlDocEncoding);
+  VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+  VAR ('XMLNode', Integer, XMLNodeAddChild(XMLDocRoot, 'DOCS'));
+  VAR ('XMLNodeDOC', Integer, XMLNodeAddChild(XMLNode, 'DOC'));
+  VAR ('XMLNodeDocStore', Integer, 0);
+  VAR ('XMLNodeDocPart', Integer, 0);
+  VAR ('XMLNodeDocPartRow', integer, 0);
+  VAR ('sTableName', String, '');
+  VAR ('sFileNameExpr', String, '');
+
+  CONST ('sCustNumDelim', String, '/');
+
+  VAR ('sDocType', String, '');
+  sDocType := CASE(FIELDVALUE(sMainTableName, 'A_MODE'),
+                   [0, 'Документ учета',
+                    1, 'Документ учета для авиагрузов',
+                    2, 'Уведомление',
+                    3, 'Документ учета для морских грузов',
+                    4, 'Документ учета (пр. 290)',
+                    5, 'Подтверждение о прибытии (пр. 290)',
+                    6, 'ДО1 (пр. 358)',
+                    7, 'ДО1мв (пр. 358)',
+                    8, 'Документ учета ЗТК (пр. 939)'],
+                    '');
+
+  XMLNodeSetAttribute(XMLNodeDOC, 'doctype', Trim(FIELDVALUE(sMainTableName, 'A_MODE')));
+  XMLNodeSetAttribute(XMLNodeDOC, 'docname', sDocType);
+  XMLNodeSetAttribute(XMLNodeDOC, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+
+  SETRANGE (sMainTableName, [iPlaceId, iId]);
+
+  FIRST(sMainTableName);
+  
+  IF(FINDKEY('STORES_2', [FIELDVALUE (sMainTableName, 'PLACEID')]), Block(
+
+    sFileNameExpr := ReplaceStr(sDO1FileNameExpr, 'KRD_MAIN.', sMainTableName + '.');
+    sFileNameExpr := ReplaceStr(sFileNameExpr, 'STORES.', 'STORES_2.');
+    sDO1FileName := INCLUDETRAILINGBACKSLASH(sDirName) + CorrectFileName(SOLVE(sFileNameExpr));
+    
+    // == Информация о складе ==============================================================
+    sTableName := 'STORES';
+    XMLNodeDocStore := XMLNodeAddChild(XMLNodeDOC, 'STORES');
+    ExportRow(sTableName + '_2', XMLNodeDocStore, VALUE('EXCEPT_FIELDS_' + sTableName));
+    // =====================================================================================
+  ));
+
+  XMLNodeDocPart := XMLNodeAddChild(XMLNodeDOC, 'KRD_MAIN');
+
+  WHILE(EOF(sMainTableName) = 0, Block(
+
+    XMLNodeDocPartRow := XMLNodeAddChild(XMLNodeDocPart, 'ROW');
+    XMLNodeSetAttribute(XMLNodeDocPartRow, 'num', FIELDVALUE (sMainTableName, 'PART_NO'));
+
+    // == Информация о товарах партии ==============================================================================
+    sTableName := 'KRD_COMM';
+    ExportTable(sTableName + '_2', sTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_' + sTableName), 'G32', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'));
+    // =============================================================================================================
+    
+    // == Информация о контейнерах партии ==========================================================================
+    sTableName := 'KRD_CONT';
+    ExportTable(sTableName + '_2', sTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_' + sTableName), 'COUNTER', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'));
+    // =============================================================================================================
+  
+    // == Информация о ДКД партии ==================================================================================
+    sTableName := 'KRD_DCD';
+    ExportTable(sTableName + '_2', sTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_' + sTableName), 'COUNTER', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'));
+    // =============================================================================================================
+
+    // == Информация о ТСД партии ==================================================================================
+    sTableName := 'KRD_PAPERS';
+    ExportTable(sTableName + '_2', sTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_' + sTableName), 'COUNTER', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'));
+    // =============================================================================================================
+
+    // == Информация о ТС партии ===================================================================================
+    sTableName := 'KRD_TRANSP';
+    ExportTable(sTableName + '_2', sTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_' + sTableName), 'COUNTER', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'));
+    // =============================================================================================================
+
+    // == Информация о ТС партии ===================================================================================
+    sTableName := 'KRD_COMM_PAPERS';
+    ExportTable(sTableName + '_2', sTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_' + sTableName), 'DOC_COUNTER', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'));
+    // =============================================================================================================
+
+    // == Информация о партии ДО1(мв) ==============================================================================
+    ExportRow(sMainTableName, XMLNodeDocPartRow, VALUE('EXCEPT_FIELDS_KRD_MAIN'));
+    // =============================================================================================================
+    
+    NEXT(sMainTableName);
+  ));
+  
+  CANCELRANGE (sMainTableName);
+
+  XMLDocumentSaveToFile(XMLDoc, sDO1FileName);
+  
+  XmlDestroy(XMLDoc);
+  
+  IF(bArchiveFile,
+   ZIPMOVEFILE(INCLUDETRAILINGBACKSLASH(sDirName) + sArchiveFileName, sDO1FileName)
+  );
+));
+
+FUNC('ExportDO2', Block(
+  Param('iPlaceId', Integer, 0),
+  Param('iMainId', Integer, 1),
+  Param('iMainCounter', Integer, 2),
+  Param('sMainTableName', String, 3),
+), Block(
+
+  APPENDLOGFILE (sLogFileTmp, 'Экспорт документа: ' + FIELDVALUE (sMainTableName, 'RELEASE_DATE'));
+
+  Var('sDO2Filename', String);
+
+  VAR ('XMLDoc', Integer, XMLDocumentCreate());
+  XMLDOCUMENTENCODING (XMLDoc, sXmlDocEncoding);
+  VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+  VAR ('XMLNode', Integer, XMLNodeAddChild(XMLDocRoot, 'DOCS'));
+  VAR ('XMLNodeDOC', Integer, XMLNodeAddChild(XMLNode, 'DOC'));
+  VAR ('XMLNodeDocStore', Integer, 0);
+  VAR ('XMLNodeDocPart', Integer, 0);
+  VAR ('XMLNodeDocPartRow', integer, 0);
+  VAR ('sTableName', String, '');
+  VAR ('sFileNameExpr', String, '');
+
+  CONST ('sCustNumDelim', String, '/');
+
+  VAR ('sDocType', String, 'ДО2');
+
+  XMLNodeSetAttribute(XMLNodeDOC, 'docname', sDocType);
+  XMLNodeSetAttribute(XMLNodeDOC, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+
+  SETRANGE (sMainTableName, [iPlaceId, iMainId, iMainCounter]);
+  
+  FIRST(sMainTableName);
+  IF(FINDKEY('STORES_2', [FIELDVALUE (sMainTableName, 'PLACEID')]), Block(
+
+    sFileNameExpr := ReplaceStr(sDO2FileNameExpr, 'REL_MAIN.', sMainTableName + '.');
+    sFileNameExpr := ReplaceStr(sFileNameExpr, 'STORES.', 'STORES_2.');
+    sDO2FileName := INCLUDETRAILINGBACKSLASH(sDirName) + CorrectFileName(SOLVE(sFileNameExpr));
+    
+    // == Информация о складе ==============================================================
+    sTableName := 'STORES';
+    XMLNodeDocStore := XMLNodeAddChild(XMLNodeDOC, 'STORES');
+    ExportRow(sTableName + '_2', XMLNodeDocStore,'');
+    // =====================================================================================
+  ));
+
+  XMLNodeDocPart := XMLNodeAddChild(XMLNodeDOC, 'RELEASE');
+
+  WHILE(EOF(sMainTableName) = 0, Block(
+  
+    XMLNodeDocPartRow := XMLNodeAddChild(XMLNodeDocPart, 'ROW');
+    XMLNodeSetAttribute(XMLNodeDocPartRow, 'num', FIELDVALUE (sMainTableName, 'MAIN_NO'));
+
+    // == Информация о товарах партии ==============================================================================
+    sTableName := 'REL_COMM';
+    ExportTableDO2(sTableName + '_2' , sTableName, XMLNodeDocPartRow, '', 'COUNTER', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'), FIELDVALUE (sMainTableName, 'COUNTER'));
+    // =============================================================================================================
+  
+    // == Информация о контейнерах партии ==========================================================================
+    sTableName := 'RELTRANS';
+    ExportTableDO2(sTableName + '_2', sTableName, XMLNodeDocPartRow, '', '', FIELDVALUE (sMainTableName, 'PLACEID'), FIELDVALUE (sMainTableName, 'ID'), FIELDVALUE (sMainTableName, 'COUNTER'));
+    // =============================================================================================================
+
+    // == Информация о партии ДО2(мв) ==============================================================================
+    ExportRow(sMainTableName, XMLNodeDocPartRow, '');
+    // =============================================================================================================
+
+    NEXT(sMainTableName);
+  ));
+  
+  CANCELRANGE (sMainTableName);
+  
+  XMLDocumentSaveToFile(XMLDoc, sDO2FileName);
+
+  XmlDestroy(XMLDoc);
+
+  IF(bArchiveFile,
+    ZIPMOVEFILE(INCLUDETRAILINGBACKSLASH(sDirName) + sArchiveFileName, sDO2FileName)
+  );
+
+));
+
+// ==========================================================================================================
+
+// ****** Основной раздел ***********************************************************************************
+
+IF(BOOKOPENED () = 0, RAISEEXCEPTION ('Книга учета закрыта. Выполнение отменено'));
+
+VAR('sIniFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'proc.ini');
+VAR('sIniSection', String, 'doxmlexp.prd');
+
+// == Диалоговое окно =======================================================================================
+FORMCREATE(frmDialog, PROGRAMPATH() + '\FORMS\doxmlexp.cfm');
+
+VAR('sDirName', String, INIFILE (sIniSection, 'Dir', PROGRAMPATH(), sIniFile));
+VAR('bDO1Export', Boolean, INIFILE (sIniSection, 'DO1Export', '1', sIniFile));
+VAR('bDO2Export', Boolean, INIFILE (sIniSection, 'DO2Export', '1', sIniFile));
+VAR('sXmlDocEncoding', String, Trim(INIFILE (sIniSection, 'XmlEncoding', 'UTF-8', sIniFile)));
+VAR('bCurrent', Boolean, False);
+VAR('bSelected', Boolean, False);
+VAR('iSelCount', Integer, GETSELECTEDCOUNT());
+VAR('bArchiveFile', Boolean, INIFILE (sIniSection, 'ArchiveFile', '0', sIniFile));
+VAR('sArchiveFileName', String, '');
+VAR('sArchiveFileNameExpr', String, INIFILE (sIniSection, 'ArchiveFileNameExpr', '"VD" + FDT("YYMMDD", DATE()) + ".ZIP"', sIniFile));
+VAR('sDO1FileNameExpr', String, INIFILE (sIniSection, 'DO1FileNameExpr', '"do1-" + CUSTOMSNOPART(KRD_MAIN.NBD, 1, STORES.CUSTOMS_CODE) + "-" + FDT("YYYYMMDD", KRD_MAIN.BD_DATE) + "-" + LEFTPAD(CUSTOMSNOPART(KRD_MAIN.NBD, 3, RIGHT(KRD_MAIN.NBD, 7)), 7, "0") + ".xml"', sIniFile));
+VAR('sDO2FileNameExpr', String, INIFILE (sIniSection, 'DO2FileNameExpr', '"do2-" + CUSTOMSNOPART(REL_MAIN.DOC_NO, 1, STORES.CUSTOMS_CODE) + "-" + FDT("YYYYMMDD", REL_MAIN.OUT_DATE) + "-" + LEFTPAD(CUSTOMSNOPART(REL_MAIN.RELEASE_NO, 3, RIGHT(REL_MAIN.RELEASE_NO, 7)), 7, "0") + ".xml"', sIniFile));
+
+IF(iSelCount,
+  FORMSETPROPERTY(frmDialog, 'rbtnDocSelected.Checked', 'True'),
+Block(
+  FORMSETPROPERTY(frmDialog, 'rbtnDocCurrent.Checked', 'True');
+  FORMSETPROPERTY(frmDialog, 'rbtnDocSelected.Enabled', 'False');
+));
+
+FORMSETPROPERTY(frmDialog, 'edDirName.Text', sDirName);
+FORMSETPROPERTY(frmDialog, 'chkDO1mv.Checked', IF(bDO1Export, 'True', 'False'));
+FORMSETPROPERTY(frmDialog, 'chkDO2mv.Checked', IF(bDO2Export, 'True', 'False'));
+FORMSETPROPERTY(frmDialog, 'cmbXmlEncoding.Text', sXmlDocEncoding);
+
+FORMSETPROPERTY(frmDialog, 'chkArchiveFile.Checked', IF(bArchiveFile, 'True', 'False'));
+
+FORMSETPROPERTY(frmDialog, 'edArchiveFileNameExpr.Text', sArchiveFileNameExpr);
+FORMSETPROPERTY(frmDialog, 'edArchiveFileName.Text', SOLVE (sArchiveFileNameExpr));
+FORMSETPROPERTY(frmDialog, 'edDO1FileNameExpr.Text', sDO1FileNameExpr);
+FORMSETPROPERTY(frmDialog, 'edDO2FileNameExpr.Text', sDO2FileNameExpr);
+
+
+IF(FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION(''));
+
+sDirName := FORMGETPROPERTY(frmDialog, 'edDirName.Text');
+bDO1Export := FORMGETPROPERTY(frmDialog, 'chkDO1mv.Checked') = 'True';
+bDO2Export := FORMGETPROPERTY(frmDialog, 'chkDO2mv.Checked') = 'True';
+bCurrent := FORMGETPROPERTY(frmDialog, 'rbtnDocCurrent.Checked') = 'True';
+bSelected := FORMGETPROPERTY(frmDialog, 'rbtnDocSelected.Checked') = 'True';
+sXmlDocEncoding := Trim(FORMGETPROPERTY(frmDialog, 'cmbXmlEncoding.Text'));
+bArchiveFile := FORMGETPROPERTY(frmDialog, 'chkArchiveFile.Checked') = 'True';
+sArchiveFileName := FORMGETPROPERTY(frmDialog, 'edArchiveFileName.Text');
+sArchiveFileNameExpr := FORMGETPROPERTY(frmDialog, 'edArchiveFileNameExpr.Text');
+sDO1FileNameExpr := FORMGETPROPERTY(frmDialog, 'edDO1FileNameExpr.Text');
+sDO2FileNameExpr := FORMGETPROPERTY(frmDialog, 'edDO2FileNameExpr.Text');
+
+IF((bDO1Export = 0)*(bDO2Export = 0),
+  RAISEEXCEPTION ('Документы не выбраны. Выполнение отменено.')
+);
+
+IF(DIRECTORYEXISTS(sDirName) = 0,
+  IF(YESNO ('Каталог ' + sDirName + ' не существует. Создать ?'),
+    FORCEDIRECTORIES(sDirName),
+    RAISEEXCEPTION ('Выполнение отменено')
+  )
+);
+
+WRITEINIFILE (sIniSection, 'Dir', sDirName, sIniFile);
+WRITEINIFILE (sIniSection, 'DO1Export', bDO1Export, sIniFile);
+WRITEINIFILE (sIniSection, 'DO2Export', bDO2Export, sIniFile);
+WRITEINIFILE (sIniSection, 'ArchiveFile', bArchiveFile, sIniFile);
+WRITEINIFILE (sIniSection, 'ArchiveFileNameExpr', CHAR(34) + sArchiveFileNameExpr + CHAR(34), sIniFile);
+WRITEINIFILE (sIniSection, 'DO1FileNameExpr', CHAR(34) + sDO1FileNameExpr + CHAR(34), sIniFile);
+WRITEINIFILE (sIniSection, 'DO2FileNameExpr', CHAR(34) + sDO2FileNameExpr + CHAR(34), sIniFile);
+
+IF(Trim(sXmlDocEncoding) = '', RAISEEXCEPTION ('Не указана кодировка XML-документа'));
+
+WRITEINIFILE (sIniSection, 'XmlEncoding', sXmlDocEncoding, sIniFile);
+// ==========================================================================================================
+
+IF(DIRECTORYEXISTS(PROGRAMPATH() + 'TEMP') = 0, FORCEDIRECTORIES(PROGRAMPATH() + 'TEMP'));
+
+VAR('sLogFile', String, PROGRAMPATH() + 'TEMP\doxmlexp.log');
+VAR('sLogFileTmp', String, PROGRAMPATH() + 'TEMP\doxmlexptmp.log');
+
+CREATELOGFILE (sLogFile);
+
+IF(bArchiveFile,
+  APPENDLOGFILE (sLogFile, 'Выгрузка в файл: ' + INCLUDETRAILINGBACKSLASH(sDirName) + sArchiveFileName),
+  APPENDLOGFILE (sLogFile, 'Каталог выгрузки: ' + INCLUDETRAILINGBACKSLASH(sDirName))
+);
+APPENDLOGFILE (sLogFile, '');
+
+APPENDLOGFILE (sLogFile, '----------------------------------------------------------------------------------------------------');
+APPENDLOGFILE (sLogFile, '|№ склада| Код там. |     Дата     |  Тип док-та  |        № документа      |       Статус         |');
+APPENDLOGFILE (sLogFile, '----------------------------------------------------------------------------------------------------');
+
+// Списки невыгружаемых полей таблиц
+{VAR('EXCEPT_FIELDS_STORES', Memo,  "PLACEID");
+VAR('EXCEPT_FIELDS_KRD_MAIN', Memo, "PLACEIDID|ID|SHOW_NBD");
+VAR('EXCEPT_FIELDS_KRD_COMM', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_KRD_COMM_PAPERS', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_KRD_CONT', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_KRD_DCD', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_KRD_PAPERS', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_KRD_TRANSP', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_REL_COMM', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_RELEASE', Memo, "PLACEIDID|ID");
+VAR('EXCEPT_FIELDS_RELTRANS', Memo, "PLACEIDID|ID");}
+
+VAR('EXCEPT_FIELDS_STORES', Memo,  "");
+VAR('EXCEPT_FIELDS_KRD_MAIN', Memo, "|SHOW_NBD|");
+VAR('EXCEPT_FIELDS_KRD_COMM', Memo, "");
+VAR('EXCEPT_FIELDS_KRD_COMM_PAPERS', Memo, "");
+VAR('EXCEPT_FIELDS_KRD_CONT', Memo, "");
+VAR('EXCEPT_FIELDS_KRD_DCD', Memo, "");
+VAR('EXCEPT_FIELDS_KRD_PAPERS', Memo, "");
+VAR('EXCEPT_FIELDS_KRD_TRANSP', Memo, "");
+VAR('EXCEPT_FIELDS_REL_COMM', Memo, "");
+VAR('EXCEPT_FIELDS_RELEASE', Memo, "");
+VAR('EXCEPT_FIELDS_RELTRANS', Memo, "");
+
+// Список обработанных ДО1
+VAR ('sMainIds', Memo, "");
+// Список обработанных ДО2
+VAR ('sMainIdsDO2', Memo, "");
+
+OPENTABLE ('KM', 'STS_DB', 'KRD_MAIN', 'PLACEID;MAIN_ID');
+OPENTABLE ('RM', 'STS_DB', 'RELEASE', 'PLACEID;MAIN_ID;MAIN_COUNTER');
+
+VAR ('iCounter1', Integer, 0);
+VAR ('iCounter2', Integer, 0);
+
+VAR ('Indicator', Integer, 0);
+
+Const('iRecordCount', Integer, 0);
+Const('iCurrentRecord', Integer, 1);
+Const('ProgrItem', Float, 0);
+
+
+Const('iRecordCount1', Integer, 0);
+Const('iCurrentRecord1', Integer, 1);
+Const('ProgrItem1', Float, 0);
+
+IF(bCurrent, Block(
+
+  SHOWINFORMATION ('Выгрузка в XML...');
+  
+  IF(bDO1Export, Block(
+    IF(KRD_MAIN.A_MODE = 7, 
+      ExportDO1(KRD_MAIN.PLACEID, KRD_MAIN.MAIN_ID, 'KM'),
+      ExportDO1(KRD_MAIN.PLACEID, KRD_MAIN.ID, 'KRD_MAIN_2')
+    );
+    iCounter1 := 1;
+
+    LogMessage(STORES_2.STORE_NO, STORES_2.CUSTOMS_CODE, KRD_MAIN.BD_DATE, KRD_MAIN.A_MODE, KRD_MAIN.NBD, KRD_MAIN.MC_STATUS_BD);
+
+  ));
+  
+  IF(bDO2Export, Block(
+    OPENQUERY('RS', 'STS_DB', "SELECT DISTINCT R.PLACEID, R.MAIN_ID, R.MAIN_COUNTER, R.OUT_DATE, R.RELEASE_NO, R.MC_STATUS, A_MODE " +
+                              "FROM KRD_MAIN KM " +
+                              "LEFT JOIN " +
+                              "RELEASE R ON KM.PLACEID = R.PLACEID AND (KM.MAIN_ID = R.MAIN_ID OR KM.ID = R.ID) " +
+                              "WHERE KM.MAIN_ID = " + TRIM(KRD_MAIN.MAIN_ID) + 
+                              " AND R.PLACEID IS NOT NULL");
+  
+    FIRST('RS');
+    WHILE(EOF('RS') = 0, Block(
+
+      ExportDO2(RS.PLACEID, RS.MAIN_ID, RS.MAIN_COUNTER, 'RM');
+
+      iCounter2 :=  iCounter2 + 1;
+ 
+      IF(RS.A_MODE = 7,
+        Indicator := 10,
+        Indicator := 9
+        );
+    
+      LogMessage(STORES_2.STORE_NO, STORES_2.CUSTOMS_CODE, RS.OUT_DATE, Indicator ,RS.RELEASE_NO, RS.MC_STATUS);
+
+      NEXT('RS');
+    ));
+  ));
+  HIDEINFORMATION ();
+  
+));
+
+IF(bSelected, Block(
+
+  GETSELECTEDDOCS ('KMS', 'PLACEID', 'ID', 'MAIN_ID', 'BD_DATE', 'A_MODE', 'NBD', 'MC_STATUS_BD');
+  
+  iRecordCount := RECORDCOUNT('KMS');
+  LET('ProgrItem', CONVERT(iRecordCount, Float)/100.0);
+  SHOWPROGRESS('Выгрузка в XML...');
+  
+  FIRST('KMS');
+  iCurrentRecord := 1;
+  WHILE(iCurrentRecord <= iRecordCount, Block(
+  
+    IF(bDO1export, Block(
+      IF(KMS.A_MODE = 7, Block(
+        IF(STRPOS (KMS.MAIN_ID, sMainIds) = 0, 
+          ExportDO1(KMS.PLACEID, KMS.MAIN_ID, 'KM');
+        );
+      ),
+        ExportDO1(KMS.PLACEID, KMS.ID, 'KRD_MAIN_2')
+      );
+    
+      IF(((KMS.A_MODE = 7)*(STRPOS (KMS.MAIN_ID, sMainIds) = 0))|(KMS.A_MODE <> 7), Block(
+        // Запомним обработанный ДО1
+        IF(sMainIds <> "", sMainIds := sMainIds + "|");
+        sMainIds := sMainIds + KMS.MAIN_ID;
+        // запишем в лог
+        LogMessage(STORES_2.STORE_NO, STORES_2.CUSTOMS_CODE, KMS.BD_DATE, KMS.A_MODE, KMS.NBD, KMS.MC_STATUS_BD);
+        // посчитаем обработанный документ
+        iCounter1 := iCounter1 + 1;
+      ));
+    ));
+
+    IF(bDO2Export, Block(
+      OPENQUERY('RS', 'STS_DB', "SELECT DISTINCT R.PLACEID, R.MAIN_ID, R.MAIN_COUNTER, R.OUT_DATE, R.RELEASE_NO, R.MC_STATUS, A_MODE " +
+                                "FROM KRD_MAIN KM " +
+                                "LEFT JOIN " +
+                                "RELEASE R ON KM.PLACEID = R.PLACEID AND (KM.MAIN_ID = R.MAIN_ID OR KM.ID = R.ID) " +
+                                "WHERE KM.MAIN_ID = " + TRIM(KMS.MAIN_ID) +
+                                " AND R.PLACEID IS NOT NULL");
+      
+      FIRST('RS');
+      WHILE(EOF('RS') = 0, Block(
+        IF(STRPOS(TRIM(RS.PLACEID) + ';' + TRIM(RS.MAIN_ID) + ';' + TRIM(RS.MAIN_COUNTER), sMainIdsDO2) = 0, Block(
+          ExportDO2(RS.PLACEID, RS.MAIN_ID, RS.MAIN_COUNTER, 'RM');
+          // Запомним обработанный ДО2
+          IF(sMainIdsDO2 <> '', sMainIdsDO2 := sMainIdsDO2 + '|');
+          sMainIdsDO2 := sMainIdsDO2 + TRIM(RS.PLACEID) + ';' + TRIM(RS.MAIN_ID) + ';' + TRIM(RS.MAIN_COUNTER);
+          // запишем в лог
+          IF(RS.A_MODE = 7, Indicator := 10, Indicator := 9);  
+          LogMessage(STORES_2.STORE_NO, STORES_2.CUSTOMS_CODE, RS.OUT_DATE, Indicator ,RS.RELEASE_NO, RS.MC_STATUS);
+          // посчитаем обработанный документ
+          iCounter2 :=  iCounter2 + 1;
+        ));
+
+        NEXT('RS');
+      ));
+    ));
+
+    NEXT('KMS');
+   
+    SETPROGRESS(iCurrentRecord/ProgrItem);
+    IF(CANCELPRESSED(), iRecordCount := iCurrentRecord);
+    iCurrentRecord := iCurrentRecord + 1;
+  ));
+));
+
+HIDEPROGRESS();
+
+CLOSEDATASET ('KM');
+CLOSEDATASET ('RM');
+
+//--------------------------------------------------------------------------------------------------------------
+
+APPENDLOGFILE (sLogFile, '----------------------------------------------------------------------------------------------------');
+APPENDLOGFILE (sLogFile, '');
+APPENDLOGFILE (sLogFile, 'Всего выгружено ДО1: ' + Trim(iCounter1));
+APPENDLOGFILE (sLogFile, 'Всего выгружено ДО2: ' + Trim(iCounter2));
+SHOWLOGFILE (sLogFile, 'Журнал выгрузки ДО в XML');

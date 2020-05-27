@@ -1,0 +1,74 @@
+// *****************************************************************************
+// Название: Чтение данных из Excel
+// Описание: Чтение данных из Excel
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// *****************************************************************************
+//
+VAR('sFileName', String);
+VAR('sListName', String);
+VAR('iTTN_G32', integer, 0);
+VAR('iTTN', integer, 0);
+
+IF(SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel-файлы (*.xls)|*.xls'),
+   block(
+     sListName := INPUTTEXT ('', 'Введите название листа:', 'Лист1');
+     if(sListName = '', RAISEEXCEPTION ('Отменено пользователем'));
+     sListName := '`.`'+sListName+'$';
+     OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=Excel');
+     OPENQUERY ('qEXEL', 'select * from '+CHAR (34)+sFileName+sListName+CHAR (34)+'where "Номер коносамента" is not null order by "Дата коносамента"','EXCEL_DB');
+     First('qEXEL');
+     EDIT('KRD_MAIN');
+     SETFIELDVALUE( 'KRD_MAIN' ,
+                    'G042', "qEXEL"."Перевозчик"
+     );
+     POST('KRD_MAIN');
+     
+     While( EOF('qEXEL') = 0,
+       Block(
+         IF( LOCATE('KRD_PAPERS', 'PAPERNO; PAPERDATE', ["qEXEL"."Номер коносамента", "qEXEL"."Дата коносамента"]) = 0,
+             BLOCK(
+               
+               APPENDRECORD('KRD_PAPERS');
+               EDIT('KRD_PAPERS');
+               SETFIELDVALUE( 'KRD_PAPERS' ,
+                              'PAPERNO', "qEXEL"."Номер коносамента",
+                              'PAPERNAME', 'КОН',
+                              'PAPERDATE', Convert("qEXEL"."Дата коносамента" , DateTime),
+                              'PAPERCODE', '02011'
+                );
+               POST('KRD_PAPERS');
+               //iTTN_G32 := 0;
+               //iTTN := iTTN + 1;
+             )
+         );
+         APPENDRECORD('KRD_COMM');
+         EDIT('KRD_COMM');
+         SETFIELDVALUE( 'KRD_COMM' ,
+                        'G312', "qEXEL"."Марка" + ' ' + "qEXEL"."Модель",
+                        'G35', "qEXEL"."Вес",
+                        'BOXNO', "qEXEL"."VIN"
+         );
+         POST('KRD_COMM');
+
+         {iTTN_G32 := iTTN_G32 + 1;
+         EXECUTESQL ('STS_DB', 'DELETE FROM KR_C_P WHERE ' +
+                              ' PLACEID = ' + KRD_MAIN.PLACEID +
+                              ' AND ID = ' + KRD_MAIN.ID +
+                              ' AND G32 = ' + KRD_COMM.G32 );
+         EDIT('KRD_COMM');
+         SETFIELDVALUE( 'KRD_COMM' ,
+                        'N_TTN', iTTN,
+                        'N_TTN_G32', iTTN_G32
+         );
+         POST('KRD_COMM');}
+
+         NEXT('qEXEL');
+       )
+     );
+//     if();
+     
+
+   ),
+   RAISEEXCEPTION ('Отменено пользователем')
+)

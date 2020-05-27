@@ -1,0 +1,343 @@
+// *****************************************************************************
+// Название: создание ДО-1 из предварительной информации о товарах, предполагаемых к вводу автомобильным транспортом
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: АПИ > ДО-1
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+EXECUTESCRIPT ('PROCDOCS\sql_insert.prd');
+
+VAR ('sAutoPreliminaryFile', String, INIFILE ('AutoPreliminary', 'AutoPreliminaryFile', ''));
+
+IF (SELECTFILE ('sAutoPreliminaryFile', 'Выбор файла', '*.xml') = 0,
+  RAISEEXCEPTION ('Отмено пользователем')
+); // IF
+
+IF (FILEEXISTS (sAutoPreliminaryFile) = 0,
+  RAISEEXCEPTION ('Файл ' +char(39)+ sAutoPreliminaryFile +char(39) + ' не существует')
+); // IF
+
+WRITEINIFILE ('AutoPreliminary', 'AutoPreliminaryFile', sAutoPreliminaryFile);
+
+VAR ('iPlaceId', Integer, 0);
+VAR ('sLicenseNo', String, '');
+VAR ('sLicenseName', String, '');
+VAR ('sLicenseDate', String, '');
+VAR ('iLicenseType', Integer, 1);
+VAR ('sSvhAddress', String, '');
+
+VAR ('iId', Integer, 0);
+VAR ('iMainId', Integer, 0);
+//SELECTVALUES (Заголовок окна, Имя таблицы, [[Имя поля 1, Название поля 1, Ширина поля 1], [Имя поля 2, Название поля 2, Ширина поля 2], ...], [[Возвращаемое поле 1, Имя переменной 1], [Возвращаемое поле 2, Имя переменной 2], ...], Индекс таблицы, Псевдоним базы данных[, Выражение фильтра])
+IF (SELECTVALUES ('Выбор места хранения товаров', 'STORES_2', [['LICENCENO', '', 20], ['STORE_NO', '', 10], ['NAME', '', 38], ['LICENCEDATE', 'Дата', 10], ['CUSTOMS_CODE', 'Код поста', 8]], [['PLACEID', 'iPlaceId'], ['NAME', 'sLicenseName'], ['LICENCENO', 'sLicenseNo'], ['LICENCEDATE', 'sLicenseDate'], ['ADDRESS', 'sSvhAddress'], ['LICENCETYPE', 'iLicenseType']]) = 0,
+  RAISEEXCEPTION ('Отмено пользователем')
+); // IF
+
+VAR ('xAutoPreliminary', Integer, XMLDOCUMENTCREATE ());
+XMLDOCUMENTLOAD (xAutoPreliminary, sAutoPreliminaryFile);
+VAR ('xMainNode', Integer, XMLNODECHILD (XMLDOCUMENTROOT (xAutoPreliminary), 0));
+
+
+FUNC ('CreateDO1',
+  Block(
+    PARAM ('xGoodsPart', Integer, 0);
+  ),
+  Block(
+    VAR ('sG221', String, '');
+    VAR ('dtBDDate', DateTime, Date()+Time(1));
+    PrepareInsert2 ();
+    Insert2 ('PART_NO', 1, 1);
+    Insert2 ('PART_MODE', 0, 1);
+    Insert2 ('Z_MODE', '3');
+    Insert2 ('A_MODE', '7');
+    Insert2 ('BD_DATE', dtBDDate, 2);
+    Insert2 ('BEG_KEEP', (dtBDDate + 1), 2);
+    Insert2 ('G011', 'ИМ');
+    Insert2 ('G012', '40');
+    Insert2 ('G144', sLicenseNo);
+    Insert2 ('G145', sLicenseDate, 2);
+    Insert2 ('G142', sLicenseName);
+    Insert2 ('G143', sSvhAddress);
+    Insert2 ('G1440', iLicenseType);
+    Insert2 ('STATUS_EPS', 'ДО-1 создана из АПИ');
+    Insert2 ('AUTHOR', USERINFO ('', 'UserName'));
+    Insert2 ('AUTHOR_POST', USERINFO ('', 'UserPost'));
+
+    // данные о перевозчике
+    IF (xCarrierDetails,
+      Block(
+        Insert2 ('G042', xCarrierDetails.OrganizationName);
+        VAR ('xRFOrganizationFeatures', Integer, xCarrierDetails.RFOrganizationFeatures);
+        IF (xRFOrganizationFeatures,
+          Block(
+            IF (XMLNODEFIND (xRFOrganizationFeatures, 'OGRN'),
+              Insert2 ('G04_OGRN', xRFOrganizationFeatures.OGRN)
+            ); // IF
+            IF (XMLNODEFIND (xRFOrganizationFeatures, 'INN'),
+              Insert2 ('G044C', xRFOrganizationFeatures.INN)
+            ); // IF
+            IF (XMLNODEFIND (xRFOrganizationFeatures, 'KPP'),
+              Insert2 ('G04_KPP', xRFOrganizationFeatures.KPP)
+            ); // IF
+          )
+        ); // IF
+        // адрес перевозчика
+        VAR ('xSubjectAddressDetails', Integer, xCarrierDetails.SubjectAddressDetails);
+        IF (xSubjectAddressDetails,
+          Block(
+            Insert2 ('G043', TRIM (xSubjectAddressDetails.CounryName + ' ' + xSubjectAddressDetails.Region + ' ' + xSubjectAddressDetails.City + ' ' + xSubjectAddressDetails.StreetHouse));
+            // в схеме опечатка, приходится использовать CounryName вместо CounTryName
+            IF (XMLNODEFIND (xSubjectAddressDetails, 'CounryName'),
+              Insert2 ('G04_COUNTRY', REFERENCE ('COUNTRY', 'COUNTRYNAME', xSubjectAddressDetails.CounryName, 'COUNTRYCODE'));
+            ); // IF
+          )
+        ); // IF
+        // представитель перевозчика
+        VAR ('xCarrierRepresentativeDetails', Integer, xCarrierDetails..CarrierRepresentativeDetails);
+        IF (xCarrierRepresentativeDetails,
+          Block(
+            Insert2 ('G040', TRIM (CarrierRepresentativeDetails.PersonSurname + ' ' + CarrierRepresentativeDetails.PersonName + ' ' + CarrierRepresentativeDetails.PersonMiddleName));
+            Insert2 ('G040P', CarrierRepresentativeDetails.PersonPost);
+          )
+        ); // IF
+      )
+    ); // IF
+
+    // данные об отправителе (CONSIGNOR)
+    VAR ('xConsignorDetails', Integer, xGoodsPart.ConsignorDetails);
+    IF (xConsignorDetails,
+      Block(
+        Insert2 ('G022', xConsignorDetails.OrganizationName);
+        // адрес получателя
+        VAR ('xSubjectAddressDetails', Integer, xConsignorDetails.SubjectAddressDetails);
+        IF (xSubjectAddressDetails,
+          Block(
+            Insert2 ('G023', TRIM (xSubjectAddressDetails.CounryName + ' ' + xSubjectAddressDetails.Region + ' ' + xSubjectAddressDetails.City + ' ' + xSubjectAddressDetails.StreetHouse));
+            Insert2 ('G15A', REFERENCE ('COUNTRY', 'COUNTRYNAME', xSubjectAddressDetails.CounryName, 'COUNTRYCODE'));
+          )
+        ); // IF
+      )
+    ); // IF
+
+
+    // данные о получателе (CONSIGNEE)
+    VAR ('xConsigneeDetails', Integer, xGoodsPart.ConsigneeDetails);
+    IF (xConsigneeDetails,
+      Block(
+        Insert2 ('G082', xConsigneeDetails.OrganizationName);
+        // адрес получателя
+        VAR ('xSubjectAddressDetails', Integer, xConsigneeDetails.SubjectAddressDetails);
+        IF (xSubjectAddressDetails,
+          Block(
+            Insert2 ('G083', TRIM (xSubjectAddressDetails.CounryName + ' ' + xSubjectAddressDetails.Region + ' ' + xSubjectAddressDetails.City + ' ' + xSubjectAddressDetails.StreetHouse));
+            Insert2 ('G17A', REFERENCE ('COUNTRY', 'COUNTRYNAME', xSubjectAddressDetails.CounryName, 'COUNTRYCODE'));
+          )
+        ); // IF
+        VAR ('xRFOrganizationFeatures', Integer, xConsigneeDetails.RFOrganizationFeatures);
+        IF (xRFOrganizationFeatures,
+          Block(
+            IF (XMLNODEFIND (xRFOrganizationFeatures, 'OGRN'),
+              Insert2 ('G08_OGRN', xRFOrganizationFeatures.OGRN)
+            ); // IF
+            IF (XMLNODEFIND (xRFOrganizationFeatures, 'INN'),
+              Insert2 ('G084C', xRFOrganizationFeatures.INN)
+            ); // IF
+            IF (XMLNODEFIND (xRFOrganizationFeatures, 'KPP'),
+              Insert2 ('G08_KPP', xRFOrganizationFeatures.KPP)
+            ); // IF
+          )
+        ); // IF
+      )
+    ); // IF
+
+
+    VAR ('sNBD', String, SOLVE ('LEFTPAD(GENNO("NBD_KPS' + iPlaceId + '", "№ ДО1(мв)/ДУ ЗТК"), 7, "0")'));
+    iId := GENFIELDVALUE ('KRD_MAIN_2.ID');
+    iMainId := iId;
+
+    // код основного транспортного средства
+    IF (xBorderTransportDetails,
+      Insert2 ('G261', xBorderTransportDetails.TransportModeCode)
+    ); // IF
+
+    Insert2 ('STORE_DOC_NO', (CONVERT (INIFILE ('ContractDocNo', 'Default', '0', ProgramPath () + 'counters.ini'), Integer) + 1));
+    Insert2 ('PLACEID', iPlaceId, 1);
+    Insert2 ('ID', iId, 1);
+    Insert2 ('MAIN_ID', iMainId, 1);
+    Insert2 ('NBD', sNBD);
+    //TODO: формировать по выражению сортировки из настроек программы
+    Insert2 ('SHOW_NBD', FDT('YYYYMMDD', Date()+Time(1))+LEFTPAD(RIGHT(sNBD, 5), 5, '0'));
+    Insert2 ('', '', 0, 'KRD_MAIN', 'STS_DB');
+
+    //добавляем транспортный документ
+    VAR ('iKrPaperCounter', Integer, 0);
+    VAR ('xTransportDocumentDetails', Integer, xGoodsPart.TransportDocumentDetails);
+    IF (xTransportDocumentDetails,
+      Block(
+        iKrPaperCounter := 1;
+	PrepareInsert2 ();
+        Insert2 ('PAPERNAME', xTransportDocumentDetails.PrDocumentName);
+        Insert2 ('PAPERNO', xTransportDocumentDetails.PrDocumentNumber);
+        Insert2 ('PAPERDATE', xTransportDocumentDetails.PrDocumentDate, 2);
+        Insert2 ('PAPERCODE', xTransportDocumentDetails.DocKindCode);
+        Insert2 ('PLACEID', iPlaceId, 1);
+        Insert2 ('ID', iId, 1);
+        Insert2 ('COUNTER', iKrPaperCounter, 1);
+        Insert2 ('', '', 0, 'KR_PAPER', 'STS_DB');
+      ),
+      Block(
+        // TODO: если накладной нет, то просить ввести её?
+      )
+    ); // IF
+
+    // загружаем транспортное средство
+    VAR ('iKrTransCounter', Integer, 1);
+    IF (xBorderTransportDetails,
+      Block(
+        PrepareInsert2 ();
+        Insert2 ('CARNO', xBorderTransportDetails.TransportMeansRegId);
+        IF (xBorderTransportDetails.TrailerDetails,
+           Insert2 ('NTRAILER', xBorderTransportDetails.TrailerDetails.TransportMeansRegId)
+        ); // IF
+        Insert2 ('TRANSP_CODE', xBorderTransportDetails.TransportModeCode);
+        Insert2 ('PLACEID', iPlaceId, 1);
+        Insert2 ('ID', iId, 1);
+        Insert2 ('COUNTER', iKrTransCounter, 1);
+        Insert2 ('', '', 0, 'KR_TRANS', 'STS_DB');
+      )
+    ); // IF
+
+    // загружаем список товаров
+    VAR ('iGoodsItemIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xGoodsPart, 'GoodsItem')));
+    VAR ('xGoodsItem', Integer, XMLNODECHILD (xGoodsPart, iGoodsItemIndex));
+    VAR ('iG32', Integer, 1);
+    WHILE (XMLNODENAME (xGoodsItem, 1) = 'GoodsItem',
+      Block(
+        iG32 := xGoodsItem.GoodsNumeric;
+
+        // формируем описание товара
+        VAR ('sGoodsDescription', String, '');
+        VAR ('iGoodsDescriptionIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xGoodsItem, 'GoodsDescription')));
+        WHILE (XMLNODENAME (XMLNODECHILD (xGoodsItem, iGoodsDescriptionIndex), 1) = 'GoodsDescription',
+          Block(
+            sGoodsDescription := sGoodsDescription + XMLNODEVALUE (XMLNODECHILD (xGoodsItem, iGoodsDescriptionIndex));
+            iGoodsDescriptionIndex := iGoodsDescriptionIndex + 1;
+          )
+        ); // WHILE
+
+	PrepareInsert2 ();
+        Insert2 ('G312', REPLACECR (sGoodsDescription));
+        Insert2 ('G33', xGoodsItem.GoodsTNVEDCode);
+        Insert2 ('G35', xGoodsItem.GrossWeightQuantity, 1);
+        Insert2 ('G38', xGoodsItem.NetWeightQuantity, 1);
+        Insert2 ('G42', xGoodsItem.CAValueAmount.Amount, 1);
+        IF (XMLNODEFIND (xGoodsItem.CAValueAmount, 'CurrencyCode'),
+          Block(
+            IF (LENGTH (sG221) = 0, sG221 := CURRENCYCODE (xGoodsItem.CAValueAmount.CurrencyCode));
+            Insert2 ('G42_CURRENCY', CURRENCYCODE (xGoodsItem.CAValueAmount.CurrencyCode));
+            Insert2 ('VALCODE', xGoodsItem.CAValueAmount.CurrencyCode);
+          )
+        ); // IF
+        VAR ('xCargoPackagePalletDetails', Integer, xGoodsItem.CargoPackagePalletDetails);
+        IF (xCargoPackagePalletDetails,
+          Block(
+            Insert2 ('G311', xCargoPackagePalletDetails.PakageQuantity, 1);
+            Insert2 ('G313', xCargoPackagePalletDetails.PakageKindName + IF (xCargoPackagePalletDetails.PakagePartQuantity = 1, '(ЧАСТЬ МЕСТА)', ''));
+            Insert2 ('G313_CODE', xCargoPackagePalletDetails.PalleteCode);
+          )
+        ); // IF
+        Insert2 ('BOXNO', CUSTOMSNOPART (sNBD, 3, RIGHT (sNBD, 7))+ '/' + LEFTPAD(iG32, 6, '0'));
+        Insert2 ('ACCEPTDATE', dtBDDate, 2);
+        Insert2 ('N_TTN', iKrPaperCounter, 1);
+        Insert2 ('PLACEID', iPlaceId, 1);
+        Insert2 ('ID', iId, 1);
+        Insert2 ('G32', iG32, 1);
+        Insert2 ('GN', iG32, 1);
+        Insert2 ('', '', 0, 'KRD_COMM', 'STS_DB');
+
+        // Проверяем есть ли информация о контейнерах, если есть, то добавляем их в базу
+        VAR ('iPIContainerDetailsIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xGoodsItem, 'PIContainerDetailsIndex')));
+        VAR ('xPIContainerDetails', Integer, XMLNODECHILD (xGoodsItem, iPIContainerDetailsIndex));
+        VAR ('iKrdContCounter', Integer, 1);
+        WHILE (XMLNODENAME (xPIContainerDetails, 1) = 'PIContainerDetailsIndex',
+          Block(
+	    PrepareInsert2 ();
+            Insert2 ('CONTNO', xPIContainerDetails.ContainerNumber);
+            Insert2 ('PLACEID', iPlaceId, 1);
+            Insert2 ('ID', iId, 1);
+            Insert2 ('COUNTER', iKrdContCounter, 1);
+            Insert2 ('', '', 0, 'KRD_CONT', 'STS_DB');
+
+            iPIContainerDetailsIndex := iPIContainerDetailsIndex + 1;
+            xPIContainerDetails := XMLNODECHILD (xGoodsItem, iPIContainerDetailsIndex);
+            iKrdContCounter := iKrdContCounter + 1;
+          )
+        ); // WHILE
+
+        iG32 := iG32 + 1;
+        iGoodsItemIndex := iGoodsItemIndex + 1;
+        xGoodsItem := XMLNODECHILD (xGoodsPart, iGoodsItemIndex);
+      )
+    ); // WHILE
+
+    sSQL := 'SELECT' +
+            ' SUM(G311) AS G311, SUM(G42) AS G42, SUM(G35) AS G35' +
+            ' FROM KRD_COMM' +
+            ' WHERE' +
+            ' PLACEID=' + iPlaceId +
+            ' AND ID=' + iId;
+    OPENQUERY ('qSum', 'STS_DB', sSQL, 1);
+
+    sSQL := 'UPDATE KRD_MAIN' +
+            ' SET' +
+            ' G222=' + qSum.G42 +
+            ', G221=' +char(39)+ sG221 +char(39)+
+            ', TOTAL_WEIGHT=' + qSum.G35 +
+            ', G06=' + qSum.G311 +
+            ' WHERE' +
+            ' PLACEID=' + iPlaceId +
+            ' AND MAIN_ID=' + iId;
+    EXECUTESQL ('STS_DB', sSQL);
+
+    CLOSEDATASET ('qSum');
+  )
+); // FUNC - CreateDO1
+
+
+VAR ('xMainConsignmentDetails', Integer, xMainNode.MainConsignmentDetails);
+
+IF (xMainConsignmentDetails,
+  Block(
+    VAR ('xCarrierDetails', Integer, xMainNode.CarrierDetails);
+    VAR ('xBorderTransportDetails', Integer, xMainNode.BorderTransportDetails);
+    VAR ('iConsignmentDetailsIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xMainConsignmentDetails, 'ConsignmentDetails')));
+
+    WHILE (XMLNODENAME (XMLNODECHILD (xMainConsignmentDetails, iConsignmentDetailsIndex), 1) = 'ConsignmentDetails',
+      Block(
+        TRYEXCEPT (
+          Block(
+            SHOWINFORMATION ('Создание ' + iConsignmentDetailsIndex + ' ДО-1, подождите..');
+            CreateDO1 (XMLNODECHILD (xMainConsignmentDetails, iConsignmentDetailsIndex));
+          ),
+          Block(
+            HIDEINFORMATION ();
+            RAISEEXCEPTION (EXCEPTIONMESSAGE ());
+          )
+        ); // TRYFINALLY
+        HIDEINFORMATION ();
+        iConsignmentDetailsIndex := iConsignmentDetailsIndex + 1;
+      )
+    ); // WHILE
+
+  )
+); // IF
+
+
+XMLDESTROY (xAutoPreliminary);
+GLOBALREFRESH ();

@@ -1,0 +1,66 @@
+// *****************************************************************************
+// Название: Исправление номеров ДО2
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+//В тех, что длинее 7 символов убираем по максимуму 0
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO=SUBSTRING(RELEASE_NO FROM 7 FOR 10) WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39)+
+                    ' AND SUBSTRING(RELEASE_NO FROM 1 FOR 6) ='+char(39)+'000000'+char(39)
+);
+
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO=SUBSTRING(RELEASE_NO FROM 6 FOR 10) WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39)+
+                    ' AND SUBSTRING(RELEASE_NO FROM 1 FOR 5) ='+char(39)+'00000'+char(39)
+);
+
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO=SUBSTRING(RELEASE_NO FROM 5 FOR 10) WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39)+
+                    ' AND SUBSTRING(RELEASE_NO FROM 1 FOR 4) ='+char(39)+'0000'+char(39)
+);
+
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO=SUBSTRING(RELEASE_NO FROM 4 FOR 10) WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39)+
+                    ' AND SUBSTRING(RELEASE_NO FROM 1 FOR 3) ='+char(39)+'000'+char(39)
+);
+
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO=SUBSTRING(RELEASE_NO FROM 3 FOR 10) WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39)+
+                    ' AND SUBSTRING(RELEASE_NO FROM 1 FOR 2) ='+char(39)+'00'+char(39)
+);
+
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO=SUBSTRING(RELEASE_NO FROM 2 FOR 10) WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39)+
+                    ' AND SUBSTRING(RELEASE_NO FROM 1 FOR 1) ='+char(39)+'0'+char(39)
+);
+
+//Добиваем 0 там где перебрали
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO='+char(39)+'000000'+char(39)+'+RELEASE_NO WHERE ID IS NOT NULL AND SUBSTRING(RELEASE_NO FROM 2 FOR 1)='+char(39)+''+char(39));
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO='+char(39)+'00000'+char(39)+'+RELEASE_NO WHERE ID IS NOT NULL AND SUBSTRING(RELEASE_NO FROM 3 FOR 1)='+char(39)+''+char(39));
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO='+char(39)+'0000'+char(39)+'+RELEASE_NO WHERE ID IS NOT NULL AND SUBSTRING(RELEASE_NO FROM 4 FOR 1)='+char(39)+''+char(39));
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO='+char(39)+'000'+char(39)+'+RELEASE_NO WHERE ID IS NOT NULL AND SUBSTRING(RELEASE_NO FROM 5 FOR 1)='+char(39)+''+char(39));
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO='+char(39)+'00'+char(39)+'+RELEASE_NO WHERE ID IS NOT NULL AND SUBSTRING(RELEASE_NO FROM 6 FOR 1)='+char(39)+''+char(39));
+EXECUTESQL('STS_DB','UPDATE RELEASE SET RELEASE_NO='+char(39)+'0'+char(39)+'+RELEASE_NO WHERE ID IS NOT NULL AND SUBSTRING(RELEASE_NO FROM 7 FOR 1)='+char(39)+''+char(39));
+
+
+//Если остались без 0 и с лишними знаками, пускай пользователь сам решает. Выдаем список.
+OPENQUERY('FIND_BAD_DO2','SELECT ID, RELEASE_NO FROM RELEASE WHERE SUBSTRING(RELEASE_NO FROM 8 FOR 1) <>'+char(39)+''+char(39), 'STS_DB');
+IF (FIELDISNULL ('FIND_BAD_DO2', 'ID'),'do_nothing',
+    BLOCK(
+          FIRST ('FIND_BAD_DO2');
+          CREATELOGFILE('badDO.log');
+          APPENDLOGFILE ('badDO.log', 'Программа не знает как поступить с ДО2:');
+          WHILE( EOF('FIND_BAD_DO2')=0,
+                 BLOCK(
+                       APPENDLOGFILE ('badDO.log', FIND_BAD_DO2.RELEASE_NO + ' Кол-во знаков:' + LENGTH(FIND_BAD_DO2.RELEASE_NO));
+                       NEXT('FIND_BAD_DO2');
+                 )
+          );
+          APPENDLOGFILE ('badDO.log', 'Сохраните список и исправьте номера самостоятельно.');
+          SHOWLOGFILE('badDO.log');
+    )
+);
+CLOSEDATASET('FIND_BAD_DO2');
+
+GLOBALREFRESH();
+//З.Ы Если кто-то найдет аналоги RIGHT LEFT LENGTH на PARADOX, думайте про меня, что хотите ) Я не нашел.

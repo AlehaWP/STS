@@ -1,0 +1,131 @@
+// *****************************************************************************
+// Название: Сверить с ДТ
+// Описание: Сверить с ДТ
+// Кнопка вызова: 0
+// Подпись кнопки: Сверить с ДТ
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Func('FindTTNinUvedomlenia',,
+     BLOCK(
+          OPENQUERY('GET_TTN', 'STS_DB', ' SELECT PAPERNO, PAPERDATE FROM KR_PAPER WHERE PLACEID='+iPlaceid+' AND ID='+iID+ ' AND PAPERCODE LIKE ' +char(39)+ '02%'+char(39)//+
+                                         //' UNION '+
+                                        // ' SELECT PAPERNO, PAPERDATE FROM KRD_DCD WHERE PLACEID='+iPlaceid+' AND ID='+iID
+          );
+
+          VAR('TTNList', string, '');//UNIONVALUES возвращал значения с пробелами char(39)+ TRIM(UNIONVALUES ('GET_TTN', ['PAPERNO'], char(39)+','+char(39), ''))+char(39));
+          FIRST('GET_TTN');
+          WHILE(EOF('GET_TTN')=0,
+                BLOCK(
+                  TTNList := TTNList + IF(TTNList<>'', ',') + char(39) + Get_TTN.PAPERNO + char(39);
+                  NEXT('GET_TTN');
+                )
+          );
+          IF(TTNList = '', RAISEEXCEPTION('В указанном ДО отсутствую транспортные документы'));
+          // Получаем список уведомлений где встречаются ТТН из текущего ДО1
+          OPENQUERY('GET_UV_ID', 'SELECT DISTINCT JOURNAL_MASTER_ID as JMI FROM TransportDoc WHERE PrDocumentNumber IN ('+TTNList+')', 'dbJournals');
+          IF(RECORDCOUNT('GET_UV_ID')=0, RAISEEXCEPTION ('Уведомления к указанному ДО не найдены'));
+
+          VAR('JMIDList', string, TRIM(UNIONVALUES('GET_UV_ID', ['JMI'], '', ',')));
+
+          OPENQUERY('GET_DT', 'SELECT JOURNAL_MASTER_ID as JMID, PrDocumentNumber, prDocumentDate, PrDocumentName FROM jrGoodOut WHERE JOURNAL_MASTER_ID IN ('+JMIDList+')', 'dbJournals');
+          CLOSEDATASET('GET_TTN');
+          CLOSEDATASET('GET_UV_ID');
+
+
+     )
+),
+
+Func('GetSumGoodsFromDO_UV',,
+     BLOCK(
+        //Получаем список товаров из выбранных ДТ
+        OPENQUERY('GET_DT_GOODS', 'SELECT * FROM GoodInfo where Journal_Master_ID IN ('+UNIONVALUES ('GET_DT', ['JMID'], ',', '')+')', 'dbJournals');
+        FIRST('GET_DT_GOODS');
+        WHILE(EOF('GET_DT_GOODS')=0,
+              BLOCK(
+                  //Поскольку в ДТ могут быть товары из разных ДО, проверяем принадлежит ли текущий товар к нашему ДО
+                  OPENQUERY('G00DS_TTN', 'Select PrDocumentNumber FROM TransportDoc WHERE '+
+                                         'JOURNAL_MASTER_ID='+GET_DT_GOODS.JOURNAL_MASTER_ID+
+                                         ' AND JOURNAL_CHILD_ID='+GET_DT_GOODS.JOURNAL_CHILD_ID+
+                                         ' AND JOURNAL_CHILD_ID_2='+GET_DT_GOODS.JOURNAL_CHILD_ID_2+
+                                         ' AND PrDocumentNumber IN ('+TTNList+')',
+                                          'dbJournals');
+                  IF(RECORDCOUNT('G00DS_TTN')<>0,
+                     BLOCK(
+                        vSummG42Uved:=vSummG42Uved + GET_DT_GOODS.InvoiceCost;
+                        
+                        VAR('iVesPallete', float, 0);
+                        iVesPallete := FINDNUMBER(GET_DT_GOODS.PlaceDescription, 'КГ');
+                        IF(iVesPallete=0, iVesPallete := FINDNUMBER(GET_DT_GOODS.PlaceDescription, 'Кг'));
+                        IF(iVesPallete=0, iVesPallete := FINDNUMBER(GET_DT_GOODS.PlaceDescription, 'кг'));
+                        vSummG35DO:=vSummG35DO + GET_DT_GOODS.BruttoVolQuantity + iVesPallete;
+                     )
+                  );
+                  CLOSEDATASET('G00DS_TTN');
+                  NEXT('GET_DT_GOODS');
+              )
+        );
+        
+        IF (vSummG42Uved<>KRD_COMM.G42, showmessage('Несовпадение стоимости'));
+        IF (vSummG35Uved<>KRD_COMM.G35,showmessage('Несовпадение веса'));
+     )
+),
+
+          FUNC('FindNumber',
+               BLOCK(
+                 PARAM('sStroka', string, 0),
+                 PARAM('PriznakNahozdenia', string,1),
+                 //PARAM('KolvoSimvolov', integer, 2)
+               ),
+               BLOCK(
+                  VAR('sPart', string, '');
+                  VAR('iCountPart', integer, SPLITSTR (sStroka, PriznakNahozdenia, sPart));
+                  VAR('iCounter', integer, 1);
+                  VAR('dNumber', float, 0);
+                  VAR('sNumber', string, '');
+                  VAR('iLengthPart', integer, 0);
+                  VAR('sLetter', string, '');
+
+                  WHILE((iCounter<=iCountPart)*(dNumber=0),//бежим по частям пока не найдем число
+                        BLOCK(
+                          sPart:= TRIM (EXTRACTSTR (sStroka, iCounter, PriznakNahozdenia));
+                          iLengthPart := LENGTH (sPart);
+                          sNumber := '';
+                          While(iLengthPart>0,
+                                BLOCK(
+                                  sLetter := COPY(sPart, iLengthPart, 1);
+                                  IF(sLetter=',', sLetter:='.');
+
+                                  IF(STRPOS (sLetter, '0123456789.'),
+                                       sNumber := sLetter + sNumber,
+                                       IF((sNumber<>'')*(sLetter<>' '), iLengthPart:=0)// Если число закончилось и начались буквы(исключая пробелы), прекращаем чтение
+                                  );
+                                  iLengthPart :=iLengthPart-1;
+                                )
+                          );
+                          //showmessage(sNumber);
+                          IF(sNumber<>'', dNumber:=convert(sNumber, float));
+                          iCounter:=iCounter+1;
+                        );
+                  );
+                  dNumber
+                  //showmessage(EXTRACTSTR (sStroka, 1, PriznakNahozdenia));
+               )
+          ),
+
+
+//------------------------------------Начало программы---------------------------------------------------------------------------------------------
+VAR('iPlaceid', integer, KRD_MAIN.PLACEID);
+VAR('iID', integer, KRD_MAIN.ID);
+VAR('TTNList', string, '');
+VAR('vSummG42Uved', float, 0);
+VAR('vSummG42DO', float, 0);
+VAR('vSummG35Uved', float, 0);
+VAR('vSummG35DO', float, 0);
+
+
+//Ищем уведомления по накладной
+FindTTNinUvedomlenia();
+
+GetSumGoodsFromDO_UV();

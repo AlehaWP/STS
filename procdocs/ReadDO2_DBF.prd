@@ -1,0 +1,656 @@
+// *****************************************************************************
+// Название: DO2_DBF- with date
+// Описание: DO2_DBF with date out
+// Кнопка вызова: 1
+// Подпись кнопки: DO2_DBF DATE
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+
+
+VAR ('LogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'do2_check.log');
+VAR ('bShowLogFile', Integer, 0);
+VAR ('bNotReg', Integer, 0);
+VAR ('dtDO', DateTime);
+VAR ('dtTov', DateTime);
+VAR ('sSQL', string, '');
+VAR ('sSQLReg', string, '');
+
+//Скрипт создания триггера проверки номера ДТ по базе Журналов
+TRYEXCEPT (EXECUTESCRIPT (ProgramPath () + 'ProcDocs\CreateAlterTrigCheckDT.prd'),,showmessage(EXCEPTIONMESSAGE()));
+
+FUNC ('AddLog',
+  Block(
+    PARAM ('pFieldName', String, 0);
+    PARAM ('pErrorDescr', String, 1);
+    PARAM ('pErrorVal', String, 2);
+    PARAM ('pCorrectVal', String, 3);
+  ),
+  Block(
+    APPENDLOGFILE (LogFile, '* ' + RIGHTPAD (pFieldName, 29, ' ') + '* ' + RIGHTPAD (pErrorDescr, 77, ' ') + '* ' + RIGHTPAD (pErrorVal, 29, ' ') + '* ' + RIGHTPAD (pCorrectVal, 44, ' ') + '*');
+    APPENDLOGFILE (LogFile, CHARSTR ('*', 190));
+    bShowLogFile := 1;
+    bNotReg := 1;
+  )
+),
+
+VAR('sTempPath', string,'C:\TEMP_DB\');
+FUNC ('ClearTMP_BD', ,
+  Block(
+    //DELETEFILE (sFilePath+'tmpMAIN.DBF');
+    DELETEFILE (sTempPath+'Do2.dbf');
+    DELETEFILE (sTempPath+'Do2good.dbf');
+    DELETEFILE (sTempPath+'Do2g33.dbf');
+    DELETEFILE (sTempPath+'Do2cust.dbf');
+  );
+),
+
+VAR('sFilePath', string, '');
+
+IF (SELECTDIRECTORY ('sFilePath'),
+   BLOCK(
+      ClearTMP_BD();
+      sFilePath :=INCLUDETRAILINGBACKSLASH(sFilePath);
+
+      COPYFILE(sFilePath + 'Do2.dbf', sTempPath + 'Do2.dbf');
+      COPYFILE(sFilePath + 'Do2good.dbf', sTempPath + 'Do2good.dbf');
+      COPYFILE(sFilePath + 'Do2g33.dbf', sTempPath + 'Do2g33.dbf');
+      COPYFILE(sFilePath + 'Do2cust.dbf', sTempPath + 'Do2cust.dbf');
+      OPENDATABASE ('DO_TABLE', 'STANDARD', 'PATH=' + sTempPath);
+
+      VAR('sSQL', memo,'');
+      sSQL := 'ALTER TABLE '+CHAR(39)+sTempPath+'Do2good.DBF'+CHAR(39)+' ';
+        sSQL := sSQL + 'ADD PLACEID INTEGER, ';
+        sSQL := sSQL + 'ADD ID INTEGER, ';
+        sSQL := sSQL + 'ADD G32_DO1 INTEGER, ';
+        sSQL := sSQL + 'ADD DT CHAR(30), ';
+        sSQL := sSQL + 'ADD DT_NAME CHAR(30), ';
+        sSQL := sSQL + 'ADD DT_TYPE CHAR(5), ';
+        sSQL := sSQL + 'ADD DT_DATE CHAR(30), ';
+        sSQL := sSQL + 'ADD NB_RELEASE CHAR(30), ';
+        sSQL := sSQL + 'ADD NM_CONSIGN CHAR(150), ';
+        sSQL := sSQL + 'ADD CNT_CODE CHAR(4), ';
+        sSQL := sSQL + 'ADD ADRESS CHAR(250), ';
+        sSQL := sSQL + 'ADD N_TD INTEGER';
+      sSQL := sSQL + '';
+      EXECUTESQL ('DO_TABLE', sSQL);
+      VAR('sSQL', memo,'');
+      sSQL := 'ALTER TABLE '+CHAR(39)+sTempPath+'Do2.DBF'+CHAR(39)+' ';
+        sSQL := sSQL + 'ADD TOSTS INTEGER, ';
+        sSQL := sSQL + 'ADD PRICH CHAR(250) ';
+      sSQL := sSQL + '';
+      EXECUTESQL ('DO_TABLE', sSQL);
+     // CLOSEDATABASE('DO_TABLE');
+      //    RAISEEXCEPTION ('Закончили упражнение');
+
+      VAR('sSQL', memo,'');
+      //sSQL := 'UPDATE do2good.dbf set N_TD=(SELECT MIN(N_TD) as TD FROM do2g33.dbf d3 WHERE d3.G074=G074 and d3.GN=GN)';
+     // sSQL := 'UPDATE do2good.dbf set N_TD= 1';
+    //  EXECUTESQL ('DO_TABLE', sSQL);
+          
+      OPENTABLE ('DO2', 'Do2.dbf', 'G074', 'DO_TABLE',1);
+      OPENTABLE ('DO2_GOOD', 'Do2good.dbf', 'G074', 'DO_TABLE',1);
+      OPENTABLE ('DO2_CUST', 'Do2cust.dbf', 'G074', 'DO_TABLE');
+      OPENTABLE ('DO2_G33', 'Do2g33.dbf', 'G074', 'DO_TABLE');
+      //OPENTABLE ('REL_MAIN_5','STS_DB','RELEASE','PLACEID;ID',1);
+      //OPENTABLE ('REL_COMM_5','STS_DB','REL_COMM','PLACEID;ID',1);
+      
+      VAR ('sLogFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())  + 'FindCreatOut.log');  { имя файла журнала }
+      CreateLogFile(sLogFile, '');                                    { создание журнала }
+      AppendLogFile(sLogFile, 'Начало обработки документов: '+FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+      AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------');
+
+
+
+
+
+      //Showmessage(Fieldvalue('DO1', 'G071'));
+      //Бежим по таблице ДО1, создаем ДО1 по каждой строчке
+      //Прописываем пременные для ShowProgress
+      VAR('iCountDO', integer, RECORDCOUNT('DO2'));
+      VAR('iTecCountDO', integer, 0);
+
+      EXECUTESQL('DO_TABLE','UPDATE do2.dbf set TOSTS=1');
+
+      //Проверяем наличие лицензий в программе ВЭД-Склад
+      OPENQUERY('GET_LIC','SELECT DISTINCT G144 FROM do2.dbf','DO_TABLE');
+      FIRST ('GET_LIC');
+      WHILE(EOF('GET_LIC')=0,
+            BLOCK(
+                  OPENQUERY('FIND_LIC', 'STS_DB', 'SELECT PLACEID FROM STORES WHERE LICENCENO='+char(39)+GET_LIC.G144+ char(39) + 
+                                          ' AND (LICENCEDATEEND IS NULL OR LICENCEDATEEND>='+char(39)+FormatDateTime('DD.MM.YYYY', DATE())+char(39)+')');
+                  IF(RECORDCOUNT ('FIND_LIC')=0,
+                     EXECUTESQL('DO_TABLE','UPDATE do2.dbf set TOSTS=0, PRICH= '+char(39)+'Не найдена лицензия или срок действия лицензии истек ' + GET_LIC.G144 + char(39)+' WHERE G144='+char(39)+GET_LIC.G144+ char(39))
+                  );
+                  CLOSEDATASET ('FIND_LIC');
+                  NEXT('GET_LIC');
+            )
+      );
+      CLOSEDATASET('GET_LIC');
+
+      VAR('iCountDo2', integer, Recordcount('DO2'));
+      VAR('iCounter', integer, 1);
+      SHOWPROGRESS ('Выполняется проверка на наличие ДО1 в базе');
+      
+      First('DO2');
+      While(EOF('DO2')=0,
+        BLOCK(
+           
+      //     EDIT('DO2');
+        //   SETFIELDVALUE('DO2','TOSTS', 1);
+          // POST('DO2');
+           IF(DO2.TOSTS = 1,
+              BLOCK(
+                   OPENQUERY('FIND_DO2', 'STS_DB', 'SELECT RELEASE_NO FROM RELEASE WHERE RELEASE_NO='+char(39)+LEFTPAD(DO2.G074,7,'0')+char(39)+' AND OUT_DOC_DATE='+char(39)+DO2.G542+char(39));
+                   IF(RECORDCOUNT('FIND_DO2')<>0,
+                        BLOCK(
+                              EDIT('DO2');
+                              SETFIELDVALUE('DO2',
+                                            'TOSTS', 0,
+                                            'PRICH', 'ДО2 №' + LEFTPAD(DO2.G074, 7, '0') + ' дата ДО2 '+DO2.G542+' уже создана ранее'
+                             );
+                             POST('DO2');
+                       )
+                   );
+
+                   CLOSEDATASET('FIND_DO2');
+              )
+           );
+           IF(DO2.TOSTS = 1,
+              BLOCK(
+              //showmessage(DO2.G074);
+                   SETFILTER('DO2_GOOD','');
+                   SETFILTER('DO2_GOOD', 'G074 = '+ char(39)+ DO2.G074 + char(39));
+                   FIRST('DO2_GOOD');
+                   VAR('DO1NUM', string, DO2_GOOD.DO1_G074);
+                   //showmessage(RECORDCOUNT('DO2_GOOD'));
+                   WHILE(EOF('DO2_GOOD')=0,
+                     BLOCK(
+                    // showmessage(char(39)+LEFTPAD(DO2_GOOD.DO1_G074, 7, '0')+char(39));
+                       //  showmessage(LOCATE('KRD_MAIN_2', 'NBD', [char(39)+LEFTPAD(DO2_GOOD.DO1_G074, 7, '0')+char(39)]));
+                       
+                         OPENQUERY('KM', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE SHOW_NBD='+char(39)+FDT('YYYY', DO2_GOOD.DO1_G542)+LEFTPAD(RIGHT (DO2_GOOD.DO1_G074,5), 5, 0)+char(39) +
+                         ' OR SHOW_NBD='+char(39)+FDT('YYYYMMDD', DO2_GOOD.DO1_G542)+LEFTPAD(RIGHT (DO2_GOOD.DO1_G074,5), 5, 0)+char(39));
+                         FIRST('KM');
+                         IF(RECORDCOUNT('KM')= 0,
+                            BLOCK(
+                              EDIT('DO2');
+                              SETFIELDVALUE('DO2',
+                                            'TOSTS', 0,
+                                            'PRICH', 'ДО1 №' + LEFTPAD(DO2_GOOD.DO1_G074, 7, '0') + ' не найдена'
+                              );
+                              POST('DO2');
+                            )
+                         );
+
+                         IF((DO2.ToSTS = 1)*(DO1NUM <> convert(DO2_GOOD.DO1_G074, string)),
+                            BLOCK(
+                              EDIT('DO2');
+                              SETFIELDVALUE('DO2',
+                                            'TOSTS', 0,
+                                            'PRICH', 'Товары из разных ДО1'
+                              );
+                              POST('DO2');
+                            )
+                         );
+                         NEXT('DO2_GOOD');
+                     )
+                   );
+
+              )
+           );
+           SETPROGRESS(iCounter, 100, iCountDO2);
+           iCounter:=iCounter+1;
+           NEXT('DO2');
+        )
+     );
+
+     REFRESH('DO2');
+
+     OPENQUERY('DO2_CHECK','SELECT * FROM DO2.dbf where TOSTS=1','DO_TABLE');
+     HIDEPROGRESS ();
+     iCounter := 1;
+     iCountDO2 := RECORDCOUNT('DO2_CHECK');
+     SHOWPROGRESS('Выполняется проверка на наличие товаров для выдачи в базе ВЭД-Склад');
+     //SETFILTER('DO2', 'TOSTS = 1');
+     First('DO2_CHECK');
+     //RAISEEXCEPTION ('The end');
+     While(EOF('DO2_CHECK')=0,
+           BLOCK(
+           LOCATE('DO2','G074;G542;G5421',[DO2_CHECK.G074, DO2_CHECK.G542, DO2_CHECK.G5421]);
+           SETFILTER('DO2_GOOD','');
+           SETFILTER('DO2_GOOD', 'G074=' + char(39) + DO2.G074 + char(39));
+           FIRST('DO2_GOOD');
+           
+           VAR('sID', memo);
+           //Делаем на случай дублирования ДО1. Ищем сначала зарегистрированную, если не находим, то просто встаем на первую и забираем её ID в переменную sID для дальнейшего поиска в  KRD_COMM
+           OPENQUERY('FIND_DO1_MAIN', 'STS_DB', 'SELECT DISTINCT MAIN_ID FROM KRD_MAIN WHERE '+
+                                                'MC_STATUS_BD='+char(39)+'3'+char(39)+
+                                                ' AND BD_DATE>='+char(39)+FDT('DD.MM.YYYY 00:00:00', DO2_GOOD.DO1_G542)+char(39)+
+                                                ' AND BD_DATE<='+char(39)+FDT('DD.MM.YYYY 23:59:59', DO2_GOOD.DO1_G542)+char(39)+
+                                                ' AND NBD='+char(39)+ LEFTPAD(DO2_GOOD.DO1_G074, 7, '0') +char(39));
+           IF(RECORDCOUNT('FIND_DO1_MAIN')=0,
+             BLOCK(
+                 CLOSEDATASET('FIND_DO1_MAIN');
+                 OPENQUERY('FIND_DO1_MAIN', 'STS_DB', 'SELECT DISTINCT MAIN_ID FROM KRD_MAIN WHERE '+
+                                                      ' BD_DATE>='+char(39)+FDT('DD.MM.YYYY 00:00:00', DO2_GOOD.DO1_G542)+char(39)+
+                                                      ' AND BD_DATE<='+char(39)+FDT('DD.MM.YYYY 23:59:59', DO2_GOOD.DO1_G542)+char(39)+
+                                                      ' AND NBD='+char(39)+ LEFTPAD(DO2_GOOD.DO1_G074, 7, '0') +char(39));
+             )
+           );
+           
+           FIRST('FIND_DO1_MAIN');
+           
+           OPENQUERY('FIND_DO1', 'STS_DB', 'SELECT ID FROM KRD_MAIN WHERE MAIN_ID='+char(39)+FIND_DO1_MAIN.MAIN_ID+char(39));
+           
+           sID:= TRIM(UNIONVALUES ('FIND_DO1', ['ID'], ',', ''));
+           
+           CLOSEDATASET('FIND_DO1_MAIN');
+           CLOSEDATASET('FIND_DO1');
+           IF (sID='', sID:='0');
+           WHILE(EOF('DO2_GOOD') =0,
+                 BLOCK(
+                 
+                     OPENQUERY('FIND_G32', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE ID IN('+sID+') AND GN='+DO2_GOOD.DO1_GN);
+                     IF(RECORDCOUNT('FIND_G32')=0,
+                        BLOCK(
+                            EDIT('DO2');
+                            SETFIELDVALUE('DO2',
+                                          'TOSTS', 0,
+                                          'PRICH', IF(DO2.PRICH <> '', DO2.PRICH + ', ') + 'товар с номером '+ DO2_GOOD.DO1_GN +' не найден'
+                            );
+                            POST('DO2');
+                        ),
+                        BLOCK(
+                          OPENQUERY('GET_OUT', 'STS_DB', 'SELECT SUM(RELEASE_G35) as REL_G35, SUM(RELEASE_G311) as REL_G311, SUM(RELEASE_G42) as REL_G42 FROM REL_COMM '+
+                                                         ' WHERE '+
+                                                         ' PLACEID = '+FIND_G32.PLACEID+' AND ID='+FIND_G32.ID+' AND G32='+FIND_G32.G32
+                          );
+                          VAR('vOSTG35', integer, FIND_G32.G35 - GET_OUT.REL_G35);
+                          VAR('vOSTG42', integer, FIND_G32.G42 - GET_OUT.REL_G42);
+                          VAR('vOSTG311', integer, FIND_G32.G311 - GET_OUT.REL_G311);
+                          IF(vOSTG35<0, vOSTG35:=0);
+                          IF(vOSTG42<0, vOSTG42:=0);
+                          IF(vOSTG311<0, vOSTG311:=0);
+                          //IF(vOSTG311<=0, BLOCK(vOSTG311 :=0;VAR('vVidMest', string, 'часть мест'));
+                          IF(vOSTG35<DO2_GOOD.G35,
+                             BLOCK(
+                                 EDIT('DO2_GOOD');
+                                 SETFIELDVALUE('DO2_GOOD',
+                                               'G35', vOstG35);
+                                 POST('DO2_GOOD');
+                             )
+                          );
+                          IF(vOSTG311<DO2_GOOD.G31_2,
+                             BLOCK(
+                                 EDIT('DO2_GOOD');
+                                 SETFIELDVALUE('DO2_GOOD',
+                                               'G31_2', vOstG311);
+                                 POST('DO2_GOOD');
+                                // showmessage(vOSTG311);
+                                // showmessage(DO2_GOOD.G31_2);
+                             )
+                          );
+                          IF(vOSTG42<DO2_GOOD.G42,
+                             BLOCK(
+                                 EDIT('DO2_GOOD');
+                                 SETFIELDVALUE('DO2_GOOD',
+                                               'G42', vOSTG42);
+                                 POST('DO2_GOOD');
+                             )
+                          );
+                          EDIT('DO2_GOOD');
+                          SETFIELDVALUE('DO2_GOOD',
+                                        'PLACEID', FIND_G32.PLACEID,
+                                        'ID', FIND_G32.ID,
+                                        'G32_DO1', FIND_G32.G32
+                          );
+                          POST('DO2_GOOD');
+                          
+                          OPENQUERY('DT','SELECT C.NDOC, C.DDOC, C.TYPE, C.NAME, C.NB_RELEASE, C.NM_CONSIGN, C.CNT_CODE, ADRESS, G.N_TD FROM DO2Cust C ' +
+                                         ' LEFT JOIN DO2G33 G ON(C.G074=G.G074 AND C.G542=G.G542 AND C.N_TD=G.N_TD) '+
+                                         ' WHERE G.GN='+DO2_GOOD.GN+ ' AND G.G074='+char(39)+DO2_GOOD.G074+char(39)+' AND G.G542='+char(39)+DO2_GOOD.G542+char(39) +
+                                         ' ORDER BY N_TD '
+                                         ,'DO_TABLE');
+                          //SHOWMESSAGE(DT.NDOC);
+                          FIRST('DT');
+                          EDIT('DO2_GOOD');
+                          SETFIELDVALUE('DO2_GOOD',
+                                        'DT', DT.NDOC,
+                                        'DT_DATE', DT.DDOC,
+                                        'DT_NAME', DT.NAME,
+                                        'N_TD', DT.N_TD,
+                                        'DT_TYPE', DT.TYPE,
+                                        'NB_RELEASE', DT.NB_RELEASE,
+                                        'NM_CONSIGN', DT.NM_CONSIGN,
+                                        'CNT_CODE', DT.CNT_CODE,
+                                        'ADRESS', DT.ADRESS
+                          );
+                          POST('DO2_GOOD');
+                          CLOSEDATASET('GET_OUT');
+                          CLOSEDATASET('DT');
+                        )
+                     );
+                     CLOSEDATASET('FIND_G32');
+                     SETPROGRESS(iCounter, 100, iCountDO2);
+                     iCounter:=iCounter+1;
+                     NEXT('DO2_GOOD');
+                     
+                     
+                 )
+           );
+           OPENQUERY('DO2_DOUBLE','SELECT * FROM DO2.dbf where G074='+char(39)+ DO2.G074 + char(39),'DO_TABLE');
+           IF(RECORDCOUNT('DO2_DOUBLE')>1,
+              EXECUTESQL('DO_TABLE','UPDATE do2.dbf set TOSTS=0, PRICH='+char(39)+'Дублирование ДО2 в DBF'+char(39)+' WHERE G074='+char(39)+ DO2.G074 + char(39))
+           );
+           NEXT('DO2_CHECK');
+        )
+      );
+      HIDEPROGRESS ();
+      CLOSEDATASET('DO2_CHECK');
+      
+      OPENQUERY('DO2_WRITE','SELECT * FROM DO2.dbf where TOSTS=1','DO_TABLE');
+      
+      iCounter := 1;
+      iCountDO2 := RECORDCOUNT('DO2_WRITE');
+      SHOWPROGRESS('Создаем ДО2');
+           //SETFILTER('DO2', 'TOSTS = 1');
+      CREATELOGFILE (LogFile, 0);
+
+      FIRST('DO2_WRITE');
+      WHILE(EOF('DO2_WRITE')=0,
+            BLOCK(
+              VAR('iID', integer, 0);
+              VAR('sDT',string,'');
+              VAR('iMAINID',integer,0);
+              VAR('iMAINCOUNTER',integer,0);
+              VAR('iMAINNO',integer,0);
+              VAR('sPaper', string);
+              VAR('iRelCounter', integer, 0);
+              OPENQUERY('GOODS', 'SELECT * FROM DO2GOOD  WHERE G074='+char(39) + DO2_WRITE.G074+char(39)+' AND G542='+char(39)+DO2_WRITE.G542+char(39)+ 'ORDER BY ID, N_TD, GN'
+                        ,'DO_TABLE');
+                        //showmessage(GOODS.N_TD);
+              VAR('sIDs', string, UNIONVALUES ('GOODS', ['ID'], ',', ','));
+              WHILE(EOF('GOODS')=0,
+                   BLOCK(
+                      IF((iID<>GOODS.ID),//|(sDT<>GOODS.DT),
+                         BLOCK(
+                            OPENQUERY('GET_COUNT', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM RELEASE WHERE PLACEID='+GOODS.PLACEID+' AND ID='+GOODS.ID);
+                            iRelCounter := IF(FIELDISNULL('GET_COUNT', 'COUNTER'),,GET_COUNT.COUNTER);
+
+                            OPENQUERY('PAPER', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID='+GOODS.PLACEID+' AND ID IN('+sIDs+') ORDER BY PAPERCODE' );
+                            FIRST('PAPER');
+                            VAR('sPaper', string, '');
+                            WHILE(EOF('PAPER') = 0,
+                              BLOCK(
+                                 IF(sPaper <> '', sPaper := sPaper + ', ');
+                                 sPaper := sPaper +  PAPER.PAPERNAME + ' ' + PAPER.PAPERNO + ' от ' + FDT('DD.MM.YYYY', PAPER.PAPERDATE);
+                                 NEXT('PAPER');
+                              )
+                            );
+                            //showmessage(IF(RECORDCOUNT('GET_COUNT')=0, 1,GET_COUNT.COUNTER+1));
+                            if(iMainId = 0,
+                               BLOCK(
+                                 iMainId:=GOODS.ID;
+                                 //OPENQUERY('MCOUNT', 'STS_DB', 'SELECT MAX(MAIN_COUNTER) AS MC FROM RELEASE WHERE Main_ID='+iMainID);
+                                 iMainCounter := iRelCounter + GOODS.N_TD;
+                               )
+                            );
+                            iMainNo:=iMainNo + 1;
+                            //LOCATE('KRD_MAIN_2', 'PLACEID;ID',[GOODS.PLACEID, GOODS.ID]);
+
+                            OPENQUERY('KM2', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE PLACEID='+GOODS.PLACEID+ ' AND ID='+ GOODS.ID);
+
+                            OPENQUERY('LIC', 'STS_DB', 'SELECT * FROM STORES WHERE LICENCENO='+char(39)+DO2_WRITE.G144+ char(39));
+                            VAR('vG144', string, LIC.LICENCENO);
+                            VAR('vG142', string, LIC.NAME);
+                            VAR('vG143', string, LIC.ADDRESS);
+                            VAR('dG145', DateTime, LIC.LICENCEDATE);
+
+                            CLOSEDATASET ('LIC');
+
+                            APPENDRECORD('REL_MAIN_2');
+                            EDIT('REL_MAIN_2');
+                            //showmessage(1);
+                            SETFIELDVALUE('REL_MAIN_2',
+                                          'PLACEID', GOODS.PLACEID,
+                                          'ID',GOODS.ID,
+                                          'COUNTER', iRelCounter + GOODS.N_TD,
+                                          'MAIN_ID',iMainId,
+                                          'MAIN_COUNTER',iMainCounter,
+                                          'MAIN_NO',iMainNo,
+                                          'DOC_NO', GOODS.DT,
+                                          'DOC_TYPE', IF(GOODS.DT_NAME='ГТД', 'ДТ', GOODS.DT_NAME),
+                                          'DOC_CODE', GOODS.DT_TYPE,
+                                          'RELEASE_NO', LEFTPAD(DO2_WRITE.G074,7,'0'),
+                                          'REG_NU', GOODS.NB_RELEASE,
+                                          //'RELEASE_DATE', GOODS.G542,
+                                          //'OUT_DOC_DATE', GOODS.DT_DATE,
+                                          //'G082', KM2.G082,
+                                          //'G083', KM2.G083,
+                                          'G082', IF(LENGTH(GOODS.NM_CONSIGN)>0,GOODS.NM_CONSIGN, KM2.G082),
+                                          'G083', IF(LENGTH(GOODS.ADRESS)>0,GOODS.ADRESS,KM2.G083),
+                                          'G084C', IF (KM2.G084C<>'.',KM2.G084C, ''),
+                                          'G08_KPP', KM2.G08_KPP,
+                                          'G08_OGRN', KM2.G08_OGRN,
+                                          'G08_COUNTRY', KM2.G17A,
+                                          'G022', KM2.G022,
+                                          'G023', KM2.G023,
+                                          'G02_COUNTRY', KM2.G15A,
+                                          'G042', KM2.G042,
+                                          'G043', KM2.G043,
+                                          'G04_COUNTRY', KM2.G04_COUNTRY,
+                                          'TRANSPDOCS', sPaper,
+                                          'TRANSPTYPE', DO2_WRITE.TRANSP,
+                                          'RELEASE_GOODS_DATE', DATE(),
+                                          'OUT_DOC_DATE', GOODS.G542,
+                                          'OUT_DATE', GOODS.G542 + TIME (),
+                                          'RELEASE_DATE', GOODS.DT_DATE,
+                                          'TRANSPTYPE', '30',
+                                          'G142',vG142,
+                                          'G143',vG143,
+                                          'RELEASE_GIVE',DO2_WRITE.G02_2,
+                                          'RELEASE_GIVE_POST',DO2_WRITE.G02_1,
+                                          'G1440', 3,//DO2_WRITE.G1440,
+                                          'G144',DO2_WRITE.G144,
+                                          'G145',DO2_WRITE.G145,
+                                          'DOC_DIGITAL_SIGN', 1
+                                          );
+                            POST('REL_MAIN_2');
+                            //showmessage(2);
+                            CLOSEDATASET('GET_COUNT');
+                            CLOSEDATASET('PAPER');
+
+
+                            APPENDLOGFILE (LogFile, 'Форма ДО-2 № ' + DO2_WRITE.G074 + ' от ' + GOODS.G542, ' ');
+                            APPENDLOGFILE (LogFile, CHARSTR ('*', 190));
+                            APPENDLOGFILE (LogFile, '*' + CENTER ('Поле', 30) + '*' + CENTER ('Описание ошибки', 78) + '*' + CENTER ('Ошибочное значение', 30) + '*' + CENTER ('Ожидаемое значение', 45) + '*');
+                            APPENDLOGFILE (LogFile, CHARSTR ('*', 190));
+
+                            bNotReg := 0;
+                            //showmessage(REL_MAIN_2.OUT_DATE);
+                            //showmessage(REL_MAIN_2.ID);
+
+
+                            IF (GOODS.G542 < KM2.BD_DATE,
+                              Block(
+                                AddLog ('Дата ДО-2', 'Значение меньше даты ДО-1', GOODS.G542, '>= ' + KM2.BD_DATE);
+                              )
+                            );
+
+                                // дата ДО-2 должна быть больше даты выпуска товаров
+                                IF (REL_MAIN_2.OUT_DATE < REL_MAIN_2.RELEASE_DATE,
+                                  Block(
+                                    AddLog ('Дата ДО-2', 'Значение меньше даты выпускающего документа', GOODS.G542, '>= ' + GOODS.DT_DATE);
+                                  )
+                                ); // IF - //
+                                // дата выпуска товаров должна быть больше или равна, чем дата выпускающего документа
+                                IF (DATE() < GOODS.DT_DATE,
+                                  Block(
+                                    AddLog ('Дата выпуска', 'Значение меньше даты выпускающего документа', DATE(), '>= ' + GOODS.DT_DATE);
+                                  )
+                                ); // IF - //
+
+                            // Сравнение дат выдачи товаров с датой ДО2
+                            dtDO := TRUNC(GOODS.G542);
+
+                            IF(iMainNo=1,
+                               BLOCK(
+                                     sSQL := 'INSERT INTO MCUSTREG (PLACEID, ID, DOCTYPE, DOCSUBID, DOCNO) VALUES ('+GOODS.PLACEID+ ', '+GOODS.ID+ ', 5, '+iMainCounter+ ', ' +char(39)+LEFTPAD(DO2_WRITE.G074,7,'0')+char(39)+ '); COMMIT';
+                                     sSQLReg := 'UPDATE RELEASE SET MC_STATUS='+char(39)+'0'+char(39)+' WHERE PLACEID='+GOODS.PLACEID+ ' AND MAIN_ID= '+GOODS.ID+ ' AND MAIN_COUNTER= '+iMainCounter ;
+                                )
+                            );
+
+                            OPENQUERY('DT_ALL',' SELECT NDOC, DDOC, NAME, TYPE, N_TD, NB_RELEASE FROM DO2Cust ' +
+                                               ' WHERE G074='+char(39)+DO2_WRITE.G074+char(39)+' AND N_TD>1'
+                                               ,'DO_TABLE');
+                            IF(FIELDISNULL ('DT_ALL', 'NDOC') <> 1,
+                               WHILE ( EOF ('DT_ALL') = 0,
+                                       BLOCK(
+                                              iMainNo:=iMainNo + 1;
+                                              //iRelCounter := iRelCounter + 1;
+                                              VAR ('sDopDTDate', string, '');
+                                              sDopDTDate := DT_ALL.DDOC;
+                                              IF (sDopDTDate = '',
+                                                  BLOCK(
+                                                        sDopDTDate := EXTRACTSTR (DT_ALL.NDOC, 2, '/');
+                                                        sDopDTDate := COPY (sDopDTDate, 1, 2) + '.' + COPY (sDopDTDate, 3, 2) + '.20' + COPY (sDopDTDate, 5, 2)
+                                                  )
+                                              );
+                                              //LOCATE('KRD_MAIN_2', 'PLACEID;ID',[GOODS.PLACEID, GOODS.ID]);
+                                             // OPENQUERY('KM2', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE PLACEID='+GOODS.PLACEID+ ' AND ID='+ GOODS.ID);
+                                              APPENDRECORD('REL_MAIN_2');
+                                              EDIT('REL_MAIN_2');
+                                              SETFIELDVALUE('REL_MAIN_2',
+                                                            'PLACEID', GOODS.PLACEID,
+                                                            'ID',GOODS.ID,
+                                                            'COUNTER', iRelCounter + DT_ALL.N_TD,
+                                                            'MAIN_ID',iMainId,
+                                                            'MAIN_COUNTER',iMainCounter,
+                                                            'MAIN_NO',iMainNo,
+                                                            'DOC_NO', DT_ALL.NDOC,
+                                                            'DOC_TYPE', IF(DT_ALL.TYPE='01', 'ДТ',DT_ALL.NAME),
+                                                            'DOC_CODE', DT_ALL.TYPE,
+                                                            'RELEASE_NO', LEFTPAD(DO2_WRITE.G074,7,'0'),
+                                                            'REG_NU', DT_ALL.NB_RELEASE,
+                                                            //'RELEASE_DATE', GOODS.G542,
+                                                            //'OUT_DOC_DATE', GOODS.DT_DATE,
+                                                            //'G082', KM2.G082,
+                                                            //'G083', KM2.G083,
+                                                            'G082', IF(LENGTH(GOODS.NM_CONSIGN)>0,GOODS.NM_CONSIGN, KM2.G082),
+                                                            'G083', IF(LENGTH(GOODS.ADRESS)>0,GOODS.ADRESS,KM2.G083),
+                                                            'G084C', IF (KM2.G084C<>'.',KM2.G084C, ''),
+                                                            'G08_KPP', KM2.G08_KPP,
+                                                            'G08_OGRN', KM2.G08_OGRN,
+                                                            'G08_COUNTRY', IF(LENGTH(GOODS.CNT_CODE)>0,GOODS.CNT_CODE,KM2.G17A),
+                                                            'G022', KM2.G022,
+                                                            'G023', KM2.G023,
+                                                            'G02_COUNTRY', KM2.G15A,
+                                                            'G042', KM2.G042,
+                                                            'G043', KM2.G043,
+                                                            'G04_COUNTRY', KM2.G04_COUNTRY,
+                                                            'TRANSPDOCS', sPaper,
+                                                            'TRANSPTYPE', DO2_WRITE.TRANSP,
+                                                            'RELEASE_GOODS_DATE', DATE(),
+                                                            'OUT_DOC_DATE', GOODS.G542,
+                                                            'OUT_DATE', GOODS.G542 + TIME (),
+                                                            'RELEASE_DATE', sDopDTDate,
+                                                            'TRANSPTYPE', '30',
+                                                            'G142',vG142,
+                                                            'G143',vG143,
+                                                            'G1440', 3,//DO2_WRITE.G1440,
+                                                            'G144',DO2_WRITE.G144,
+                                                            'G145',DO2_WRITE.G145,
+                                                            'RELEASE_GIVE',DO2_WRITE.G02_2,
+                                                            'RELEASE_GIVE_POST',DO2_WRITE.G02_1
+                                                            );
+                                              POST('REL_MAIN_2');
+                                              NEXT ('DT_ALL');
+                                       )
+                               )
+                            );
+
+                            //showmessage(2);
+                            CLOSEDATASET('GET_COUNT');
+                            CLOSEDATASET('PAPER');
+                            CLOSEDATASET('DT_ALL');
+
+                            //IF(REL_MAIN_2.MAIN_NO=1, );
+
+                            sDT:=GOODS.DT;
+                            iID:=GOODS.ID;
+                         )
+                      );
+                      //showmessage(GOODS.ID);
+                      //showmessage(REL_MAIN_2.COUNTER);
+                      //showmessage(GOODS.G32_DO1);
+
+                      APPENDRECORD('REL_COMM_2');
+                      EDIT('REL_COMM_2');
+                      SETFIELDVALUE('REL_COMM_2',
+                                    'PLACEID', GOODS.PLACEID,
+                                    'ID',GOODS.ID,
+                                    'COUNTER',iRelCounter + GOODS.N_TD,
+                                    'G32',GOODS.G32_DO1,
+                                    'RELEASE_G311', IF(GOODS.G31_2<=0, 0, GOODS.G31_2),
+                                    'RELEASE_G313', IF(GOODS.G31_2<=0, 'часть мест'),
+                                    'RELEASE_G35', GOODS.G35,
+                                    //'RELEASE_G35_CLEAN', GOODS.G35,
+                                    'RELEASE_G42', GOODS.G42,
+                                    //'RELEASE_OUT_DATE', NOW()
+                                    'RELEASE_OUT_DATE', GOODS.ACCEPTDATE + IF((TRIM(GOODS.ACCEPTTIME) <> '') & (TRIM(GOODS.ACCEPTTIME) <> ':'), ' ' + GOODS.ACCEPTTIME)
+
+                      );
+                      POST('REL_COMM_2');
+
+                      If( FIELDISNULL ('GOODS', 'ACCEPTDATE') = 0,
+                       Block(
+                         dtTov := TRUNC(GOODS.ACCEPTDATE);
+                         IF( ABS(dtDO-dtTov) > 1,
+                           AddLog ('Дата выдачи товара № '+ CONVERT(GOODS.G32_DO1, String), 'Отличается от даты ДО2 более чем на сутки', dtTov, FDT ('DD.MM.YYYY', dtDO));
+                         )
+                       )
+                      );
+
+                      NEXT('GOODS');
+                   )
+              );
+              CLOSEDATASET('GOODS');
+              IF (bNotReg = 0, BLOCK(EXECUTESQL('STS_DB', sSQL); EXECUTESQL('STS_DB', sSQLReg)));
+              SETPROGRESS(iCounter, 100, iCountDO2);
+              iCounter:=iCounter+1;
+              NEXT('DO2_WRITE');
+            )
+      );
+      
+      HIDEPROGRESS ();
+     // CLOSEDATASET('REL_MAIN_5');
+     //CLOSEDATASET('REL_COMM_5');
+      CLOSEDATASET('DO2_WRITE');
+      GLOBALREFRESH ();
+
+
+      SETFILTER('DO2', '');
+      SETFILTER('DO2', 'TOSTS = 0');
+      IF(RECORDCOUNT('DO2')<>0,
+      BLOCK(
+          //showmessage(1);
+          FIRST('DO2');
+          WHILE(EOF('DO2')=0,
+                BLOCK(
+                    AppendLogFile(sLogFile, 'ДО2 №'+DO2.G074+ ' не может быть записана по следующей причине: '+ DO2.PRICH);
+                    NEXT('DO2');
+                )
+          );
+          SHOWLOGFILE (sLogFile, 'Ошибки создания ДО2');
+        )
+      );
+      
+      CLOSEDATABASE('DO_TABLE');
+      IF (bShowLogFile, SHOWLOGFILE (LogFile, 'Результат проверки'));
+   )
+);

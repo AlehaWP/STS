@@ -1,0 +1,65 @@
+// *****************************************************************************
+// Название: Загрузить складские номера
+// Описание: Загрузить складские номера
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузить складские номера
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+
+VAR('sFilePath', string);
+SELECTFILE ('sFilePath', 'Выбирите файл', 'XML - файлы(*.xml)|*.xml');
+
+VAR ('XmlFile', Integer, XMLDOCUMENTCREATE ());
+XMLDOCUMENTLOAD(XmlFile, sFilePath);
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+VAR ('Data', Integer, XMLNODECHILD (XmlRoot, 'Data'));
+VAR ('DTInf', Integer, XMLNODECHILD (Data, 'DTInformation'));
+VAR('iCountDT', integer, XMLNODECHILDCOUNT (DTInf));
+VAR('iDTCounter', integer, 0);
+//showmessage(iCountDT);
+WHILE(iDTCounter < iCountDT,
+      BLOCK(
+        VAR('DTNum', integer, XMLNODECHILD (DTInf, iDTCounter));
+        VAR('iCountGoods', integer, XMLNODECHILDCOUNT(DTNum));
+        VAR('iGoodCounter', integer, 0);
+        VAR('sDT', string, XMLNODEVALUE (DTNum));
+        
+        While(iGoodCounter < iCountGoods,
+              BLOCK(
+                 VAR('GoodsInf', integer, XMLNODECHILD (DTNum, iGoodCounter));
+                 VAR('vG32', integer, XMLNODEVALUE (XMLNODECHILD (GoodsInf, 'DTGoodsNo')));
+                 //showmessage(vG32);
+                 IF(XMLNODEFIND (GoodsInf, 'WMsLocationInformation'),
+                    BLOCK( //showmessage(vG32);
+                       VAR('vID', integer, XMLNODEVALUE (XMLNODECHILD (GoodsInf, 'ID')));
+                       VAR('vPLACEID', integer, XMLNODEVALUE (XMLNODECHILD (GoodsInf, 'PLACEID')));
+                       VAR('vG32', integer, XMLNODEVALUE (XMLNODECHILD (GoodsInf, 'DTGoodsNo')));
+                       VAR('WMSLocatinInf', integer, XMLNODECHILD (GoodsInf, 'WMsLocationInformation'));
+                          VAR('iCountLocation', integer, XMLNODECHILDCOUNT (WMSLocatinInf));
+                          VAR('iLocCounter', integer, 0);
+                          VAR('sBoxNo', string,'');
+                          WHILE(iLocCounter < iCountLocation,
+                                BLOCK(
+                                      IF(sBoxNo <> '',sBoxNo := sBoxNo + ', ');
+                                      sBoxNo := sBoxNo + XMLNODEVALUE (XMLNODECHILD (WMSLocatinInf, iLocCounter));
+                                      iLocCounter := iLocCounter + 1;
+                                )
+                          );
+                          IF(LOCATE('KRD_COMM_2', 'PLACEID; ID; G32', [vPlaceid, vId, vG32]),
+                             BLOCK(
+                               EDIT('KRD_COMM_2');
+                               SETFIELDVALUE('KRD_COMM_2', 'BOXNO', sBoxNO);
+                               POST('KRD_COMM_2');
+                             )
+                          );
+                    )
+                 );
+                 iGoodCounter := iGoodCounter + 1;
+              )
+        );
+        iDTCounter := iDTCounter + 1;
+      )
+
+);

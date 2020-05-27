@@ -1,0 +1,68 @@
+// *****************************************************************************
+// Название: сохранение протокола ЭПС в файл
+// Описание: Сохранение протокола ЭПС в XML-файл
+// Кнопка вызова: 1
+// Подпись кнопки: Сохранить протокол
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sDirectory', String, '');
+
+// Запись XML-файла
+FUNC ('WriteXmlLog', '',
+  Block(
+    VAR ('XmlDocument', Integer, XMLDOCUMENTCREATE());
+    VAR ('XmlLog', Integer, XMLDOCUMENTROOT (XmlDocument));
+    VAR ('XmlRecord', Integer);
+    XmlLog := XMLNODEADDCHILD (XmlLog, 'EpsLog');
+    XMLNODESETATTRIBUTE (XmlLog, 'placeid', KRD_MAIN.PLACEID);
+    XMLNODESETATTRIBUTE (XmlLog, 'id', KRD_MAIN.ID);
+    WHILE (EOF ('qEpsLog') = 0,
+      Block(
+        XmlRecord := XMLNODEADDCHILD (XmlLog, 'Record');
+        XMLNODESETVALUES (XmlRecord, '',
+                                  'JournalMasterId', qEpsLog.JOURNAL_MASTER_ID,
+                                  'JournalUuid',    qEpsLog.JOURNAL_UUID,
+                                  'PlaceId',        qEpsLog.PLACEID,
+                                  'Id',             qEpsLog.ID,
+                                  'Counter',        qEpsLog.COUNTER,
+                                  'DocumentId',     qEpsLog.DOCUMENTID,
+                                  'DocType',        qEpsLog.DOCTYPE,
+                                  'DocNo',          qEpsLog.DOCNO,
+                                  'DocDate',        qEpsLog.DOCDATE,
+                                  'DocStatus',      qEpsLog.DOCSTATUS,
+                                  'SubStatus',      qEpsLog.SUBSTATUS,
+                                  'RegDate',        qEpsLog.REGDATE,
+                                  'LicenceNo',      qEpsLog.LICENCENO,
+                                  'LicenceDate',    qEpsLog.LICENCEDATE,
+                                  'JourGuid',       qEpsLog.JOURGUID,
+                                  'FileName',       qEpsLog.FILENAME,
+                                  'Readed',         qEpsLog.READED,
+                                  'DoDt',           qEpsLog.DoDt,
+                                  'UserLogin',      qEpsLog.USERLOGIN
+        ); // XMLNODESETVALUES - //
+        NEXT ('qEpsLog');
+      )
+    ); // WHILE - //
+    XMLDOCUMENTSAVE (XmlDocument, INCLUDETRAILINGBACKSLASH (sDirectory) + 'eps_log_' + KRD_MAIN.NBD + '.xml');
+    XMLDESTROY('XmlDocument');
+    showmessage ('Лог ЭПС сохранён в файл: ' + INCLUDETRAILINGBACKSLASH (sDirectory) + 'eps_log_' + KRD_MAIN.NBD + '.xml');
+  )
+),
+
+  VAR ('sSQL', String, '');
+  sSQL := 'SELECT * FROM EPS_LOG WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND ID=' + KRD_MAIN.ID;
+  
+  OPENQUERY ('qEpsLog', sSQL, 'dbJournals');
+  IF (RECORDCOUNT ('qEpsLog') > 0,
+    Block(
+      IF (SELECTDIRECTORY ('sDirectory') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+      IF (LENGTH (TRIM (sDirectory)) = 0, RAISEEXCEPTION ('Не выбран путь для сохранения файла'));
+      WriteXmlLog ()
+    ),
+    Block(
+      RAISEEXCEPTION ('Не найден протокол для текущего документа')
+    )
+  );
+

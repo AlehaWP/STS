@@ -1,0 +1,25 @@
+// *****************************************************************************
+// Название: COPY_REC_SQL
+// Описание: COPY_REC_SQL
+// Кнопка вызова: 0
+// Подпись кнопки: COPY_REC_SQL
+// Вызов по событию: 
+// *****************************************************************************
+//
+OPENDATABASE ('BASE_STS', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=SQLOLEDB.1;Password=sts;Persist Security Info=True;User ID=sts;Initial Catalog=STS_DATA;Data Source=192.168.1.63', 'FileLinkMode=0');
+OPENTABLE ('COMMODIT_NEW', 'COMMODIT', '', 'BASE_STS', 1);
+OPENTABLE ('COMMODIT_5', 'STS_DB', 'COMMODIT');
+//showmessage(COMMID.COMM_ID);
+DELETERECORDS ('COMMODIT_NEW');
+COPYRECORDS('COMMODIT_5', 'COMMODIT_NEW');
+
+{FIRST('COMMODIT_5');
+WHILE(EOF('COMMODIT_5')=0,
+      BLOCK(
+        COPYRECORDS(Псевдоним набора данных (источника), Псевдоним набора данных (приемника), Отображение поля 1, Отображение поля 2, ...)
+        NEXT('COMMODIT_5');
+      )
+);}
+
+
+//Provider=SQLOLEDB.1;Password=dcl;Persist Security Info=True;User ID=dcl;Initial Catalog=DCLSQL;Data Source=192.168.13.110\MSSQL

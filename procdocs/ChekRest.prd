@@ -1,0 +1,99 @@
+// *****************************************************************************
+// Название: ChekRest2
+// Описание: Вычисление остатков по каждой
+// Кнопка вызова: 0
+// Подпись кнопки: Вычисление остатков по каждой
+// *****************************************************************************
+//
+
+VAR ('sFilePath', String, 'D:\CTM\STS_TMP\');
+VAR ('sSql', String, '');
+
+DELETEFILE (sFilePath+'tmpMAIN.DBF');
+    sFilePath := 'D:\CTM\STS_TMP\';
+  //создаём tmpMAIN
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sFilePath);
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpMAIN.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'tmpID INT, ';
+      sSQL := sSQL + 'G022 CHAR(254), ';
+      sSQL := sSQL + 'G023 CHAR(254), ';
+      sSQL := sSQL + 'G082 CHAR(254), ';
+      sSQL := sSQL + 'G083 CHAR(254), ';
+      sSQL := sSQL + 'PART_NO CHAR(254), ';
+      sSQL := sSQL + 'PART_MODE CHAR(254), ';
+      sSQL := sSQL + 'SHIP_NAME CHAR(254) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  //CLOSEDATASET('TmpMAIN');
+  CLOSEDATABASE ('TMP_DB');
+
+
+FUNC ('TestF',
+     Block(
+            Param('sPlaceID', string, 0);
+            Param('sMainId', string, 1);
+            Param('sMainCounter', string, 2);
+     ),//end block param
+     Block(
+showmessage(
+'SELECT R.PLACEID, C.ID, C.G32,C.GN, C.G312, C.G315CN, C.G33, C.G311, C.G35, C.G38,'+
+                                   '  C.FACT_G35, C.FACT_G38, C.FACT_G315C, C.FACT_G315A, C.FACT_G311, C.FACT_G42,' +
+                                   '  C.G42, C.G42_CURRENCY, C.VALCODE,'+
+                                   '  C.G315A, C.G315, C.G41A, C.G315C, C.G31_82, C.BOXNO,'+
+                                   '  C.SVHAREA, C.SVHHANGAR, C.SVHRACK, C.SVHCELL,'+
+                                   '  C.ACCEPTDATE, C.STORAGE_DATE,'+
+                                   '  RC.RELEASE_G311, RC.RELEASE_G35, RC.RELEASE_G38, RC.RELEASE_G315, RC.RELEASE_G33, RC.RELEASE_G312,'+
+                                   '  RC.RELEASE_G315A,  RC.RELEASE_G315C,  RC.RELEASE_G42, RC.RELEASE_BOXNO, RC.RELEASE_OUT_DATE, '+
+                                   '  R.MAIN_ID, R.MAIN_NO, R.MAIN_COUNTER, R.COUNTER, R.DOC_NO, R.DOC_TYPE,'+
+                                   '  R.DOC_CODE, R.RELEASE_DATE,  R.OUT_DATE, R.OUT_DOC_DATE, '+
+                                   '  R.G082 as Rel_G082, R.G083, R.G084C, R.G08_KPP, R.G08_OGRN, R.G042 as Rel_G042, R.TRANSPNO, R.G022,'+
+                                   '  R.DELIVERYDOCS, R.TRANSPDOCS, '+
+                                   '  M.NBD, M.BD_DATE, M.PART_NO, M.BEG_KEEP, M.G082, M.G042, M.G221, M.G142, M.G145, M.G144, '+
+                                   '  S.NAME, S.LICENCEDATE, S.LICENCENO, S.STORE_TYPE '+
+                                   'FROM '+
+                                   '  RELEASE R, REL_COMM RC, KRD_COMM KC, KRD_MAIN M, STORES S ' +
+                                   'WHERE ' +
+                                   '  (R.PLACEID = '+ char(39) + sPlaceId + char(39) + ') AND (R.MAIN_ID = ' + Char(39)+ sMainId + char(39)+')  AND ' +
+                                   '  (R.MAIN_COUNTER = '+ char(39) + sMainCounter + char(39) + ') AND ' +
+                                   '  (RC.PLACEID = R.PLACEID) AND (RC.ID = R.ID) AND (RC.COUNTER = R.COUNTER) ' +
+                                   'AND ' +
+                                   '  (C.PLACEID = RC.PLACEID) AND (C.ID = RC.ID) AND (C.G32 = RC.G32) AND ' +
+                                   '  (M.PLACEID = C.PLACEID) AND (M.ID = C.ID) ' +
+                                   'AND ' +
+                                   '  (S.PLACEID = M.PLACEID) ' +
+                                   'ORDER BY ' +
+                                   'R.MAIN_NO, C.G32 '
+);
+     OPENQUERY ('qryRC', 'STS_DB', 'SELECT'+
+                                   '  RC.PLACEID, RC.ID,'+
+                                   '  RC.RELEASE_G311, RC.RELEASE_G35, RC.RELEASE_G38, RC.RELEASE_G315, RC.RELEASE_G33, RC.RELEASE_G312,'+
+                                   '  RC.RELEASE_G315A,  RC.RELEASE_G315C,  RC.RELEASE_G42, RC.RELEASE_BOXNO, RC.RELEASE_OUT_DATE, '+
+                                   '  R.MAIN_ID, R.MAIN_NO, R.MAIN_COUNTER, R.COUNTER, R.DOC_NO, R.DOC_TYPE,'+
+                                   '  R.DOC_CODE, R.RELEASE_DATE,  R.OUT_DATE, R.OUT_DOC_DATE, '+
+                                   '  R.G082 as Rel_G082, R.G083, R.G084C, R.G08_KPP, R.G08_OGRN, R.G042 as Rel_G042, R.TRANSPNO, R.G022,'+
+                                   '  R.DELIVERYDOCS, R.TRANSPDOCS, '+
+                                   '  KC.G32, KC.GN, KC.G312, KC.G315CN, KC.G33, KC.G311, KC.G35, KC.G38,'+
+                                   '  KC.FACT_G35, KC.FACT_G38, KC.FACT_G315C, KC.FACT_G315A, KC.FACT_G311, KC.FACT_G42,' +
+                                   '  KC.G42, KC.G42_CURRENCY, KC.VALCODE,'+
+                                   '  KC.G315A, KC.G315, KC.G41A, KC.G315C, KC.G31_82, KC.BOXNO,'+
+                                   '  KC.SVHAREA, KC.SVHHANGAR, KC.SVHRACK, KC.SVHCELL,'+
+                                   '  KC.ACCEPTDATE, KC.STORAGE_DATE,'+
+                                   '  M.NBD, M.BD_DATE, M.PART_NO, M.BEG_KEEP, M.G082, M.G042, M.G221, M.G142, M.G145, M.G144, '+
+                                   '  S.NAME, S.LICENCEDATE, S.LICENCENO, S.STORE_TYPE '+
+                                   'FROM '+
+                                   '  REL_COMM RC LEFT JOIN RELEASE R ON ((RC.PLACEID = R.PLACEID) AND (RC.ID = R.ID) AND (RC.COUNTER = R.COUNTER)) '+
+                                   '  LEFT JOIN KRD_MAIN M ON ((M.PLACEID = RC.PLACEID) AND (M.ID = RC.ID) ) '+
+                                   '  LEFT JOIN KRD_COMM KC ON ((RC.PLACEID = KC.PLACEID) AND (RC.ID = KC.ID) AND (RC.G32 = KC.G32)) '+
+                                   '  LEFT JOIN STORES S ON (S.PLACEID = RC.PLACEID) '+
+                                   'WHERE ' +
+                                   '  (RC.PLACEID = '+ char(39) + sPlaceId + char(39) + ') AND (R.MAIN_ID = ' + Char(39)+ sMainId + char(39)+')  AND ' +
+                                   '  (R.MAIN_COUNTER = '+ char(39) + sMainCounter + char(39) + ')  ' +
+                                   'ORDER BY ' +
+                                   '   R.MAIN_NO, KC.G32');
+     showmessage(Fieldvalue('qryRC','MAIN_NO'));
+
+
+)//block
+);

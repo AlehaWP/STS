@@ -1,0 +1,49 @@
+// *****************************************************************************
+// Название: После открытия информации о товаре
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC ('GetFirstTov',,
+      BLOCK(
+            OPENQUERY ('FIRST_COMM','STS_DB','SELECT ID, BOXNO, G42_CURRENCY, VALCODE FROM KRD_COMM WHERE PLACEID='+KRD_COMM.PLACEID +' AND ID='+KRD_COMM.ID+ ' AND G32=1');
+            GLOBALVAR('iFirstCommID', Integer , FIRST_COMM.ID);
+            GLOBALVAR('sBoxNO', String , FIRST_COMM.BOXNO);
+            GLOBALVAR('sG42Cur', String, FIRST_COMM.G42_CURRENCY);
+            GLOBALVAR('sValCode', String,FIRST_COMM.VALCODE);
+            CLOSEDATASET ('FIRST_COMM');
+      )
+),
+
+IF ((DocType=1)*(KRD_MAIN.MC_STATUS_BD<>'3'),
+    IF (KRD_COMM.G32 > 1,
+        BLOCK(
+              IF (VAREXISTS ('iFirstCommID'),
+                  IF(iFirstCommID <> KRD_COMM.ID,GetFirstTov()),
+                  GetFirstTov()
+              );
+              EDIT ('KRD_COMM');
+              IF (KRD_COMM.G42_CURRENCY <> '',,SETFIELDVALUE ('KRD_COMM', 'G42_CURRENCY', sG42Cur, 'VALCODE', sValCode, 'BOXNO', sBoxNO));
+        ),
+        BLOCK(
+              VAR ('sPaperCur', string, KRD_PAPERS.PAPERCURRENCY);
+              IF (sPaperCur='', sPaperCur := KRD_MAIN.G221);
+              EDIT ('KRD_COMM');
+              IF (KRD_COMM.G42_CURRENCY <> '',,SETFIELDVALUE ('KRD_COMM', 'G42_CURRENCY', sPaperCur, 'VALCODE', CURRENCYABBR (sPaperCur)));
+        )
+    )
+);
+
+
+
+
+
+
+
+
+
+
+

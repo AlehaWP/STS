@@ -1,0 +1,51 @@
+// *****************************************************************************
+// Название: Изменение номера ДО1
+// Описание: Изменение номера ДО1
+// Кнопка вызова: 1
+// Подпись кнопки: Изменение номера ДО1
+// *****************************************************************************
+//
+
+VAR('sNBD' , string, '');
+VAR('vPlaceid', integer, 0);
+VAR ('PlaceIsSelected', Integer, 0);
+VAR ('inpDate', Integer, 0);
+Var('dDate', datetime);
+OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES');
+PlaceIsSelected := SelectValues ('Выбор склада', 'Stors',
+                                          [
+                                            ['LICENCENO',   'Номер лицензии', 15],
+                                            ['LICENCENO_EXT',   ' ', 1],
+                                            ['STORE_NO',   'Номер склада', 15],
+                                            ['NAME',   'Название склада', 30],
+                                            ['PlaceId',   '', 10]
+                                          ],
+                                          [
+                                            ['PlaceId', 'vPlaceId'],
+                                          ], '', 'STS_DB');
+
+IF (PlaceIsSelected = 0,
+    RAISEEXCEPTION ('Отменено пользователем')
+);
+
+inpDate := INPUTDATE ('dDate', 'Выбо даты');
+IF (inpDate = 0,
+    RAISEEXCEPTION ('Отменено пользователем')
+);
+
+SETFILTER ('KRD_MAIN', ' PLACEID = ' + vPlaceid + ' AND BD_DATE >= ' + char(39) + FORMATDATETIME ('dd.mm.yyyy 00:00', dDate) + char(39));
+//showmessage(FORMATDATETIME ('dd.mm.yyyy 00:00', dDate));
+First('KRD_MAIN');
+While (EOF ('KRD_MAIN') = 0,
+       block(
+         sNBD := RIGHT (Fieldvalue('KRD_MAIN', 'NBD'), 7);
+         //showmessage(sNBD);
+         EDIT('KRD_MAIN');
+         SETFIELDVALUE ('KRD_MAIN',
+                        'NBD', sNBD
+         );
+         POST('KRD_MAIN');
+         NEXT('KRD_MAIN');
+       )
+);
+Setfilter('KRD_MAIN','');

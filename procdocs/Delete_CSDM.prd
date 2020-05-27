@@ -1,0 +1,9 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// *****************************************************************************
+//
+EXECUTESQL('STS_DB', 'DELETE FROM KRD_CSDM WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND ID='+ KRD_MAIN.ID);
+EXECUTESQL('STS_DB', 'DELETE FROM KRD_DOP WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND ID='+ KRD_MAIN.ID);

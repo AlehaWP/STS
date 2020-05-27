@@ -1,0 +1,58 @@
+// *****************************************************************************
+// Название: Информация о регистрации ДО-3
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO3RegInfo
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Var('sNumber', String);
+Var('iDay', integer);
+Var('iMonth', integer);
+Var('iYear', integer);
+
+VAR ('vPlaceID', String);
+VAR ('vID', String, '0');
+VAR ('vDocID', String);
+Var ('strStatus', String, '');
+Var ('strSubStatus', String, '');
+Var ('DoType', String, '');
+Var ('DoNo', String, '');
+Var ('DoDate', DateTime);
+Var ('dRegDate', DateTime);
+
+
+OPENTABLE ('JRDO3_2', 'JRDO3', '', 'dbJournals', 1);
+
+IF(LOCATE('JRDO3_2', ['RefDocumentId'], [XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'id'))]),
+Block(
+    sNumber := XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'regnumber'));
+    strSubStatus := sNumber;
+    iDay := Convert(Copy(CustomsNoPart(sNumber , 2), 5, 2), Integer);
+    iMonth := Convert(Copy(CustomsNoPart(sNumber , 2), 3, 2), Integer);
+    iYear := Convert(Copy(CustomsNoPart(sNumber , 2), 1, 2), Integer);
+    EDITRECORD ('JRDO3_2');
+    SETFIELDVALUE('JRDO3_2', 'CustomState', 'Зарегистрирован');
+    SETFIELDVALUE('JRDO3_2', 'CustomsCode', CustomsNoPart(sNumber , 1));
+    SETFIELDVALUE('JRDO3_2', 'RegistrationDate', ENCODEDATE(iYear, iMonth, iDay));
+    SETFIELDVALUE('JRDO3_2', 'GTDNumber', CustomsNoPart(sNumber , 3));
+    PostRecord('JRDO3_2');
+
+    vPlaceID := JRDO3_2.PLACEID;
+    vDocId   := JRDO3_2.RefDocumentId;
+    DoType   := 'ДО-3';
+    DoNo     := JRDO3_2.REPORTNUMBER;
+    DoDate   := JRDO3_2.REPORTDATE;
+    strStatus:= 'ДО-3 зарегистрирована';
+    dRegDate := DATE()+TIME(1);
+    sJourGuid := vDocId; 
+
+
+),
+// Скрипты должны работать в  "тихом" режиме, без сообщений
+//!  ShowMessage('ДО-3 с идентификатором '+XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'id'))+' не найдено!')
+);
+CLOSEDATASET ('JRDO3_2');                     
+
+

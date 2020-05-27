@@ -1,0 +1,152 @@
+// *****************************************************************************
+// Название: Внесение изменений в ДО1
+// Описание: Внесение изменений в ДО1
+// Кнопка вызова: 0
+// Подпись кнопки: Внесение изменений в ДО1
+// *****************************************************************************
+//
+VAR ('dtStoreDate', DateTime);
+VAR ('dtDODate', DateTime);
+VAR ('dtAcceptDate', DateTime);
+VAR ('dtBegKeep', DateTime);
+VAR ('sFIO', string, '');
+VAR ('sPost', string, '');
+
+Func('isLeapYear',
+  Param('iYear', Integer, 0),
+Block(
+  (MOD(iYear, 4) = 0) * ((MOD(iYear, 400) = 0) | (MOD(iYear, 100) <> 0))
+));
+
+Func('DaysInMonth', Block(
+  Param('sYear', String, 0),
+  Param('sMonth', String, 1)
+),
+Block(
+  Var('iYear', Integer, CONVERT (sYear, Integer));
+  Var('iMonth', Integer, CONVERT (sMonth, Integer));
+  CASE (iMonth,
+    [1, 31,
+     2, IF(isLeapYear(iYear), 29, 28),
+     3, 31,
+     4, 30,
+     5, 31,
+     6, 30,
+     7, 31,
+     8, 31,
+     9, 30,
+     10, 31,
+     11, 30,
+     12, 31],
+    30)
+));
+
+Func('AddMonths', Block(
+  Param('dtDate', DateTime, 0),
+  Param('fMonths', Float, 1)
+), Block(
+  Var('dtResult', DateTime);
+
+  Var('iYear', Integer, CONVERT(FORMATDATETIME ('YYYY', dtDate), Integer));
+  Var('iMonth', Integer, CONVERT(FORMATDATETIME ('MM', dtDate), Integer));
+  Var('iDay', Integer, CONVERT(FORMATDATETIME ('DD', dtDate), Integer));
+
+  Var('fMonthPart', Float, 0);
+
+  // Прибавляем целое кол-во месяцев без учета годов в общем числе месяцев
+  iMonth := iMonth + MOD(TRUNC(fMonths), 12);
+
+  // Прибавляем кол-во лет
+
+  iYear := iYear + TRUNC(fMonths) / 12;
+  //showmessage(iYear);
+
+  // Прибавим год, если есть переход
+  IF(iMonth > 12,
+    Block(
+      iMonth := iMonth - 12;
+      iYear := iYear + 1
+  ));
+
+  // Проверяем последние числа месяца, если надо - выравниваем
+  IF(iDay > DaysInMonth(Trim(iYear), Trim(iMonth)),
+    iDay := DaysInMonth(Trim(iYear), Trim(iMonth))
+  );
+
+  // Прибавляем кусок месяца, если надо
+  IF(CONVERT(TRUNC(fMonths), Float) < fMonths, Block(
+    // Доля остатка дней до конца месяца в общем числе дней месяца
+    fMonthPart := 1 - CONVERT(iDay, Float) / CONVERT(DaysInMonts(Trim(iYear), Trim(iMonth)), Float);
+
+    // Если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+    // прибавляемую долю уменьшим на остаток дней в предыдущем месяце
+    IF(FRAC(fMonths) > fMonthPart, Block(
+      iMonth := iMonth + 1;
+      IF(iMonth > 12,
+        iYear := iYear + 1
+      );
+      fMonthPart := FRAC(fMonths) - fMonthPart;
+    ),
+      fMonthPart := FRAC(fMonths)
+    );
+//showmessage('iDay='+iDay+CHAR(13)+'fMounthPart='+fMounthPart+CHAR(13)+'DaysinMounth='+DaysinMonth(Trim(iYear), Trim(iMonth)));
+    iDay := iDay + TRUNC(fMonthPart * CONVERT(DaysinMonth(Trim(iYear), Trim(iMonth)), Float));
+    IF(iDay > DaysinMonth(Trim(iYear), Trim(iMonth)),
+      iDay := iDay - DaysinMonth(Trim(iYear), Trim(iMonth))
+    );
+  ));
+if(imonth <= 2 , iYear := iYear + 1);
+  ENCODEDATE(iYear, iMonth, iDay)
+));
+
+
+
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\ChangeValuesDO1.cfm');
+FORMSETPROPERTY(frmDialog, 'dtBegKeep.Text', FORMATDATETIME('DD.MM.YYYY HH:MM',NOW() + 1));
+FORMSETPROPERTY(frmDialog, 'dtAccept.Text', FORMATDATETIME('DD.MM.YYYY HH:MM',NOW()));
+FORMSETPROPERTY(frmDialog, 'dtDODate.Text', FORMATDATETIME('DD.MM.YYYY HH:MM',NOW()));
+if(FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено'));
+//showmessage(Convert(Convert(FORMGETPROPERTY(frmDialog, 'dtBegKeep.Date'), Float), DateTime););
+dtAcceptdate := FORMGETPROPERTY(frmDialog, 'dtAccept.Text');
+dtBegKeep := FORMGETPROPERTY(frmDialog, 'dtBegKeep.Text');
+dtDODate := FORMGETPROPERTY(frmDialog, 'dtDODate.Text');
+
+dtStoreDate := AddMonths(dtBegKeep , 60 / 30);
+sFIO := FORMGETPROPERTY (frmDialog, 'rtFIO.Text');
+sPost := FORMGETPROPERTY (frmDialog, 'rtPost.Text');
+
+//showmessage(FORMGETPROPERTY (frmDialog, 'rtPrim.Lines'));
+//showmessage(FORMGETPROPERTY (frmDialog, 'rtEdit1.text'));
+//FORMCLOSE ('AAA');
+GETSELECTEDDOCS ('QUERY1', 'PLACEID', 'ID', 'NBD');
+FIRST('QUERY1');
+WHILE(EOF('QUERY1')=0,
+      BLOCK(
+        LOCATE('KRD_MAIN_2', 'PLACEID; ID', [QUERY1.PLACEID, QUERY1.ID]);
+        EDIT('KRD_MAIN_2');
+        
+        IF(dtBegKeep <> '', SETFIELDVALUE('KRD_MAIN_2', 'BEG_KEEP', dtBegKeep));
+        IF(dtDODate <> '', SETFIELDVALUE('KRD_MAIN_2', 'BD_DATE', dtDODate));
+        IF(sFIO <> '', SETFIELDVALUE('KRD_MAIN_2', 'AUTHOR', sFIO));
+        IF(sPost <> '', SETFIELDVALUE('KRD_MAIN_2', 'AUTHOR_POST', sPost));
+        //IF(FORMGETPROPERTY (frmDialog, 'rtPrim.Lines') <> '', SETFIELDVALUE('KRD_MAIN_2', 'REMARK', FORMGETPROPERTY (frmDialog, 'rtPrim.Lines')));
+        
+        POST('KRD_MAIN_2');
+        SETFILTER ('KRD_COMM_2', 'PLACEID='+CHAR(39)+QUERY1.PLACEID+CHAR(39)+' AND ID='+CHAR(39)+QUERY1.ID+CHAR(39));
+        FIRST('KRD_COMM_2');
+        WHILE(EOF('KRD_COMM_2') = 0,
+              BLOCK(
+                EDIT('KRD_COMM_2');
+                
+                IF(dtAcceptdate <> '', SETFIELDVALUE('KRD_COMM_2', 'ACCEPTDATE', dtAcceptdate));
+                IF(dtStoreDate <> '', SETFIELDVALUE('KRD_COMM_2', 'STORAGE_DATE', dtStoreDate));
+                IF(FORMGETPROPERTY (frmDialog, 'rtPrim.Lines') <> '', SETFIELDVALUE('KRD_COMM_2', 'REMARK', FORMGETPROPERTY (frmDialog, 'rtPrim.Lines')));
+
+                POST('KRD_COMM_2');
+                NEXT('KRD_COMM_2');
+              )
+        );
+        SETFILTER ('KRD_COMM_2','');
+        NEXT('QUERY1');
+      )
+);

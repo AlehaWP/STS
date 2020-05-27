@@ -1,0 +1,48 @@
+// *****************************************************************************
+// Название: Информация о доставке ДО-3 в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO3TechConfirm
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sNumber', String);
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'dodt'));
+VAR ('vPlaceID', String);
+VAR ('vID', String, '0');
+VAR ('vDocID', String);
+Var ('strStatus', String, '');
+Var ('strSubStatus', String, '');
+Var ('DoType', String, '');
+Var ('DoNo', String, '');
+Var ('DoDate', DateTime);
+Var ('dRegDate', DateTime);
+
+
+OPENTABLE ('JRDO3_2', 'JRDO3', '', 'dbJournals', 1);
+
+IF(LOCATE('JRDO3_2', 'RefDocumentId', [XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do3id')]),
+Block(
+    EDITRECORD ('JRDO3_2');
+    SETFIELDVALUE('JRDO3_2', 'CustomState', 'Доставлен в АСТО');
+    PostRecord('JRDO3_2');
+    vPlaceID := JRDO3_2.PLACEID;
+    vDocId   := JRDO3_2.RefDocumentId;
+    DoType   := 'ДО-3';
+    DoNo     := JRDO3_2.REPORTNUMBER;
+    DoDate   := JRDO3_2.REPORTDATE;
+    strStatus:= 'ДО-3 доставлен в АСТО';
+    dRegDate := DATE()+TIME(1);
+    sJourGuid := vDocId; 
+
+
+),
+// Скрипты должны работать в  "тихом" режиме, без сообщений
+//!  ShowMessage('ДО-3 с идентификатором '+XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'id'))+' не найдено!')
+);
+CLOSEDATASET ('JRDO3_2');                     
+
+

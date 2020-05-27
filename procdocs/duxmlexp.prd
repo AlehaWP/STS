@@ -1,0 +1,804 @@
+Func('CommLinkedInfo',Block(
+                            Param('xPlaceid', Integer, 0),
+                            Param('xId', Integer, 1),
+                            Param('xG32', Integer, 2),
+                            Param('xType', Integer, 3),
+                            ),
+Block(     
+                Const('vList', String, '');    {список документов}
+                Var('docType',Integer,0);      {вид документа}
+                Var('doccounter', Integer,0); {номер документа}
+                Var('doccount', Integer,0);    {количество документов}                
+                Var('dd',Integer,0);
+                Var('ss', String, '');  
+{  Возможные значения параметра "Тип информации":
+    1 - Накладные
+    2 - Счета-фактуры (инвойсы)
+    3 - Документы контроля доставки
+    4 - Контейнеры 
+    5 - Пломбы контейнеров
+}
+
+        if(IN(xType,[1,2,3,4,5]),Block(
+              if ((xType=1)+(xType=2), Let('docType', 13),
+                     if (xType=3, Let('docType', 12), 
+                                  Let('docType', 11)
+                       )                         
+                   );    
+                  
+                SetRange('KRD_COMM_PAPERS_2',[xPlaceid,xId,xG32,docType]);
+                Let('dd',RecordCount('KRD_COMM_PAPERS_2'));
+                if (RecordCount('KRD_COMM_PAPERS_2')<>0,Block({есть связь документов с товарами}
+                        first ('KRD_COMM_PAPERS_2');  
+                while(EOF ('KRD_COMM_PAPERS_2') <> 1,  Block(
+                     Let('doccounter', FieldValue('KRD_COMM_PAPERS_2','DOC_COUNTER'));
+                     if(docType=13,Block( {Papers}
+                                  if(FindKey('KRD_PAPERS_2',[xPlaceId,xId,doccounter]), Block(
+                                      Let('sPaperName', FieldValue('KRD_PAPERS_2','PaperName'));  
+                                      if(((xType=1) * IN(sPaperName, ['АВН', 'CMR', 'ЖДН', 'ТТН', 'КОН', 'КНСМ', 'ТХП', 'ПТС']))
+                                      + ((xType=2) * IN(sPaperName, ['ИНВ', 'КУП'])) , Block(
+                                        if (vList<>'', if(FieldIsNull('KRD_PAPERS_2','PAPERNO')=0,  
+                                                         {      if(Not FieldIsNull('KRD_PAPERS_2','PAPERDATE'),
+                                                                  Let(vList, vList+', '+FieldValue('KRD_PAPERS_2','PAPERNO')+' от '+FieldValue('KRD_PAPERS_2','PAPERDATE')),}
+                                                                  Let('vList', vList+', '+FieldValue('KRD_PAPERS_2','PAPERNO'))
+                                                                  {) }
+                                                                  ),
+                                                         if(FieldIsNull('KRD_PAPERS_2','PAPERNO')=0,  
+                                                         {      if(Not FieldIsNull('KRD_PAPERS_2','PAPERDATE'),
+                                                                  Let(vList, FieldValue('KRD_PAPERS_2','PAPERNO')+' от '+FieldValue('KRD_PAPERS_2','PAPERDATE')),}
+                                                                  Let('vList', FieldValue('KRD_PAPERS_2','PAPERNO'))
+                                                                  {) }                                                               
+                                                                  )
+                                                                  )
+                                                         ))
+                                                              )
+                              )                           
+                       ), 
+                     if (docType=12, Block( {DCD}
+                                  if(FindKey('KRD_DCD_2',[xPlaceId,xId,doccounter]), Block(
+                                  if (vList<>'', if(FieldIsNull('KRD_DCD_2','PAPERNO')=0,  
+                                                 {      if(Not FieldIsNull('KRD_DCD_2','PAPERCLOSE'),
+                                                                  Let(vList, vList+', '+FieldValue('KRD_DCD_2','PAPERNO')+' от '+FieldValue('KRD_DCD_2','PAPERCLOSE')),}
+                                                                  Let('vList', vList+', '+FieldValue('KRD_DCD_2','PAPERNO'))
+                                                                  {)    } 
+                                                                  ),
+                                                 if(FieldIsNull('KRD_DCD_2','PAPERNO')=0,
+                                                                {       if(Not FieldIsNull('KRD_DCD_2','PAPERDATE'),
+                                                                  Let(vList, FieldValue('KRD_DCD_2','PAPERNO')+' от '+FieldValue('KRD_DCD_2','PAPERCLOSE')),     }
+                                                                  Let('vList', FieldValue('KRD_DCD_2','PAPERNO'))
+                                                                  {)    }
+                                                                )
+
+                                                                 )                                      
+                                                                      )
+                              )
+                              ),
+                             Block( {Cont}
+                                             if(FindKey('KRD_CONT_2',[xPlaceId,xId,doccounter]), Block(
+                                      if((xType=4),
+                                       Block(
+                                        if (vList<>'', if(FieldIsNull('KRD_CONT_2','CONTNO')=0, Block(
+                                                                  Let('vList', vList+', '+FieldValue('KRD_CONT_2','CONTNO')),
+                                                                   Let('doccount', doccount+1))
+                                                                   ),
+                                                                   if(FieldIsNull('KRD_CONT_2','CONTNO')=0,Block( 
+                                                                  Let('vList', FieldValue('KRD_CONT_2','CONTNO')),
+                                                                  Let('doccount', doccount+1))
+                                                                  )
+                                                                  
+                                                                  )
+                                                                  ), Block(
+                                                                    if (vList<>'', if(FieldIsNull('KRD_CONT_2','PLOMB')=0, 
+                                                                  Let('vList', vList+', '+FieldValue('KRD_CONT_2','PLOMB'))
+                                        ),
+                                         if(FieldIsNull('KRD_CONT_2','PLOMB')=0,
+                                                                  Let('vList', FieldValue('KRD_CONT_2','PLOMB'))
+                                                                  )                                                                  
+                                                                   )
+                                                                   ))
+                                                                        )
+                              )
+                              )
+                             )
+                             ),
+
+                             Next('KRD_COMM_PAPERS_2')
+                     ))
+                     ),
+               Block( {нет связи документов с товарами-печатаем все документы}
+               
+    if(docType=13,Block( {Papers}
+          SetRange('KRD_PAPERS_2',[xPlaceid,xId]);
+          First('KRD_PAPERS_2'),
+                                  While(EOF ('KRD_PAPERS_2') <> 1, Block(
+                                      Let('sPaperName', FieldValue('KRD_PAPERS_2','PaperName')),
+                                      if(((xType=1) * (IN(sPaperName, ['АВН', 'CMR', 'ЖДН', 'ТТН', 'КОН', 'КНСМ', 'ТХП', 'ПТС'])))
+                                      + ((xType=2) * (IN(sPaperName, ['ИНВ', 'КУП']))) , Block(
+                                        if (vList<>'', if(FieldIsNull('KRD_PAPERS_2','PAPERNO')=0,
+                                                        {       if(Not FieldIsNull('KRD_PAPERS','PAPERDATE'),
+                                                                  Let(vList, vList+', '+FieldValue('KRD_PAPERS','PAPERNO')+' от '+FieldValue('KRD_PAPERS','PAPERDATE')),}
+                                                                  Let('vList', vList+', '+FieldValue('KRD_PAPERS_2','PAPERNO'))
+                                                                  {)  }                                                              
+                                                                  ),
+                                                                  if(FieldIsNull('KRD_PAPERS_2','PAPERNO')=0,
+                {       if(Not FieldIsNull('KRD_PAPERS','PAPERDATE'),
+                                                                  Let(vList, FieldValue('KRD_PAPERS','PAPERNO')+' от '+FieldValue('KRD_PAPERS','PAPERDATE')),}
+                                                                  Let('vList', FieldValue('KRD_PAPERS_2','PAPERNO'))
+                                                                  {)   }                                                             
+                                                                  )
+
+                                                                   )
+                                                                   ));
+                                                                   Next('KRD_PAPERS_2')
+                                                                        )
+                              );
+                        CancelRange('KRD_PAPERS_2')
+                        ), 
+                        if (docType=12, Block( {DCD}
+                                  SetRange('KRD_DCD_2',[xPlaceid,xId]);
+                                            First('KRD_DCD_2'),
+                                  While(EOF('KRD_DCD_2')<>1, Block(
+                                  if (vList<>'', if(FieldIsNull('KRD_DCD_2','PAPERNO')=0,
+                                                  {       if(Not FieldIsNull('KRD_DCD','PAPERCLOSE'),
+                                                                  Let(vList, vList+', '+FieldValue('KRD_DCD','PAPERNO')+' от '+FieldValue('KRD_PAPERS','PAPERCLOSE')),}
+                                                                  Let('vList', vList+', '+FieldValue('KRD_DCD_2','PAPERNO'))
+                                                                  {) }                                                               
+                                                                  ),
+                                                                  if(FieldIsNull('KRD_DCD_2','PAPERNO')=0,
+                    {   if(Not FieldIsNull('KRD_DCD','PAPERDATE'),
+                                                                  Let(vList, FieldValue('KRD_DCD','PAPERNO')+' от '+FieldValue('KRD_PAPERS','PAPERCLOSE')),}
+                                                                  Let('vList', FieldValue('KRD_DCD_2','PAPERNO'))
+                                                                  {)     }                                                           
+                                                                  )
+
+                                                                  );
+                                     Next('KRD_DCD_2')
+                                          )
+                                                                        );
+                                     CancelRange('KRD_DCD_2')
+                                     ),
+                                     Block( {Cont}
+                                           SetRange('KRD_CONT_2',[xPlaceid,xId]);
+                                           First('KRD_CONT_2'),
+                                      While(EOF('KRD_CONT_2')<>1, Block(
+                                        if((xType=4),
+                                         Block(
+                                           if (vList<>'', if(FieldIsNull('KRD_CONT_2','CONTNO')=0,Block(
+                                                                  Let('vList', vList+', '+FieldValue('KRD_CONT_2','CONTNO')),
+                                                                     Let('doccount', doccount+1))
+                                                                     ),
+                                                                     if(FieldIsNull('KRD_CONT_2','CONTNO')=0, Block(
+                                                                  Let('vList', FieldValue('KRD_CONT_2','CONTNO')),
+                                                                    Let('doccount', doccount+1))
+                                                                    )
+                                                                    )
+                                                                    ), Block(
+                                                                      if (vList<>'', if(FieldIsNull('KRD_CONT_2','PLOMB')=0,
+                                                                  Let('vList', vList+', '+FieldValue('KRD_CONT_2','PLOMB')) 
+                                                                             ),
+                                                                             if(FieldIsNull('KRD_CONT_2','PLOMB')=0,   
+                                                                  Let('vList', FieldValue('KRD_CONT_2','PLOMB'))
+                                                                  )
+                                                                  ) 
+                                                                  ));  
+                                                                  Next('KRD_CONT_2'))
+                                                                                    );
+                            CancelRange('KRD_CONT_2')
+                            )
+                             )
+                             )
+                             )
+                             ),
+                             CancelRange('KRD_COMM_PAPERS_2')
+
+         )),
+        if(xType=4,  if (doccount=0,
+        Let('vList',''),
+        Let('vList',CONVERT (doccount, String)+': '+vList)));
+                vList){конец тела(ха-ха) функции}
+),
+Func('XMLCurDoc',  Param('XMLNode', Integer, 0),{добавление в xml-ный документ Row с текущим ДУ}    
+Block( 
+            VAR ('XMLNodeDU', Integer, XMLNodeAddChild(XMLNode, 'ROW'));
+            XMLNodeSetAttribute(XMLNodeDU, 'doctype', 'doc_uch');
+            XMLNodeSetAttribute(XMLNodeDU, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+{*****************ОБЩАЯ ЧАСТЬ*********************}
+{номер бланка основного листа}                                        
+
+            first ('KRD_COMM_2'); 
+            VAR ('XMLNodeNumBlank', Integer, XMLNodeAddChild(XMLNodeDU, 'NUM_BLANK')); 
+            if (FIELDISNULL('KRD_COMM_2','NBLANK') , 
+                           XMLNodeSetAttribute(XMLNodeNumBlank, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeNumBlank, KRD_COMM_2.NBLANK));            
+{Sender (Отправитель)}              
+            VAR ('XMLNodeSender', Integer, XMLNodeAddChild(XMLNodeDU, 'SENDER'));  
+                   VAR ('XMLNodeSenderINN', Integer, XMLNodeAddChild(XMLNodeSender, 'INN'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G024C'), 
+                           XMLNodeSetAttribute(XMLNodeSenderINN, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeSenderINN, KRD_MAIN_2.G024C));  
+                   VAR ('XMLNodeSenderOrgName', Integer, XMLNodeAddChild(XMLNodeSender, 'ORG_NAME'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G022'),  
+                           XMLNodeSetAttribute(XMLNodeSenderOrgName, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeSenderOrgName, KRD_MAIN_2.G022));   
+                   VAR ('XMLNodeSenderAddress', Integer, XMLNodeAddChild(XMLNodeSender, 'ADDRESS'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G023'),  
+                           XMLNodeSetAttribute(XMLNodeSenderAddress, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeSenderAddress, KRD_MAIN_2.G023));   
+                   VAR ('XMLNodeSenderOKPO', Integer, XMLNodeAddChild(XMLNodeSender, 'OKPO'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G021'), 
+                           XMLNodeSetAttribute(XMLNodeSenderOKPO, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeSenderOKPO, KRD_MAIN_2.G021));                               
+{Consignee(Получатель)}      
+            VAR ('XMLNodeConsignee', Integer, XMLNodeAddChild(XMLNodeDU, 'CONSIGNEE'));  
+                   VAR ('XMLNodeConsigneeINN', Integer, XMLNodeAddChild(XMLNodeConsignee, 'INN'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G084C'), 
+                           XMLNodeSetAttribute(XMLNodeConsigneeINN, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeConsigneeINN, KRD_MAIN_2.G084C));  
+                   VAR ('XMLNodeConsigneeOrgName', Integer, XMLNodeAddChild(XMLNodeConsignee, 'ORG_NAME'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G082'),  
+                           XMLNodeSetAttribute(XMLNodeConsigneeOrgName, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeConsigneeOrgName, KRD_MAIN_2.G082));   
+                   VAR ('XMLNodeConsigneeAddress', Integer, XMLNodeAddChild(XMLNodeConsignee, 'ADDRESS'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G083'),  
+                           XMLNodeSetAttribute(XMLNodeConsigneeAddress, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeConsigneeAddress, KRD_MAIN_2.G083));   
+                   VAR ('XMLNodeConsigneeOKPO', Integer, XMLNodeAddChild(XMLNodeConsignee, 'OKPO'));  
+                       if (FIELDISNULL('KRD_MAIN_2','G081'), 
+                           XMLNodeSetAttribute(XMLNodeConsigneeOKPO, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeConsigneeOKPO, KRD_MAIN_2.G081));                              
+{Declarant Декларант} 
+            SETRANGE ('STORES_2', [FIELDVALUE ('KRD_MAIN_2.PLACEID')]);      
+            VAR ('XMLNodeDeclarant', Integer, XMLNodeAddChild(XMLNodeDU, 'DECLARANT'));  
+                   VAR ('XMLNodeDeclarantINN', Integer, XMLNodeAddChild(XMLNodeDeclarant, 'INN'));  
+                       if (FIELDISNULL('STORES_2','G144C'), 
+                           XMLNodeSetAttribute(XMLNodeDeclarantINN, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeDeclarantINN, STORES_2.G144C));  
+                   VAR ('XMLNodeDeclarantOrgName', Integer, XMLNodeAddChild(XMLNodeDeclarant, 'ORG_NAME'));  
+                       if (FIELDISNULL('STORES_2','G142'),  
+                           XMLNodeSetAttribute(XMLNodeDeclarantOrgName, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeDeclarantOrgName, STORES_2.G142));   
+                   VAR ('XMLNodeDeclarantAddress', Integer, XMLNodeAddChild(XMLNodeDeclarant, 'ADDRESS'));  
+                       if (FIELDISNULL('STORES_2','G143'),  
+                           XMLNodeSetAttribute(XMLNodeDeclarantAddress, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeDeclarantAddress, STORES_2.G143));   
+                   VAR ('XMLNodeDeclarantOKPO', Integer, XMLNodeAddChild(XMLNodeDeclarant, 'OKPO'));  
+                       if (FIELDISNULL('STORES_2','G141'), 
+                           XMLNodeSetAttribute(XMLNodeDeclarantOKPO, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeDeclarantOKPO, STORES_2.G141));  
+{/end Declarant}
+{Наименование таможни владельца СВХ}                                                        
+         VAR ('XMLNodeCustomName', Integer, XMLNodeAddChild(XMLNodeDU, 'CUSTOM_NAME_SVX'));              
+            if (FIELDISNULL('STORES_2','CUSTOMS_NAME'), 
+                           XMLNodeSetAttribute(XMLNodeCustomName, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeCustomName, STORES_2.CUSTOMS_NAME));  
+{Код таможни владельца СВХ}                                                        
+         VAR ('XMLNodeCustomCode', Integer, XMLNodeAddChild(XMLNodeDU, 'CUSTOM_CODE_SVX'));              
+            if (FIELDISNULL('STORES_2','CUSTOMS_CODE'), 
+                           XMLNodeSetAttribute(XMLNodeCustomCode, 'xsi:null', 'true'),  
+                           XMLNodeSetValue(XMLNodeCustomCode, STORES_2.CUSTOMS_CODE));                                       
+
+{Признак контейнерных перевозок}                                                        
+         VAR ('XMLNodeCONTAINER_TAG', Integer, XMLNodeAddChild(XMLNodeDU, 'CONTAINER_TAG'));           
+         if (FIELDISNULL('KRD_MAIN_2','G19'), 
+                           XMLNodeSetValue(XMLNodeCONTAINER_TAG, 0),   
+                           XMLNodeSetValue(XMLNodeCONTAINER_TAG, KRD_MAIN_2.G19));
+{Всего транспортных средств}                                                        
+         VAR ('XMLNodeTRANSP_TOTAL', Integer, XMLNodeAddChild(XMLNodeDU, 'START_TRANSPORT_TOTAL'));   
+         if (FIELDISNULL('KRD_MAIN_2','G210'), 
+                           XMLNodeSetAttribute(XMLNodeTRANSP_TOTAL, 'xsi:null', 'true'),   
+                           XMLNodeSetValue(XMLNodeTRANSP_TOTAL, KRD_MAIN_2.G210));
+{Код страны принадлежности транспорта}                                                        
+         VAR ('XMLNodeTRANSP_COUNTRY_CODE', Integer, XMLNodeAddChild(XMLNodeDU, 'TRANSPORT_COUNTRY_CODE'));   
+         if (FIELDISNULL('KRD_MAIN_2','TRANSP_COUNTRY'), 
+                           XMLNodeSetAttribute(XMLNodeTRANSP_COUNTRY_CODE, 'xsi:null', 'true'),   
+                           XMLNodeSetValue(XMLNodeTRANSP_COUNTRY_CODE, KRD_MAIN_2.TRANSP_COUNTRY));
+{Тип документа (ДУ)}                                                        
+         VAR ('XMLNodeGOODS_MOVING_DIRECTION', Integer, XMLNodeAddChild(XMLNodeDU, 'GOODS_MOVING_DIRECTION'));   
+         XMLNodeSetValue(XMLNodeGOODS_MOVING_DIRECTION, 'ДУ');                             
+{Код основного таможенного режима}                                                        
+         VAR ('XMLNodeMAIN_CUSTOMS_PROCEDURE_CODE', Integer, XMLNodeAddChild(XMLNodeDU, 'MAIN_CUSTOMS_PROCEDURE_CODE'));   
+         if (FIELDISNULL('KRD_MAIN_2','G012'), 
+                           XMLNodeSetAttribute(XMLNodeMAIN_CUSTOMS_PROCEDURE_CODE, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeMAIN_CUSTOMS_PROCEDURE_CODE, KRD_MAIN_2.G012));           
+{Дополнительный признак}                                                        
+         VAR ('XMLNodeADDITIONAL_TAG', Integer, XMLNodeAddChild(XMLNodeDU, 'ADDITIONAL_TAG'));            
+         XMLNodeSetValue(XMLNodeADDITIONAL_TAG, KRD_MAIN_2.WITH_PLACE);           
+{Дата помещения товаров и транспортных средств на СВХ}                                                        
+         VAR ('XMLNodePREMIS_DATE', Integer, XMLNodeAddChild(XMLNodeDU, 'PREMIS_DATE'));
+         if (FIELDISNULL('KRD_MAIN_2','BEG_KEEP'), 
+                           XMLNodeSetAttribute(XMLNodePREMIS_DATE, 'xsi:null', 'true'),      
+                           XMLNodeSetValue(XMLNodePREMIS_DATE, KRD_MAIN_2.BEG_KEEP));        
+{Порядковый номер по книге учета товаров и транспортных средств на СВХ}                                                        
+         VAR ('XMLNodeORDER_NUMBER', Integer, XMLNodeAddChild(XMLNodeDU, 'ORDER_NUMBER'));   
+         if (FIELDISNULL('KRD_MAIN_2','STORE_DOC_NO'), 
+                           XMLNodeSetAttribute(XMLNodeORDER_NUMBER, 'xsi:null', 'true'),    
+                           XMLNodeSetValue(XMLNodeORDER_NUMBER, KRD_MAIN_2.STORE_DOC_NO));    
+{Порядковый номер листа ????}                                                        
+         VAR ('XMLNodeSHEETS_CURRENT', Integer, XMLNodeAddChild(XMLNodeDU, 'SHEETS_CURRENT'));   
+         XMLNodeSetValue(XMLNodeSHEETS_CURRENT, 1);    
+{Общее количество листов ДУ, включая добавочные ????}                                                        
+         VAR ('XMLNodeSHEETS_TOTAL', Integer, XMLNodeAddChild(XMLNodeDU, 'SHEETS_TOTAL'));   
+         XMLNodeSetValue(XMLNodeSHEETS_TOTAL, (1+TRUNC(RecordCount('KRD_COMM_2')/3+0.5))); 
+{Общее количество наименований товаров}                                                        
+         VAR ('XMLNodeTOTAL_GOODS_NAMES', Integer, XMLNodeAddChild(XMLNodeDU, 'TOTAL_GOODS_NAMES'));   
+         if (RECORDCOUNT('KRD_COMM_2') = 0, 
+                           XMLNodeSetAttribute(XMLNodeTOTAL_GOODS_NAMES, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeTOTAL_GOODS_NAMES, RECORDCOUNT('KRD_COMM_2')));    
+{Общее количество грузовых мест}                                                        
+         VAR ('XMLNodePLACES_TOTAL', Integer, XMLNodeAddChild(XMLNodeDU, 'PLACES_TOTAL'));   
+         if (FIELDISNULL('KRD_MAIN_2','G06'), 
+                           XMLNodeSetAttribute(XMLNodePLACES_TOTAL, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodePLACES_TOTAL, KRD_MAIN_2.G06));  
+{Код таможни}                                                        
+         VAR ('XMLNodeCUSTOM_CODE', Integer, XMLNodeAddChild(XMLNodeDU, 'CUSTOM_CODE'));   
+         VAR ('vTemp', Integer,0);
+         VAR ('vTemp2', Integer,0);
+ VAR ('vTemp3', String,'');
+         Let('vTemp',STRPOS('/', KRD_MAIN_2.NBD));
+         if (vTemp=0, 
+                           XMLNodeSetAttribute(XMLNodeCUSTOM_CODE, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeCUSTOM_CODE, COPY(KRD_MAIN_2.NBD,1,8)));    
+{Дата принятия ДУ к оформлению}
+         Let('vTemp2',StrPos('/',COPY(KRD_MAIN_2.NBD,vTemp+1,(Length(KRD_MAIN_2.NBD)-vTemp))));
+         VAR ('XMLNodeDATE_AD', Integer, XMLNodeAddChild(XMLNodeDU, 'DATE_AD'));   
+         if (vTemp=0, 
+                           XMLNodeSetAttribute(XMLNodeDATE_AD, 'xsi:null', 'true'),
+                           if (vTemp2=0,
+                           XMLNodeSetAttribute(XMLNodeDATE_AD, 'xsi:null', 'true'),
+                           Block(
+   Let('vTemp3',Copy(KRD_MAIN_2.NBD,vTemp+1,vTemp2-1));
+              Case(Length(vTemp3),[5,XMLNodeSetValue(XMLNodeDATE_AD, ENCODEDATE(Convert('200'+COPY(vTemp3,5,1),Integer),Convert(COPY(vTemp3,3,2),Integer),Convert(COPY(vTemp3,1,2),Integer))),
+                          6,XMLNodeSetValue(XMLNodeDATE_AD, ENCODEDATE(Convert('20'+COPY(vTemp3,5,2),Integer),Convert(COPY(vTemp3,3,2),Integer),Convert(COPY(vTemp3,1,2),Integer))), 					
+                          8,XMLNodeSetValue(XMLNodeDATE_AD, ENCODEDATE(Convert(COPY(vTemp3,5,4),Integer),Convert(COPY(vTemp3,3,2),Integer),Convert(COPY(vTemp3,1,2),Integer))),
+                          ],
+                                            XMLNodeSetAttribute(XMLNodeDATE_AD, 'xsi:null', 'true')
+                                            )
+                                            )
+                                            )
+                          );    
+{Порядковый номер ДУ}
+         VAR ('XMLNodeNUMBER_AD', Integer, XMLNodeAddChild(XMLNodeDU, 'NUMBER_AD'));   
+         Let('vTemp',STRPOS('/5', KRD_MAIN_2.NBD)+1);
+         if (vTemp=1, 
+                           XMLNodeSetAttribute(XMLNodeNUMBER_AD, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeNUMBER_AD, Copy(KRD_MAIN_2.NBD,vTemp,7)));
+{Код валюты}                                                        
+         VAR ('XMLNodeCONTRACT_CURRENCY', Integer, XMLNodeAddChild(XMLNodeDU, 'CONTRACT_CURRENCY'));   
+         if (FIELDISNULL('KRD_MAIN_2','G221'), 
+                           XMLNodeSetAttribute(XMLNodeCONTRACT_CURRENCY, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeCONTRACT_CURRENCY, KRD_MAIN_2.G221));            
+{Общая фактурная стоимость}                                                        
+         VAR ('XMLNodeINVOICE_TOTAL_COST', Integer, XMLNodeAddChild(XMLNodeDU, 'INVOICE_TOTAL_COST'));   
+         if (FIELDISNULL('KRD_MAIN_2','G222'), 
+                           XMLNodeSetAttribute(XMLNodeINVOICE_TOTAL_COST, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeINVOICE_TOTAL_COST, KRD_MAIN_2.G222));            
+{Курс валюты}                                                        
+         VAR ('XMLNodeCURRENCY_COURSE', Integer, XMLNodeAddChild(XMLNodeDU, 'CURRENCY_COURSE'));   
+         if (FIELDISNULL('KRD_MAIN_2','G23'), 
+                           XMLNodeSetAttribute(XMLNodeCURRENCY_COURSE, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeCURRENCY_COURSE, KRD_MAIN_2.G23));            
+{Код вида транспорта внутри страны}                                                        
+         VAR ('XMLNodeSTART_TRANSPORT_CODE', Integer, XMLNodeAddChild(XMLNodeDU, 'START_TRANSPORT_CODE'));   
+         if (FIELDISNULL('KRD_MAIN_2','G261'), 
+                           XMLNodeSetAttribute(XMLNodeSTART_TRANSPORT_CODE, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeSTART_TRANSPORT_CODE, KRD_MAIN_2.G261));            
+{Номер лицензии на учреждение склада либо код таможенного органа}                                                        
+         VAR ('XMLNodeLIC_CUST_CODE', Integer, XMLNodeAddChild(XMLNodeDU, 'LIC_CUST_CODE')); 
+         if (FIELDISNULL('STORES_2','LICENCENO'), 
+                           XMLNodeSetAttribute(XMLNodeLIC_CUST_CODE, 'xsi:null', 'true'),                  
+                           XMLNodeSetValue(XMLNodeLIC_CUST_CODE, STORES_2.LICENCENO));            
+              CANCELRANGE ('STORES_2');   
+{Сведения об оформленных документах, позволяющих осуществить выдачу СВХ}                                                        
+         VAR ('XMLNodeDOCUMENT_DATA', Integer, XMLNodeAddChild(XMLNodeDU, 'DOCUMENT_DATA'));   
+         if (FIELDISNULL('KRD_MAIN_2','GTD_NO'), 
+                           XMLNodeSetAttribute(XMLNodeDOCUMENT_DATA, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeDOCUMENT_DATA, KRD_MAIN_2.GTD_NO));            
+{Личная номерная печать должностного лица таможенного органа}                                                        
+         VAR ('XMLNodeLNP_START', Integer, XMLNodeAddChild(XMLNodeDU, 'LNP_START')); 
+         if (FIELDISNULL('KRD_MAIN_2','GD2'), 
+                           XMLNodeSetAttribute(XMLNodeLNP_START, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeLNP_START, KRD_MAIN_2.GD2));            
+First('KRD_DCD_2');
+{Код таможни назначения}                                                        
+         VAR ('XMLNodeSTOP_CUSTOM_CODE', Integer, XMLNodeAddChild(XMLNodeDU, 'STOP_CUSTOM_CODE'));   
+         if (FIELDISNULL('KRD_DCD_2','Next_Customs'), 
+                           XMLNodeSetAttribute(XMLNodeSTOP_CUSTOM_CODE, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeSTOP_CUSTOM_CODE, KRD_DCD_2.Next_Customs));            
+{Данные о номере ДКД или книжки МДП}                                                        
+         VAR ('XMLNodeDCUSTOM_CODE_DOC', Integer, XMLNodeAddChild(XMLNodeDU, 'CUSTOM_CODE_DOC'));   
+         if (FIELDISNULL('KRD_DCD_2','PaperNO'), 
+                           XMLNodeSetAttribute(XMLNodeDCUSTOM_CODE_DOC, 'xsi:null', 'true'),
+                           XMLNodeSetValue(XMLNodeDCUSTOM_CODE_DOC, KRD_DCD_2.PAPERNO)                            
+                           );            
+{Дата оформления ДКД или книжки МДП (дд.мм.гггг)}                                                        
+         VAR ('XMLNodeDATE_DOC', Integer, XMLNodeAddChild(XMLNodeDU, 'DATE_DOC'));
+         if (FIELDISNULL('KRD_DCD_2','PAPERCLOSE'), 
+                           XMLNodeSetAttribute(XMLNodeDATE_DOC, 'xsi:null', 'true'),               
+                           XMLNodeSetValue(XMLNodeDATE_DOC, KRD_DCD_2.PAPERCLOSE));            
+{Порядковый номер ДКД или книжки МДП}                                                        
+         VAR ('XMLNodeNUMBER_DOC', Integer, XMLNodeAddChild(XMLNodeDU, 'NUMBER_DOC'));   
+         if (FIELDISNULL('KRD_DCD_2','PaperNO'), 
+                           XMLNodeSetAttribute(XMLNodeNUMBER_DOC, 'xsi:null', 'true'),
+                          if(STRPOS('/',KRD_DCD_2.PAPERNO)=0,  
+                           XMLNodeSetValue(XMLNodeNUMBER_DOC, KRD_DCD_2.PAPERNO),
+                           XMLNodeSetValue(XMLNodeNUMBER_DOC, COPY(KRD_DCD_2.PAPERNO,17,7)),
+                            )
+                           );            
+{ФИО уполномоченного работника СВХ}                                                        
+         VAR ('XMLNodePERSON_NAME', Integer, XMLNodeAddChild(XMLNodeDU, 'PERSON_NAME'));   
+         if (FIELDISNULL('KRD_MAIN_2','AUTHOR'), 
+                           XMLNodeSetAttribute(XMLNodePERSON_NAME, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodePERSON_NAME, KRD_MAIN_2.AUTHOR));                                               
+{Дата заполнения (дд.мм.гггг)}                                                        
+         VAR ('XMLNodeREGISTRATION_CUSTOM_DATE', Integer, XMLNodeAddChild(XMLNodeDU, 'REGISTRATION_CUSTOM_DATE'));   
+         if (FIELDISNULL('KRD_MAIN_2','BD_DATE'), 
+                           XMLNodeSetAttribute(XMLNodeREGISTRATION_CUSTOM_DATE, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeREGISTRATION_CUSTOM_DATE, KRD_MAIN_2.BD_DATE));      
+{Дата принятия документа (дд.мм.гггг)} 
+         VAR ('XMLNodeDATE_DELIVERY_ONSTOP', Integer, XMLNodeAddChild(XMLNodeDU, 'DATE_DELIVERY_ONSTOP'));   
+         if (FIELDISNULL('KRD_MAIN_2','REG_TIME_BD'), 
+                           XMLNodeSetAttribute(XMLNodeDATE_DELIVERY_ONSTOP, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeDATE_DELIVERY_ONSTOP, KRD_MAIN_2.REG_TIME_BD));
+{Личная номерная печать должностного лица таможенного органа}                                                        
+         VAR ('XMLNodeLNP_STOP', Integer, XMLNodeAddChild(XMLNodeDU, 'LNP_STOP'));   
+         if (FIELDISNULL('KRD_MAIN_2','GD2'), 
+                           XMLNodeSetAttribute(XMLNodeLNP_STOP, 'xsi:null', 'true'),              
+                           XMLNodeSetValue(XMLNodeLNP_STOP, KRD_MAIN_2.GD2));
+{***********Конец общей части***********}
+
+{***************Транспорт***************}                                                        
+         VAR ('XMLNodeSTARTTRANSPORT', Integer, XMLNodeAddChild(XMLNodeDU, 'STARTTRANSPORT'));   
+              first ('KRD_TRANSP_2');  
+              Var('Transp_Num', Integer, 1);
+              while(EOF ('KRD_TRANSP_2') <> 1,  Block(
+                     VAR ('XMLNodeSTARTTRANSPORT_Item', Integer, XMLNodeAddChild(XMLNodeSTARTTRANSPORT, 'STARTTRANSPORT_ITEM'));                                         
+{индекс транспортного средства}
+                           VAR ('XMLNodeTRANSPORTOBJ_INDEX', Integer, XMLNodeAddChild(XMLNodeSTARTTRANSPORT_Item, 'OBJ_INDEX'));   
+                           XMLNodeSetValue(XMLNodeTRANSPORTOBJ_INDEX, Transp_Num);                              
+{Код вида транспортного средства}
+                           VAR ('XMLNodeTRANSPORT_TYPE', Integer, XMLNodeAddChild(XMLNodeSTARTTRANSPORT_Item, 'TRANSPORT_TYPE'));     
+                           if (FIELDISNULL('KRD_TRANSP_2','TRANSP_CODE'), 
+                             XMLNodeSetAttribute(Value('XMLNodeTRANSPORT_TYPE'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeTRANSPORT_TYPE'), KRD_TRANSP_2.TRANSP_CODE));                     
+{Регистрационный номер транспортного средства / бортовой номер судна + дата прибытия / наименование морского или речного судна / номер ж/д вагона}                                                        
+                           VAR ('XMLNodeNUMBER_NAME', Integer, XMLNodeAddChild(XMLNodeSTARTTRANSPORT_Item, 'NUMBER_NAME'));     
+                           if (FIELDISNULL('KRD_TRANSP_2','CARNO'), 
+                             XMLNodeSetAttribute(Value('XMLNodeNUMBER_NAME'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeNUMBER_NAME'), KRD_TRANSP_2.CARNO));                                               
+{Признак контейнерных перевозок}                                                        
+                           VAR ('XMLNodeCONTAINER_TAG', Integer, XMLNodeAddChild(XMLNodeSTARTTRANSPORT_Item, 'CONTAINER_TAG'));       
+                           if (FIELDISNULL('KRD_MAIN_2','G19'), 
+                             XMLNodeSetAttribute(Value('XMLNodeCONTAINER_TAG'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCONTAINER_TAG'), KRD_MAIN_2.G19));                                               
+{Код страны принадлежности транспорта}                                                        
+                           VAR ('XMLNodeCOUNTRY_CODE', Integer, XMLNodeAddChild(XMLNodeSTARTTRANSPORT_Item, 'COUNTRY_CODE'));     
+                           if (FIELDISNULL('KRD_MAIN_2','TRANSP_COUNTRY'), 
+                             XMLNodeSetAttribute(Value('XMLNodeCOUNTRY_CODE'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCOUNTRY_CODE'), KRD_MAIN_2.TRANSP_COUNTRY));                                               
+  
+                           Let('Transp_Num', Transp_Num +1);
+                           NEXT('KRD_TRANSP_2');           
+                           )  
+                    );
+{************Конец транспорта**************}
+           Var('vComlink', String,'');                                                                                                                             
+{*****************Товары*******************}                                                        
+         VAR ('XMLNodeGOODS', Integer, XMLNodeAddChild(XMLNodeDU, 'GOODS'));   
+              first ('KRD_COMM_2');    
+              Var('Goods_Num', Integer, 1);
+              while(EOF ('KRD_COMM_2') <> 1,  Block( 
+                     VAR ('XMLNodeGOODS_Item', Integer, XMLNodeAddChild(XMLNodeGOODS, 'GOODS_ITEM'));                                           
+{номер бланка}
+                           VAR ('XMLNodeCNUM_BLANK', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'NUM_BLANK'));       
+                           if (FIELDISNULL('KRD_COMM_2','NBLANK'), 
+                             XMLNodeSetAttribute(Value('XMLNodeCNUM_BLANK'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCNUM_BLANK'), KRD_COMM_2.NBLANK));         
+
+{Описание товара}  
+                           VAR ('XMLNodeGOODS_DESCRIPTION', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'GOODS_DESCRIPTION'));       
+                           if (FIELDISNULL('KRD_COMM_2','G312'), 
+                             XMLNodeSetAttribute(Value('XMLNodeGOODS_DESCRIPTION'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeGOODS_DESCRIPTION'), KRD_COMM_2.G312));         
+{Количество грузовых мест}
+                           VAR ('XMLNodeGOODS_PLACES_AMOUNT', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'GOODS_PLACES_AMOUNT'));       
+                           if (FIELDISNULL('KRD_COMM_2','G311'), 
+                             XMLNodeSetAttribute(Value('XMLNodeGOODS_PLACES_AMOUNT'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeGOODS_PLACES_AMOUNT'), KRD_COMM_2.G311));         
+{Вид грузовых мест}  
+                           VAR ('XMLNodeCARGO_PACKAGES_TYPE', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'CARGO_PACKAGES_TYPE'));       
+                           if (FIELDISNULL('KRD_COMM_2','G313'), 
+                             XMLNodeSetAttribute(Value('XMLNodeCARGO_PACKAGES_TYPE'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCARGO_PACKAGES_TYPE'), KRD_COMM_2.G313));         
+{Количество контейнеров и их номера}               
+                           Let('vComlink',COMMLINKEDINFO(KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32, 4));
+                           VAR ('XMLNodeCONTAINER_DATA', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'CONTAINER_DATA'));       
+                           if (vComlink = '', 
+                             XMLNodeSetAttribute(Value('XMLNodeCONTAINER_DATA'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCONTAINER_DATA'), vComlink));             
+{Номер серии марок акцизного сбора}
+                           VAR ('XMLNodeEXCISE_DUTY_SERIES_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'EXCISE_DUTY_SERIES_NUMBER'));       
+                           if (FIELDISNULL('KRD_COMM_2','G31_4'), 
+                             XMLNodeSetAttribute(Value('XMLNodeEXCISE_DUTY_SERIES_NUMBER'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeEXCISE_DUTY_SERIES_NUMBER'), KRD_COMM_2.G31_4));     
+{Количество марок акцизного сбора}
+                           VAR ('XMLNodeEXCISE_DUTY_AMOUNT', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'EXCISE_DUTY_AMOUNT'));       
+                           if (FIELDISNULL('KRD_COMM_2','G31_41'), 
+                             XMLNodeSetAttribute(Value('XMLNodeEXCISE_DUTY_AMOUNT'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeEXCISE_DUTY_AMOUNT'), KRD_COMM_2.G31_41));                                      
+{Порядковый номер товара}
+                           VAR ('XMLNodeGOODS_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'GOODS_NUMBER'));                                              
+                             XMLNodeSetValue(Value('XMLNodeGOODS_NUMBER'), KRD_COMM_2.G32);                                      
+{Код товара по ТН ВЭД СНГ}
+                           VAR ('XMLNodeGOODS_CODE', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'GOODS_CODE'));       
+                           if (FIELDISNULL('KRD_COMM_2','G33'), 
+                             XMLNodeSetAttribute(Value('XMLNodeGOODS_CODE'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeGOODS_CODE'), KRD_COMM_2.G33));                                      
+{Общий вес товара с упаковкой}
+                           VAR ('XMLNodeGROSS_WEIGHT', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'GROSS_WEIGHT'));       
+                           if (FIELDISNULL('KRD_COMM_2','G35'), 
+                             XMLNodeSetAttribute(Value('XMLNodeGROSS_WEIGHT'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeGROSS_WEIGHT'), KRD_COMM_2.G35));                                  
+{*************Предшествующий документ(ИМ-ДКД, ЭК-ГТД)**************}
+First('KRD_DCD_2');
+                          If(KRD_MAIN_2.G011='ИМ', 
+			    Block(
+{Код таможни предшествующего документа (ДКД)}
+                           VAR ('XMLNodeCUSTOM_CODE_DOC', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'CUSTOM_CODE_DOC'));       
+		           Let('vTemp',STRPOS('/', KRD_DCD_2.PAPERNO));
+                           if (vTemp=0,
+				if(FIELDISNULL('KRD_DCD_2','CUSTOMS_CODE'), 
+                          	   XMLNodeSetAttribute(Value('XMLNodeCUSTOM_CODE_DOC'), 'xsi:null', 'true'),              
+                            	   XMLNodeSetValue(Value('XMLNodeCUSTOM_CODE_DOC'), KRD_DCD_2.CUSTOMS_CODE)),
+                                XMLNodeSetValue(Value('XMLNodeCUSTOM_CODE_DOC'), COPY(KRD_DCD_2.PAPERNO,1,vTemp-1))
+			);                                  
+{Дата принятия предшествующего документа (ДКД) к оформлению}
+                           VAR ('XMLNodeDATE_DOC', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'DATE_DOC'));       
+                           if (FIELDISNULL('KRD_DCD_2','PAPERCLOSE'), 
+                             XMLNodeSetAttribute(Value('XMLNodeDATE_DOC'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeDATE_DOC'), KRD_DCD_2.PAPERCLOSE));  
+{Порядковый номер предшествующего документа (ДКД)}
+                           VAR ('XMLNodeNUMBER_DOC', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'NUMBER_DOC'));       
+                           if (FIELDISNULL('KRD_DCD_2','PAPERNO'), 
+                             XMLNodeSetAttribute(Value('XMLNodeNUMBER_DOC'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeNUMBER_DOC'), KRD_DCD_2.PAPERNO));     
+                           ),
+			    Block( 
+{Код таможни предшествующего документа (ГТД)}
+		           Let('vTemp',STRPOS('/', KRD_MAIN_2.NU));
+                           VAR ('XMLNodeCUSTOM_CODE_DOC', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'CUSTOM_CODE_DOC'));       
+                           if (vTemp=0,, 
+                             XMLNodeSetAttribute(Value('XMLNodeCUSTOM_CODE_DOC'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCUSTOM_CODE_DOC'), COPY(KRD_MAIN_2.NU,1,8)));                                  
+{Дата принятия предшествующего документа (ГТД) к оформлению}
+                           VAR ('XMLNodeDATE_DOC', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'DATE_DOC'));       
+		           Let('vTemp2',StrPos('/',COPY(KRD_MAIN_2.NU,vTemp+1,(Length(KRD_MAIN_2.NU)-vTemp))));
+
+		           if (vTemp=0, 
+                             XMLNodeSetAttribute(XMLNodeDATE_DOC, 'xsi:null', 'true'),
+                             if (vTemp2=0,
+   			   	XMLNodeSetAttribute(XMLNodeDATE_DOC, 'xsi:null', 'true'),
+   			   	Block(
+					Let('vTemp3',Copy(KRD_MAIN_2.NU,vTemp+1,vTemp2-1));
+					Case(Length(vTemp3),[5,XMLNodeSetValue(XMLNodeDATE_DOC, ENCODEDATE(Convert('200'+COPY(vTemp3,5,1),Integer),Convert(COPY(vTemp3,3,2),Integer),Convert(COPY(vTemp3,1,2),Integer))),
+						6,XMLNodeSetValue(XMLNodeDATE_DOC, ENCODEDATE(Convert('20'+COPY(vTemp3,5,2),Integer),Convert(COPY(vTemp3,3,2),Integer),Convert(COPY(vTemp3,1,2),Integer))), 					
+	                               		8,XMLNodeSetValue(XMLNodeDATE_DOC, ENCODEDATE(Convert(COPY(vTemp3,5,4),Integer),Convert(COPY(vTemp3,3,2),Integer),Convert(COPY(vTemp3,1,2),Integer))),
+						],
+                                            XMLNodeSetAttribute(XMLNodeDATE_DOC, 'xsi:null', 'true')
+                               		    )
+                               	)					
+				)
+	);    
+	
+{Порядковый номер предшествующего документа (ГТД)}
+                           VAR ('XMLNodeNUMBER_DOC', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'NUMBER_DOC'));       
+		         if (vTemp2=0, 
+                             XMLNodeSetAttribute(Value('XMLNodeNUMBER_DOC'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeNUMBER_DOC'), COPY(KRD_MAIN_2.NU,vTemp+vTemp2+1,7));     
+                           )
+			));
+
+                           
+{Номер подтверждения о прибытии}
+                           VAR ('XMLNodeNUM_CONFIRM', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'NUM_CONFIRM'));       
+                           if (FIELDISNULL('KRD_MAIN_2','NU'), 
+                             XMLNodeSetAttribute(Value('XMLNodeNUM_CONFIRM'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeNUM_CONFIRM'), KRD_MAIN_2.NU));     
+{Фактурная стоимость перевозимого товара}
+                           VAR ('XMLNodeINVOICE_COST', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'INVOICE_COST'));       
+                           if (FIELDISNULL('KRD_COMM_2','G42'), 
+                             XMLNodeSetAttribute(Value('XMLNodeINVOICE_COST'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeINVOICE_COST'), KRD_COMM_2.G42));     
+{Фактурная стоимость в долларах США}
+                           VAR ('XMLNodeINVOICE_COST_USD', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'INVOICE_COST_USD'));       
+                           if (FIELDISNULL('KRD_COMM_2','G46'), 
+                             XMLNodeSetAttribute(Value('XMLNodeINVOICE_COST_USD'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeINVOICE_COST_USD'), KRD_COMM_2.G46));     
+{Номер международной товаро-транспортной накладной}
+                           VAR ('XMLNodeTRANSPORT_DOC_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'TRANSPORT_DOC_NUMBER'));       
+
+                           Let('vComlink',COMMLINKEDINFO(KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32, 1));                          
+                           if (vComlink ='', 
+                             XMLNodeSetAttribute(Value('XMLNodeTRANSPORT_DOC_NUMBER'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeTRANSPORT_DOC_NUMBER'), vComlink));  
+{Регистрационный номер транспортного средства}
+First('KRD_TRANSP_2');
+                           VAR ('XMLNodeTRANSPORT_REG_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'TRANSPORT_REG_NUMBER'));       
+                           if (FIELDISNULL('KRD_TRANSP_2','CARNO'), 
+                             XMLNodeSetAttribute(Value('XMLNodeTRANSPORT_REG_NUMBER'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeTRANSPORT_REG_NUMBER'), KRD_TRANSP_2.CARNO));     
+{Номер счета-фактуры (инвойса) или счета-проформы}
+                           Let('vComlink',COMMLINKEDINFO(KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32, 2));
+                           VAR ('XMLNodeINVOICE_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'INVOICE_NUMBER'));       
+                           if (vComlink='', 
+                             XMLNodeSetAttribute(Value('XMLNodeINVOICE_NUMBER'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeINVOICE_NUMBER'), vComlink));
+{Дата счета-фактуры (инвойса) или счета-проформы}
+                           VAR ('XMLNodeINVOICE_DATE', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'INVOICE_DATE'));       
+                           SETRANGE ('KRD_PAPERS_2', [FIELDVALUE ('KRD_MAIN_2.PLACEID'),FIELDVALUE ('KRD_MAIN_2.ID')]);      
+                           First('KRD_PAPERS_2'),
+                           Let('vComlink',''),
+                           Var('vDate', DateTime),                              
+                                  Let('vTemp',RecordCount('KRD_PAPERS_2'));
+                                  While((EOF ('KRD_PAPERS_2') <> 1)&(vComlink=''), Block(
+                                      Let('sPaperName', FieldValue('KRD_PAPERS_2','PaperName')),
+                                    if(IN(sPaperName, ['ИНВ', 'КУП']), Block(
+                                        if(FIELDISNULL('KRD_PAPERS_2','PAPERDATE')=0, Block(
+                                                Let('vComlink','1'),
+                                                Let('vDate',KRD_PAPERS_2.PAPERDATE)  
+                                                )
+                                                )
+                                        )                                     
+                                        ),
+                                     Next('KRD_PAPERS_2')
+                                    )
+                                  );
+                                  CANCELRANGE ('KRD_PAPERS_2');
+                           if (vComlink='',  
+                             XMLNodeSetAttribute(Value('XMLNodeINVOICE_DATE'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeINVOICE_DATE'), vDate));
+{Номер ДКД / книжки МДП}
+                           VAR ('XMLNodeDKD_MDP_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'DKD_MDP_NUMBER'));       
+                           Let('vComlink',COMMLINKEDINFO(KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32, 3));
+                           if (vComlink='',  
+                             XMLNodeSetAttribute(Value('XMLNodeDKD_MDP_NUMBER'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeDKD_MDP_NUMBER'), vComlink));
+{Номер пломбы, наложеной на грузовой отсек транспортного средства}
+                           VAR ('XMLNodeCUSTOMS_SEAL_NUMBER', Integer, XMLNodeAddChild(XMLNodeGOODS_Item, 'CUSTOMS_SEAL_NUMBER'));       
+                           Let('vComlink',''),
+                           SETRANGE ('KRD_TRANSP_2', [FIELDVALUE ('KRD_MAIN_2.PLACEID'),FIELDVALUE ('KRD_MAIN_2.ID')]);      
+                           First('KRD_TRANSP_2'),   
+                                  While(EOF ('KRD_TRANSP_2') <> 1, Block(
+                                        if(FIELDISNULL('KRD_TRANSP_2','PLOMB')=0, 
+                                             If(vComLink='',  
+                                                Let('vComlink',KRD_TRANSP_2.PLOMB),
+                                                Let('vComlink',vComLink+', '+KRD_TRANSP_2.PLOMB)
+                                                 )
+                                                 ),  
+                                       Next('KRD_TRANSP_2')
+                                    )
+                                  );
+                                  CANCELRANGE ('KRD_TRANSP_2');
+                           if (vComlink='', 
+                             XMLNodeSetAttribute(Value('XMLNodeCUSTOMS_SEAL_NUMBER'), 'xsi:null', 'true'),              
+                             XMLNodeSetValue(Value('XMLNodeCUSTOMS_SEAL_NUMBER'), vComLink));
+                                                                                         
+                                 NEXT('KRD_COMM_2');           
+                           )  
+                    );
+  
+)),  {***********конец функции XMLCurDoc*************}  
+{************начало основного цикла выгрузки***************}  
+VAR('sFileName', String);            
+Var('sPaperName', String, '');  {тип документа}  
+IF (SelectFile('sFileName', 'Выбор файла', 'XML-файлы (*.xml)|*.xml'), Block( 
+
+if ((STRPOS('.XML',UPPERSTR(sFileName))='0')+(STRPOS('.XML',UPPERSTR(sFileName))=0),
+       Let('sFileName', sFileName+'.xml')
+	);            
+
+VAR('selType', Integer);  
+OPENDATABASE('KRD_DB', 'STANDARD', 'PATH=C:\');
+             GetSelectedDocs('KRD', 'PLACEID', 'ID');    
+             Const('iRecNo', Integer, 0),
+             Const('iRecCount', Integer, RecordCount('KRD'));    
+
+if(iRecCount=0, 	
+	   LET('selType', ChoiceVariant ('Выбор обрабатываемых документов', 2, 0, 
+           'Текущий документ', 'Все документы'));  
+ 
+	   LET('selType', ChoiceVariant ('Выбор обрабатываемых документов', 3, 2, 
+           'Текущий документ', 'Все документы','Выделенные документы'));  
+
+	);
+            VAR ('XMLDoc', Integer, XMLDocumentCreate());
+            VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+            VAR ('XMLNode', Integer, XMLNodeAddChild(XMLDocRoot, 'ROWSET'));
+            
+if( selType = 0,      
+                                                
+          BLOCK (IF(FINDKEY ('KRD_MAIN_2', [FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]), Block(  
+                                   SetRange('KRD_COMM_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);
+                                   SetRange('KRD_DCD_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);  
+                                   SetRange('KRD_PAPERS_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);  
+                                   SetRange('KRD_TRANSP_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);
+                                   SetRange('KRD_CONT_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);      
+                                   XMLCurDoc(XmlNode);      
+                                   CancelRange('KRD_COMM_2');
+                                   CancelRange('KRD_DCD_2');  
+                                   CancelRange('KRD_PAPERS_2');  
+                                   CancelRange('KRD_TRANSP_2');
+                                   CancelRange('KRD_CONT_2');      
+  
+                        ));  
+            XMLDocumentSaveToFile(XMLDoc, sFileName);                      
+
+    ),
+    if(selType = 2, 
+        block(
+             ShowProgress ('Запись документов...');
+  
+             FIRST ('KRD');  
+             WHILE ( (EOF ('KRD') <> 1) & (CancelPressed() = 0), 
+                   block(                     
+                        IF(FINDKEY ('KRD_MAIN_2', [FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]), Block(  
+                                   SetRange('KRD_COMM_2',[FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]);
+                                   SetRange('KRD_DCD_2',[FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]);  
+                                   SetRange('KRD_PAPERS_2',[FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]);  
+                                   SetRange('KRD_TRANSP_2',[FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]);
+                                   SetRange('KRD_CONT_2',[FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]);      
+
+                                   XMLCurDoc(XmlNode);      
+                                   CancelRange('KRD_COMM_2');
+                                   CancelRange('KRD_DCD_2');  
+                                   CancelRange('KRD_PAPERS_2');  
+                                   CancelRange('KRD_TRANSP_2');
+                                   CancelRange('KRD_CONT_2');      
+
+                        ));  
+                        NEXT ('KRD'); 
+                        Let('iRecNo', iRecNo + 1);
+
+                        SetProgress (iRecNo, 100, iRecCount)   
+                    )  
+             );
+             HideProgress();  
+             XMLDocumentSaveToFile(XMLDoc, sFileName);        
+        ),
+        if(selType = 1,
+        block(
+
+                        ShowProgress ('Запись документов...');
+
+
+                        Let('iRecCount', RecordCount('KRD_MAIN')); 
+                        DebugMessage('Количество записываемых документов = '+iRecCount);
+                        first ('KRD_MAIN');
+                        while(  ( EOF ('KRD_MAIN') <> 1) & (CancelPressed() = 0),   
+                               BLOCK( IF(FINDKEY ('KRD_MAIN_2', [FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]), Block(  
+                                   SetRange('KRD_COMM_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);
+                                   SetRange('KRD_DCD_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);  
+                                   SetRange('KRD_PAPERS_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);  
+                                   SetRange('KRD_TRANSP_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);
+                                   SetRange('KRD_CONT_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);      
+                                   XMLCurDoc(XmlNode);      
+                                   CancelRange('KRD_COMM_2');
+                                   CancelRange('KRD_DCD_2');  
+                                   CancelRange('KRD_PAPERS_2');  
+                                   CancelRange('KRD_TRANSP_2');
+                                   CancelRange('KRD_CONT_2');                                       
+                                           NEXT('KRD_MAIN');           
+                                           Let('iRecNo', iRecNo + 1);  
+                                           SetProgress (iRecNo, 100, iRecCount) 
+                                    ) ))  
+                              );
+                        HideProgress ();
+                        XMLDocumentSaveToFile(XMLDoc, sFileName)              
+             )  
+        )  
+       )  
+   );  
+CLOSEDATABASE('KRD_DB');
+SHOWMESSAGE('Запись документов завершена.')
+  
+))  
+{************конец основного цикла выгрузки***************}  

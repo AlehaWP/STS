@@ -1,0 +1,1020 @@
+// *****************************************************************************
+// Название: загрузку ДО из XML-файлов SOLVO
+// Описание: Загрузка документов ДО-1 и ДО-2 из XML-файлов выгруженных из SOLVO
+// Кнопка вызова: 1
+// Подпись кнопки: SOLVO
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+// подключаем скрипт работы с датами
+EXECUTESCRIPT (IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\sqldate.prd');
+// подключаем скрипт формирования INSERT-запросов
+EXECUTESCRIPT (IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\sql_insert.prd');
+
+
+VAR ('sWorkDir', String, INIFILE ('SOLVO', 'WorkDir', ProgramPath ()));
+VAR ('sDoneDir', String, '');
+VAR ('sLogFile', String, '');
+VAR ('sSQL', String, '');
+VAR ('vPlaceId', Integer, 0);
+VAR ('vActualPlaceId', Integer, 0);
+VAR ('vId', Integer, 0);
+VAR ('vMainId', Integer, 0);
+VAR ('vCounter', Integer, 0);
+VAR ('vNBD', String, '');
+VAR ('sRelease', String, IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE'));
+VAR ('vShowNBD', String, '');
+VAR ('vStoreDocNo', String, '');
+VAR ('vLicenceNo', String, '');
+VAR ('vLicenceDate', String, '');
+VAR ('vLicenceType', String, '');
+VAR ('vSvhName', String, '');
+VAR ('vSvhNo', String, '');
+VAR ('vSvhAddress', String, '');
+// Переменные EPSLOG
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('bAddNotifocation', Integer, 0);
+VAR ('sSubStatus', String, '');
+
+
+IF (ShiftPressed () | (LENGTH (TRIM (sWorkDir)) = 0),
+  Block (
+    IF (SELECTDIRECTORY ('sWorkDir') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+    WRITEINIFILE ('SOLVO', 'WorkDir', sWorkDir);
+  )
+); // IF - //
+
+
+// запись в лог ЭПС
+FUNC ('EPSLOG',
+  Block(
+    PARAM ('pPlaceID',     Integer, 0);
+    PARAM ('pID',          Integer, 1);
+    PARAM ('pCounter',     Integer, 2);
+    PARAM ('pDocumentID',  String,  3);
+    PARAM ('pDocType',     String,  4);
+    PARAM ('pDocNo',       String,  5);
+    PARAM ('pDocDate',     String,  6);
+    PARAM ('pDocStatus',   String,  7);
+    PARAM ('pRegDate',     String,  8);
+    PARAM ('pJourGUID',    String,  9);
+    PARAM ('pSubStatus',   String,  10);
+    PARAM ('pFileName',    String,  11);
+    PARAM ('pReaded',      Integer, 12);
+    PARAM ('pDODT',        String,  13);
+  ),
+  Block (
+    VAR ('pJOURNAL_MASTER_ID', Integer, 0);
+    VAR ('sqlRequest', String, '');
+
+    sqlRequest := 'SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM EPS_LOG';
+    OPENQUERY ('qryNUM', sqlRequest, 'dbJournals');
+    pJOURNAL_MASTER_ID := qryNUM.MAX_ID + 1;
+
+    IF (pJourGuid = '', pJourGuid := GENERATEUUID());
+
+    IF (LENGTH (TRIM (pDocStatus)) > 0,
+      Block (
+{//!
+        // проверка: если запись о данном файле уже есть в базе, то новую запись не добавляем
+        sqlRequest := 'SELECT JOURNAL_MASTER_ID FROM EPS_LOG WHERE FILENAME=' +char(39)+ sFileName +char(39);
+        OPENQUERY ('qCheckEPS', sqlRequest, 'dbJournals');
+        IF (RECORDCOUNT ('qCheckEPS') = 0,
+          Block(
+}//!
+              sqlRequest := 'INSERT INTO EPS_LOG ' +
+                          '(JOURNAL_MASTER_ID,PLACEID,ID,COUNTER,DOCUMENTID,DOCTYPE,DOCNO,DOCDATE,DOCSTATUS,REGDATE,LICENCENO,LICENCEDATE,JOURGUID,SUBSTATUS,FILENAME,READED,DODT,USERLOGIN)' +
+                          ' VALUES ' +
+                          '(' + pJOURNAL_MASTER_ID +
+                          ',' + pPlaceID +
+                          ',' + pID +
+                          ',' + pCounter +
+                          ',' +char(39)+ pDocumentID +char(39)+
+                          ',' +char(39)+ pDocType +char(39)+
+                          ',' +char(39)+ pDocNo +char(39)+
+                          //',' + SQLDate(pDocDate, GetBaseDriver(1)) +
+                          ', NULL' +
+                          ',' +char(39)+ pDocStatus +char(39)+
+                          //',' + SQLDate(pRegDate, GetBaseDriver(1)) +
+                          ', NULL' +
+                          ',' +char(39)+ vLicenceNo +char(39)+
+                          //',' + SQLDate(qLicence.LICENCEDATE, GetBaseDriver(1)) +
+                          ', NULL' +
+                          ',' +char(39)+ pJourGUID +char(39)+
+                          ',' +char(39)+ pSubStatus +char(39)+
+                          ',' +char(39)+ pFileName +char(39)+
+                          ',' +char(39)+ pReaded+char(39)+
+                          //',' + SQLDate(pDODT, GetBaseDriver(1)) +
+                          ', NULL' +
+                          ',' +char(39)+ USERINFO ('', 'UserLogin') +char(39)+
+                          ')';
+
+              //showmessage (sqlRequest);
+              EXECUTESQL ('dbJournals', sqlRequest);
+              // UPDATE полей ДатаВремя вынесен отдельно
+              IF ((LENGTH (SQLDate (pDocDate, GetBaseDriver(1))) > 0),
+                Block (
+                  sqlRequest := 'UPDATE EPS_LOG SET DOCDATE=' + SQLDate (pDocDate, GetBaseDriver(1)) +
+                                                 ' WHERE JOURNAL_MASTER_ID=' + pJOURNAL_MASTER_ID;
+                  //showmessage (sqlRequest);
+                  EXECUTESQL ('dbJournals', sqlRequest);
+                )
+              ); // IF - //
+              IF ((LENGTH (SQLDate (pRegDate, GetBaseDriver(1))) > 0),
+                Block (
+                  sqlRequest := 'UPDATE EPS_LOG SET REGDATE=' + SQLDate (pRegDate, GetBaseDriver(1)) +
+                                                 ' WHERE JOURNAL_MASTER_ID=' + pJOURNAL_MASTER_ID;
+                  //showmessage (sqlRequest);
+                  EXECUTESQL ('dbJournals', sqlRequest);
+                )
+              ); // IF - //
+              IF ((LENGTH (SQLDate (vLicenceDate, GetBaseDriver(1))) > 0),
+                Block (
+                  sqlRequest := 'UPDATE EPS_LOG SET LICENCEDATE=' + SQLDate (vLicenceDate, GetBaseDriver(1)) +
+                                                 ' WHERE JOURNAL_MASTER_ID=' + pJOURNAL_MASTER_ID;
+                  //showmessage (sqlRequest);
+                  EXECUTESQL ('dbJournals', sqlRequest);
+                )
+              ); // IF - //
+              IF ((LENGTH (SQLDate (pDODT, GetBaseDriver(1))) > 0),
+                Block (
+                  sqlRequest := 'UPDATE EPS_LOG SET DODT=' + SQLDate (pDODT, GetBaseDriver(1)) +
+                                                 ' WHERE JOURNAL_MASTER_ID=' + pJOURNAL_MASTER_ID;
+                  //showmessage (sqlRequest);
+                  EXECUTESQL ('dbJournals', sqlRequest);
+                )
+              ); // IF - //
+{//!
+            )
+          ); // IF - RECORDCOUNT ('qCheckEPS') = 0 //
+}//!
+        )
+      ); // IF - //
+  )
+), // FUNC  - EPSLOG() //
+
+
+FUNC ('AddNotification', '',
+  Block(
+    OPENQUERY ('qNewMessages', 'SELECT DOCSTATUS FROM EPS_LOG WHERE READED=' +char(39)+ '0' +char(39), 'dbJournals');
+
+    VAR ('iMessageNo', Integer, RECORDCOUNT ('qNewMessages'));
+    VAR ('sMessageText', String, '');
+
+    IF (iMessageNo > 0,
+      Block(
+        LAST ('qNewMessages');
+        sMessageText := qNewMessages.DOCSTATUS;
+        //SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+        SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+    CLOSEDATASET ('qNewMessages');
+  )
+), // FUNC - AddNotification() //
+
+// определяем площадку по дате ДО
+FUNC ('GetVPlaceId',
+  Block (
+    PARAM ('pDoc', Integer, 0);
+    PARAM ('pTypeDo', Integer, 1);
+  ),
+  Block(
+    VAR ('iResult', Integer, 0);
+    // ДО1
+    If(pTypeDO=1, Block(
+      //ShowMessage('Getvplaceid');
+      VAR ('xBill', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Bill'));
+      VAR ('dtDoDate', DateTime, XMLNODEVALUE (XMLNODEFIND (xBill, 'DateDischarge')));
+      VAR ('strDoDate', String, dtDoDate);
+      //ShowMessage(strDoDate);
+      sSQL := 'SELECT PLACEID, LICENCEDATE FROM STORES WHERE (LICENCEDATE <= ' + SQLDate (strDoDate, GetBaseDriver(0)) + ' ) AND ((LICENCEDATEEND >= ' + SQLDate (strDoDate, GetBaseDriver(0)) + ' ) OR (LICENCEDATEEND IS NULL)) ORDER BY LICENCEDATE DESC';
+      //ShowMessage(sSQL);
+      OPENQUERY ('qStore', 'STS_DB', sSQL);
+      //ShowMessage('OpenQuery');
+      IF (FIELDISNULL ('qStore', 'PLACEID') = 0, Block(
+        vPlaceid := qStore.Placeid;
+        iResult := 1;
+      ));
+      vActualPlaceid := 0;
+    ));
+
+    // ДО2
+    If(pTypeDO=2, Block(
+      VAR ('dtDODate', DateTime, Date () + Time (1));
+      VAR ('strDoDate', String, dtDoDate);
+
+      sSQL := 'SELECT PLACEID, LICENCEDATE FROM STORES WHERE (LICENCEDATE <= ' + SQLDate (strDoDate, GetBaseDriver(0)) + ' ) AND ((LICENCEDATEEND >= ' + SQLDate (strDoDate, GetBaseDriver(0)) + ' ) OR (LICENCEDATEEND IS NULL)) ORDER BY LICENCEDATE DESC';
+      OPENQUERY ('qStore', 'STS_DB', sSQL);
+      IF (FIELDISNULL ('qStore', 'PLACEID') = 0, Block(
+        vActualPlaceid := qStore.Placeid;
+        iResult := 1;
+      ));
+
+    ));
+    //ShowMessage(iResult);
+    iResult
+  )
+); // FUNC  - GetVPlaceId()  //
+
+
+// получаем информацию о СВХ по-новому
+FUNC ('GetWhInfo',
+  Block (
+    PARAM ('pPlaceid', Integer, 0);
+  ),
+  Block(
+    sSQL := 'SELECT * FROM STORES WHERE PLACEID=' +pPlaceId;
+    
+    OPENQUERY ('qStore', 'STS_DB', sSQL);
+    IF (FIELDISNULL ('qStore', 'PLACEID') = 0,
+      Block(
+        vLicenceNo := qStore.LICENCENO;
+        vLicenceDate := qStore.LICENCEDATE;
+        vLicenceType := qStore.LICENCETYPE;
+        vSvhName := qStore.NAME;
+        vSvhNo := qStore.STORE_NO;
+        vSvhAddress := qStore.ADDRESS;
+      )
+    ); // IF - //
+  )
+), // FUNC - GetWhInfo() //
+
+
+// создаём рабочую структуру каталогов
+// а так же файл лога
+FUNC ('CheckDirectories', ,
+  Block (
+    sWorkDir := IncludeTrailingBackslash (sWorkDir);
+    FORCEDIRECTORIES (sWorkDir);
+    FORCEDIRECTORIES (sWorkDir + 'DO1_IN');
+  FORCEDIRECTORIES (sWorkDir + 'DO1_IN\DONE');
+  FORCEDIRECTORIES (sWorkDir + 'DO1_OUT');
+    FORCEDIRECTORIES (sWorkDir + 'DO2_IN');
+  FORCEDIRECTORIES (sWorkDir + 'DO2_IN\DONE');
+  FORCEDIRECTORIES (sWorkDir + 'DO2_OUT');
+    FORCEDIRECTORIES (sWorkDir + 'PERM_OUT');
+    FORCEDIRECTORIES (sWorkDir + 'ERRORS');
+    FORCEDIRECTORIES (sWorkDir + 'LOGS');
+    
+    sLogFile := sWorkDir + 'LOGS\LOG_' + FDT ('YYMMDD', Date ()) + '.log';
+    IF (FILEEXISTS (sLogFile) = 0, CREATELOGFILE (sLogFile, 0));
+  )
+), // FUNC - CheckDirectories () //
+
+
+// пишем лог работы скрипта
+FUNC ('Log',
+  Block (
+    PARAM ('pText', String, 0);
+  ),
+  Block (
+    APPENDLOGFILE (sLogFile, FDT ('YYYY-MM-DD HH:NN:SS ', NOW ()) + pText);
+  )
+), // FUNC - Log () //
+
+
+FUNC ('ImportDO1',
+  Block (
+    PARAM ('pDoc', Integer, 0);
+  ),
+  Block (
+    VAR ('xVessel', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Vessel'));
+    VAR ('xCarrier', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Carrier'));
+    VAR ('xBill', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Bill'));
+    VAR ('xServiceBill', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'ServiceBill'));
+    VAR ('xShipper', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Shipper'));
+    VAR ('xConsignee', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Consignee'));
+    VAR ('xContainers', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Containers'));
+    
+    VAR ('dtBdDate', DateTime, XMLNODEVALUE (XMLNODEFIND (xBill, 'DateDischarge')));
+    DoDate := dtBdDate;
+
+    GetWhInfo(vPlaceid);
+    //ShowMessage('GetWhInfo');
+    sSQL := 'SELECT MAX(ID) AS ID FROM KRD_MAIN';
+    OPENQUERY ('qMaxId', 'STS_DB', sSQL);
+    vID := (qMaxId.ID + 1);
+    vMainId := vID;
+    CLOSEDATASET ('qMaxId');
+    
+    sSQL := 'SELECT MAX(STORE_DOC_NO) AS SDN FROM KRD_MAIN';
+    OPENQUERY ('qMaxSDN', 'STS_DB', sSQL);
+    vStoreDocNo := (CONVERT (qMaxSDN.SDN, Integer) + 1);
+    CLOSEDATASET ('qMaxId');
+    
+    sSubStatus := 'CustRepId= ' + XMLNODEVALUE (XMLNODEFIND (xBill, 'CustRepId'));
+    
+    
+    // == ДОБАВЛЕНИЕ ДО-1 == //
+    
+    Insert ('KRD_MAIN', 'PLACEID', vPlaceId, 1);
+    Insert ('', 'ID', vId, 1);
+    Insert ('', 'MAIN_ID', vMainId, 1);
+    Insert ('', 'A_MODE', '7', 0);
+    Insert ('', 'Z_MODE', '3', 0);
+    Insert ('', 'G011', 'ИМ', 0);
+    Insert ('', 'G012', '40', 0);
+    Insert ('', 'PART_MODE', 0, 1);
+    Insert ('', 'PART_NO', 1, 1);
+    Insert ('', 'STATUS_EPS', 'ДО-1 загружена из SOLVO', 0);
+    Insert ('', 'G142', vSvhName, 0);
+    Insert ('', 'G143', vSvhAddress, 0);
+    Insert ('', 'G1440', vLicenceType, 0);
+    Insert ('', 'G144', vLicenceNo, 0);
+    Insert ('', 'G145', vLicenceDate, 0);
+    Insert ('', 'STORE_DOC_NO', vStoredocNo, 0);
+    //ShowMessage('Add Do1');
+    vNBD := SOLVE (INIFILE ('Docs', 'MakeBD_No', ''));
+    //ShowMessage(vNBD);
+    Insert ('', 'NBD', vNBD, 0);
+//! прописывать SHOW_NBD UPDATE-запросом после добавления записи, т.к. он завязан на BD_DATE
+//! FDT('YYYYMMDD', KRD_MAIN.BD_DATE)+LEFTPAD(RIGHT(KRD_MAIN.NBD, 5), 5, '0')
+//! FDT('YYYY', KRD_MAIN.BD_DATE)+LEFTPAD(RIGHT(KRD_MAIN.NBD, 5), 5, '0')
+//!    Insert ('', 'SHOW_NBD', SOLVE (INIFILE ('RegBook', 'BD_ExprIndex', '')), 0);
+    vShowNBD := FDT('YYYY', dtBdDate) + LEFTPAD (RIGHT (vNBD, 5), 5, '0');
+    Insert ('', 'SHOW_NBD', vShowNBD, 0);
+    Insert ('', 'BD_DATE', dtBdDate, 2);
+    Insert ('', 'BEG_KEEP', (dtBdDate + 1), 2);
+    Insert ('', 'G261', 10, 1);
+    IF (xVessel,
+      Block (
+        Insert ('', 'TRANSP_COUNTRY', XMLNODEVALUE (XMLNODEFIND (xVessel, 'VesCountryCode')), 0);
+        Insert ('', 'SHIP_NAME', XMLNODEVALUE (XMLNODEFIND (xVessel, 'VesName')), 0);
+      )
+    ); // IF - //
+    IF (xCarrier,
+      Block (
+        Insert ('', 'G042', XMLNODEVALUE (XMLNODEFIND (xCarrier, 'CarName')), 0);
+        Insert ('', 'G043', XMLNODEVALUE (XMLNODEFIND (xCarrier, 'CarAddress')), 0);
+        Insert ('', 'G04_COUNTRY', XMLNODEVALUE (XMLNODEFIND (xCarrier, 'CarCountryCode')), 0);
+        Insert ('', 'G040', XMLNODEVALUE (XMLNODEFIND (xCarrier, 'CarFIO')), 0);
+      )
+    ); // IF - //
+    IF (xShipper,
+      Block (
+        Insert ('', 'G022', XMLNODEVALUE (XMLNODEFIND (xShipper, 'ShipName')), 0);
+        Insert ('', 'G023', XMLNODEVALUE (XMLNODEFIND (xShipper, 'ShipAddress')), 0);
+        Insert ('', 'G15A', XMLNODEVALUE (XMLNODEFIND (xShipper, 'ShipCountryCode')), 0);
+      )
+    ); // IF - //
+    IF (xConsignee,
+      Block (
+        Insert ('', 'G082', XMLNODEVALUE (XMLNODEFIND (xConsignee, 'ConsName')), 0);
+        Insert ('', 'G083', XMLNODEVALUE (XMLNODEFIND (xConsignee, 'ConsAddress')), 0);
+        Insert ('', 'G17A', XMLNODEVALUE (XMLNODEFIND (xConsignee, 'ConsCountryCode')), 0);
+      )
+    ); // IF - //
+    IF (LENGTH (USERINFO ('', 'UserName')) > 0,
+      Block (
+        Insert ('', 'AUTHOR', USERINFO ('', 'UserName'), 0);
+        IF (LENGTH (USERINFO ('', 'UserPost')) <= 25,
+          Insert ('', 'AUTHOR_POST', USERINFO ('', 'UserPost'), 0),
+          Insert ('', 'AUTHOR_POST', COPY (USERINFO ('', 'UserPost'), 0, 25), 0)
+        ); // IF - //
+      )
+    ); // IF - //
+    Insert ('', 'DO1ACCOMPANYINGDOCUMENT', 1, 1);
+    IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xDoc, 'Attachment'), 'Prim'))) > 0,
+       Insert ('', 'REMARK', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xDoc, 'Attachment'), 'Prim')), 0)
+    );
+    Insert ('', '', '', 0);
+//    Log ('Ok.. ДО-1');
+
+    //ShowMessage('ДОБАВЛЕНИЕ ТОВАРОСПОПРОВОДИТЕЛЬНЫХ ДОКУМЕНТОВ');
+    // == ДОБАВЛЕНИЕ ТОВАРОСПОПРОВОДИТЕЛЬНЫХ ДОКУМЕНТОВ == //
+    
+    Insert ('KR_PAPER', 'PLACEID', vPlaceId, 1);
+    Insert ('', 'ID', vId, 1);
+    //! пока COUNTER всегда равен 1
+    Insert ('', 'COUNTER', 1, 1);
+    Insert ('', 'PAPERCODE', '02011', 0);
+    Insert ('', 'PAPERNAME', 'КОН', 0);
+    Insert ('', 'PAPERDATE', XMLNODEVALUE (XMLNODEFIND (xBill, 'BillDate')), 2);
+    Insert ('', 'PAPERNO', XMLNODEVALUE (XMLNODEFIND (xBill, 'BillNumber')), 0);
+    Insert ('', '', '', 0);
+//    Log ('Ok.. ТОВАРОСОПРОВОДИТЕЛЬНЫЕ ДОКУМЕНТЫ');
+    
+    //ShowMessage('ДОБАВЛЕНИЕ ТРАНСПОРТНЫХ СРЕДСТВ');
+    // == ДОБАВЛЕНИЕ ТРАНСПОРТНЫХ СРЕДСТВ == //
+    
+    Insert ('KR_TRANS', 'PLACEID', vPlaceId, 1);
+    Insert ('', 'ID', vId, 1);
+    //! пока COUNTER всегда равен 1
+    Insert ('', 'COUNTER', 1, 1);
+    Insert ('', 'TRANSP_CODE', 10, 1);
+    Insert ('', 'CARNO', XMLNODEVALUE (XMLNODEFIND (xVessel, 'VesName')), 0);
+    Insert ('', 'TRANSP_COUNTRY', XMLNODEVALUE (XMLNODEFIND (xVessel, 'VesCountryCode')), 0);
+    Insert ('', '', '', 0);
+//    Log ('Ok.. Транспортные средства');
+    
+
+    VAR ('iContainerCount', Integer, XMLNODECHILDCOUNT (xContainers));
+    VAR ('iContainerIndex', Integer, 0);
+    VAR ('vNCont', Integer, 1);
+    VAR ('xContainer', Integer, 0);
+    VAR ('xGoods', Integer, 0);
+    VAR ('vGN', Integer, 1);
+
+    WHILE (iContainerIndex < iContainerCount,
+      Block (
+        xContainer := XMLNODECHILD (xContainers, iContainerIndex);
+        
+        
+        // == ДОБАВЛЕНИЕ КОНТЕЙНЕРОВ == //
+        
+        Insert ('KRD_CONT', 'PLACEID', vPlaceId, 1);
+        Insert ('', 'ID', vId, 1);
+        Insert ('', 'COUNTER', (iContainerIndex + 1), 1);
+        Insert ('', 'CONTNO', XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContNumber')), 0);
+        Insert ('', 'G35', (XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContBrutto')) - XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContTara'))), 0);
+        Insert ('', 'SVHCOMMENT', XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContPrim')), 0);
+        Insert ('', 'CONTTYPE', IF( XMLNODEFIND (xContainer, 'KindCode'), XMLNODEVALUE (XMLNODEFIND (xContainer, 'KindCode')),XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContType'))), 0);
+        Insert ('', 'PLOMB', XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContPlomb')), 0);
+        Insert ('', 'CONTSIZE', IF(XMLNODEFIND (xContainer, 'SizeCode'), XMLNODEVALUE (XMLNODEFIND (xContainer, 'SizeCode')),''), 0);
+             //! пока N_TTN всегда равно 1 (т.к. всегда один коносамент)
+        Insert ('', 'N_TTN', 1, 1);
+        Insert ('', 'N_CONT', vNCont, 1);
+        Insert ('', '', '', 0);
+//        Log ('Ok.. Контейнеры');
+        
+        //ShowMessage('Add Conts');
+        xGoods := XMLNODEFIND (xContainer, 'Goods');
+        VAR ('iGoodsCount', Integer, XMLNODECHILDCOUNT (xGoods));
+        VAR ('iGoodIndex', Integer, 0);
+        VAR ('xGood', Integer, 0);
+        //ShowMessage('Add goods');
+        
+        WHILE (iGoodIndex < iGoodsCount,
+          Block (
+            xGood := XMLNODECHILD (xGoods, iGoodIndex);
+            
+
+            // == ДОБАВЛЕНИЕ ТОВАРОВ == //
+            
+            Insert ('KRD_COMM', 'PLACEID', vPlaceId, 1);
+            Insert ('', 'ID', vId, 1);
+            Insert ('', 'GN', vGN, 1);
+            Insert ('', 'G32', vGN, 1);
+            //! пока N_TTN всегда равна 1 (т.к. один коносамент)
+            Insert ('', 'N_TTN', 1, 1);
+            Insert ('', 'N_TTN_G32', vGN, 1);
+            //Insert ('', 'N_CONT', (iContainerIndex + 1), 1);
+            Insert ('', 'N_CONT', vGN, 1);
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodPrim'))) > 0,
+               Insert ('', 'REMARK', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodPrim')), 0);
+            ); // IF - //
+            Insert ('', 'ACCEPTDATE', dtBdDate, 2);
+            Insert ('', 'STORAGE_DATE', AddMonths((dtBdDate + 1), 4), 2);
+            //Insert ('', 'STORAGE_TYPE', 'НОР', 0);
+            Insert ('', 'STORE_PERIOD', ROUND(CONVERT (AddMonths (dtBdDate, 2), Float) - CONVERT ((dtBdDate + 1), Float)), 1);
+            Insert ('', 'LEG_PERIOD', 1, 1);
+            Insert ('', 'G312', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodName')), 0);
+            Insert ('', 'G35', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodBrutto')), 1);
+            Insert ('', 'G38', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodNetto')), 1);
+            Insert ('', 'G311', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodPlacesCount')), 1);
+            Insert ('', 'BOXNO', XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContNumber')), 1);
+            Insert ('', '', '', 0);
+//            Log ('Ok.. Товары');
+
+// == ДОБАВЛЯЕМ СВЯЗЬ ТОВАР - КОНТЕЙНЕР, KR_C_P.DOC_TYPE=11 //
+Insert ('KR_C_P', 'PLACEID', vPlaceId, 1);
+Insert ('', 'ID', vId, 1);
+Insert ('', 'G32', vGN, 1);
+Insert ('', 'DOC_TYPE', 11, 1);
+Insert ('', 'DOC_COUNTER', (iContainerIndex + 1), 1);
+Insert ('', '', '' , 0);
+
+
+            //ShowMessage('Add Good');
+            
+            // == ДОБАВЛЯЕМ СВЯЗИ ДОКУМЕНТОВ ИЗ SOLVO
+            Insert ('KRD_SOLVOID', 'PLACEID', vPlaceId, 1);
+            Insert ('', 'ID', vId, 1);
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xBill, 'CustRepId'))) > 0,
+              Insert ('', 'CUSTREPID', XMLNODEVALUE (XMLNODEFIND (xBill, 'CustRepId')), 1);
+            ); // IF - //
+            Insert ('', 'G32', vGN, 1);
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodID'))) > 0,
+              Insert ('', 'GOODID', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodID')), 1)
+            ); // IF - //
+            Insert ('', 'TOVINCONT', (iContainerIndex + 1), 1);
+            // я думаю нужно так:
+            //Insert ('', 'TOVINTTN', (iGoodIndex + 1), 1);
+            // изначально было иначе:
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodNumberBill'))) > 0,
+              Insert ('', 'TOVINTTN', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodNumberBill')), 1);
+            ); // IF - //
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContID'))) > 0,
+              Insert ('', 'CONTID', XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContID')), 1);
+            ); // IF - //
+            Insert ('', 'CONTCOUNTER', (iContainerIndex + 1), 1);
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContNumberBill'))) > 0,
+              Insert ('', 'CONTINTTN', XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContNumberBill')), 1);
+            ); // IF - //
+            Insert ('', 'TTNCOUNTER', 1, 1);
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xVessel, 'VesID'))) > 0,
+              Insert ('', 'VESID', XMLNODEVALUE (XMLNODEFIND (xVessel, 'VesID')), 1);
+            ); // IF - //
+            IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xBill, 'BillID'))) > 0,
+              Insert ('', 'BILLID', XMLNODEVALUE (XMLNODEFIND (xBill, 'BillID')), 1);
+            ); // IF - //
+            Insert ('', 'EXPDO1', 0, 1);
+            Insert ('', 'XMLNAME', sFileName, 0);
+            Insert ('', '', '', 0);
+            //ShowMessage('Add KRD_SOLVOID');
+            
+            vGN := vGN + 1;
+            iGoodIndex := iGoodIndex + 1;
+          )
+        ); // WHILE - //
+        
+        vNCont := vNCont + 1;
+        iContainerIndex := iContainerIndex + 1;
+      )
+    ); // WHILE - //
+  )
+), // FUNC - ImportDO1 () //
+
+
+//
+FUNC ('ImportDO2',
+  Block (
+    PARAM ('pDoc', Integer, 0);
+  ),
+  Block (
+    VAR ('xCustomList', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'CustomList'));
+    VAR ('xCarrier', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Carrier'));
+    VAR ('xBill', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Bill'));
+    VAR ('xConsignee', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Consignee'));
+    VAR ('xContainers', Integer, XMLNODEFIND (XMLNODEFIND (pDoc, 'Attachment'), 'Containers'));
+    VAR ('iContainerIndex', Integer, 0);
+    VAR ('iContainerCount', Integer, XMLNODECHILDCOUNT (xContainers));
+    VAR ('xContainer', Integer, 0);
+  
+//Это вообще для ДО2 не нужно, все берется из ДО1
+    //sSQL := 'SELECT MAX(ID) AS ID FROM ' + sRelease;
+    //OPENQUERY ('qMaxId', 'STS_DB', sSQL);
+    //vID := (qMaxId.ID + 1);
+    //vMainId := vID;
+
+    //CLOSEDATASET ('qMaxId');
+
+
+    sSQL := 'SELECT PLACEID, ID FROM KRD_SOLVOID WHERE CUSTREPID=' + XMLNODEVALUE (XMLNODEFIND (xBill, 'CustRepId'));
+    
+    OPENQUERY ('FIND_STS_ID', 'STS_DB', sSQL);
+    IF (FIELDISNULL ('FIND_STS_ID', 'PLACEID') = 0,
+      Block (
+      
+        vPlaceId := FIND_STS_ID.PLACEID;
+        vId := FIND_STS_ID.ID;
+        vMainId := vID;
+        
+        VAR ('vContId', Integer, 0);
+        WHILE (iContainerIndex < iContainerCount,
+          Block (
+            xContainer := XMLNODECHILD (xContainers, iContainerIndex);
+            vContId := XMLNODEVALUE (XMLNODEFIND (xContainer, 'ContID'));
+
+            VAR ('xGoods', Integer, XMLNODEFIND (xContainer, 'Goods'));
+            VAR ('iGoodIndex', Integer, 0);
+            VAR ('iGoodCount', Integer, XMLNODECHILDCOUNT (xGoods));
+            VAR ('xGood', Integer);
+            VAR ('vGoodId', Integer, 0);
+
+
+            WHILE (iGoodIndex < iGoodCount,
+              Block (
+                xGood := XMLNODECHILD (xGoods, iGoodIndex);
+                vGoodId := XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodID'));
+                sSQL := 'SELECT G32 FROM KRD_SOLVOID WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId +' AND CONTID=' + vContId + ' AND (GOODID=' + vGoodId + ' OR GOODID IS NULL)';
+                
+                OPENQUERY ('FIND_IDENTIF', 'STS_DB', sSQL);
+
+                IF (FIELDISNULL ('FIND_IDENTIF', 'G32') = 0,
+                  Block (
+                    IF (vCounter = 0,
+                      Block (
+                        sSQL := 'SELECT MAX(COUNTER) AS MC FROM ' + sRelease + ' WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId;
+                        OPENQUERY ('qMaxRC', 'STS_DB', sSQL);
+                        IF (FIELDISNULL ('qMaxRC', 'MC') = 0,
+                          Block (
+                            vCounter := qMaxRC.MC + 1;
+                          ),
+                          Block (
+                            vCounter := 1;
+                          )
+                        ); // IF - //
+
+                        VAR ('sDocName', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, 0), 'PrDocumentName')));
+                        IF (LENGTH (sDocName) = 0, sDocName := 'ДТ');
+                        VAR ('sDocCode', String, '');
+                        sDocCode := REFERENCE ('PAPERS', 'PAPERNAME', sDocName, 'PAPERCODE');
+
+
+                        sSQL := 'SELECT ' +
+                                'G082, G083, G084C, G08_KPP, G08_OGRN, G17A, G022, G023, G15A, G040, G042, G043, ' +
+                                'G04_COUNTRY, G142, G143, G1440, G144, G145, ID ' +
+                                'FROM KRD_MAIN ' +
+                                'WHERE PLACEID=' + vPlaceId + ' AND ID=' + vID;
+                        OPENQUERY ('qryKM', 'STS_DB', sSQL);
+
+                        GetWhInfo (vActualPlaceId);
+
+                        VAR ('sTranspDocs', String, '');
+                        sSQL := 'SELECT PAPERNAME, PAPERNO, PAPERDATE FROM KR_PAPER WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId;
+                        OPENQUERY ('qryPapers', 'STS_DB', sSQL);
+                        WHILE (EOF ('qryPapers') = 0,
+                          Block (
+                            IF (LENGTH (sTranspDocs) = 0,
+                               sTranspDocs := qryPapers.PAPERNAME + ' ' + qryPapers.PAPERNO + ' от ' + FDT ('DD.MM.YYYY', qryPapers.PAPERDATE),
+                               sTranspDocs := sTranspDocs + ', ' + qryPapers.PAPERNAME + ' ' + qryPapers.PAPERNO + ' от ' + FDT ('DD.MM.YYYY', qryPapers.PAPERDATE)
+                            ); // IF - //
+                            NEXT ('qryPapers');
+                          )
+                        );
+                        CLOSEDATASET ('qryPapers');
+                        
+                        vNBD := LEFTPAD (GENNO ('RELEASE_KPS' + vPlaceId, '№ ДО2(мв)/Выпуска с ЗТК'), 7, '0');
+                        DoDate :=  (Date () + Time (1));
+
+                        
+                        // == ДОБАВЛЕНИЕ ЗАПИСИ В RELEASE == //
+
+                        Insert (sRelease, 'PLACEID', vPlaceId, 1);
+                        Insert ('', 'ID', vId, 1);
+                        Insert ('', 'COUNTER', vCounter, 1);
+                        Insert ('', 'MAIN_ID', vMainId, 1);
+                        Insert ('', 'MAIN_COUNTER', vCounter, 1);
+                        Insert ('', 'MAIN_NO', 1, 1);
+                        IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, 0), 'PrDocumentNumber'))) > 0,
+                          Insert ('', 'DOC_NO', XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, 0), 'PrDocumentNumber')), 0);
+                        ); // IF - //
+                        Insert ('', 'DOC_TYPE', sDocName, 0);
+                        Insert ('', 'DOC_CODE', sDocCode, 0);
+                        Insert ('', 'RELEASE_NO', vNBD, 0); 
+                        
+                        IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, 0), 'PrDocumentDate'))) > 0,
+                          Block(
+                            Insert ('', 'OUT_DOC_DATE', XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, 0), 'PrDocumentDate')), 2);
+                            Insert ('', 'RELEASE_DATE', XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, 0), 'PrDocumentDate')), 2); // дата ДО-2
+                          )
+                        ); // IF - //
+                        
+                        Insert ('', 'OUT_DATE', DoDate, 2);
+                        Insert ('', 'G082', qryKM.G082, 0);
+                        Insert ('', 'G083', qryKM.G083, 0);
+                        Insert ('', 'G084C', qryKM.G084C, 0);
+                        Insert ('', 'G08_KPP', qryKM.G08_KPP, 0);
+                        Insert ('', 'G08_OGRN', qryKM.G08_OGRN, 0);
+                        Insert ('', 'G08_COUNTRY', qryKM.G17A, 0);
+                        Insert ('', 'G022', qryKM.G022, 0);
+                        Insert ('', 'G023', qryKM.G023, 0);
+                        Insert ('', 'G02_COUNTRY', qryKM.G15A, 0);
+                        Insert ('', 'G040', qryKM.G040, 0);
+                        Insert ('', 'G042', qryKM.G042, 0);
+                        Insert ('', 'G043', qryKM.G043, 0);
+                        Insert ('', 'G04_COUNTRY', qryKM.G04_COUNTRY, 0);
+                        Insert ('', 'TRANSPDOCS', sTranspDocs, 0);
+                        Insert ('', 'TRANSPTYPE', '30', 0);
+                        Insert ('', 'RELEASE_GOODS_DATE', (Date () + Time (1)), 2);
+                        IF (LENGTH (USERINFO ('', 'UserName')) > 0,
+                          Block (
+                            Insert ('', 'RELEASE_GIVE', USERINFO ('', 'UserName'), 0);
+                            Insert ('', 'RELEASE_GIVE_POST', USERINFO ('', 'UserPost'), 0);
+                          )
+                        ); // IF - //
+                        // ActualWarehouseLicense
+                        If(vLicenceNo <> qryKM.G144,
+                          Block(
+                            Insert ('', 'G142', vSvhName, 0);
+                            Insert ('', 'G143', vSvhAddress, 0);
+                            Insert ('', 'G1440', vLicenceType, 0);
+                            Insert ('', 'G144', vLicenceNo, 0);
+                            Insert ('', 'G145', vLicenceDate, 2);
+                          ),
+                          Block(
+                            Insert ('', 'G142', qryKM.G142, 0);
+                            Insert ('', 'G143', qryKM.G143, 0);
+                            Insert ('', 'G1440', qryKM.G1440, 0);
+                            Insert ('', 'G144', qryKM.G144, 0);
+                            Insert ('', 'G145', qryKM.G145, 2);
+                          )
+                        );
+                        IF (USERINFO ('', 'UserLogin') <> '',
+                          Insert ('', 'User_Login', USERINFO ('', 'UserLogin'), 0)
+                        ); // IF - //
+                        Insert ('', '', '', 0);
+
+                        // обновляем поле СТАТУС ЭПС в ДО-1
+                        EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char (39)+ 'ДО-2 загружена из SOLVO' + char (39)+ ' WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId);
+
+                        // == ДРУГИЕ ДТ ДОБАВЛЯЕМ КАК "БЕЗ ТОВАРОВ" == //
+                        IF (XMLNODECHILDCOUNT (xCustomList) > 1,
+                          Block (
+                            VAR ('iCustomListIndex', Integer, 1);
+                            WHILE (iCustomListIndex < XMLNODECHILDCOUNT (xCustomList),
+                              Block (
+                                VAR ('tmpDocName', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, iCustomListIndex), 'PrDocumentName')));
+                                IF (LENGTH (tmpDocName) = 0, tmpDocName := 'ДТ');
+                                VAR ('tmpDocCode', String, REFERENCE ('PAPERS', 'PAPERNAME', sDocName, 'PAPERCODE'));
+                                
+                                Insert (sRelease, 'PLACEID', vPlaceId, 1);
+                                Insert ('', 'ID', vId, 1);
+                                Insert ('', 'COUNTER', (vCounter + iCustomListIndex), 1);
+                                Insert ('', 'MAIN_ID', vMainId, 1);
+                                Insert ('', 'MAIN_COUNTER', vCounter, 1);
+                                Insert ('', 'MAIN_NO', 1, (iCustomListIndex + 1));
+                                IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, iCustomListIndex), 'PrDocumentNumber'))) > 0,
+                                  Insert ('', 'DOC_NO', XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, iCustomListIndex), 'PrDocumentNumber')), 0);
+                                ); // IF - //
+                                Insert ('', 'DOC_TYPE', tmpDocName, 0);
+                                Insert ('', 'DOC_CODE', tmpDocCode, 0);
+                                Insert ('', 'RELEASE_NO', vNBD, 0); //! вычислить номер ДО-2
+                                Insert ('', 'RELEASE_DATE', XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, iCustomListIndex), 'PrDocumentDate')), 2);
+                                Insert ('', 'OUT_DOC_DATE', XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (xCustomList, iCustomListIndex), 'PrDocumentDate')), 2);
+                                Insert ('', 'OUT_DATE', DoDate, 2); // дата ДО-2
+                                Insert ('', 'G082', qryKM.G082, 0);
+                                Insert ('', 'G083', qryKM.G083, 0);
+                                Insert ('', 'G084C', qryKM.G084C, 0);
+                                Insert ('', 'G08_KPP', qryKM.G08_KPP, 0);
+                                Insert ('', 'G08_OGRN', qryKM.G08_OGRN, 0);
+                                Insert ('', 'G08_COUNTRY', qryKM.G17A, 0);
+                                Insert ('', 'G022', qryKM.G022, 0);
+                                Insert ('', 'G023', qryKM.G023, 0);
+                                Insert ('', 'G02_COUNTRY', qryKM.G15A, 0);
+                                Insert ('', 'G040', qryKM.G040, 0);
+                                Insert ('', 'G042', qryKM.G042, 0);
+                                Insert ('', 'G043', qryKM.G043, 0);
+                                Insert ('', 'G04_COUNTRY', qryKM.G04_COUNTRY, 0);
+                                Insert ('', 'TRANSPDOCS', sTranspDocs, 0);
+                                Insert ('', 'TRANSPTYPE', '30', 0);
+                                Insert ('', 'RELEASE_GOODS_DATE', (Date () + Time (1)), 2);
+                                IF (LENGTH (USERINFO ('', 'UserName')) > 0,
+                                  Block (
+                                    Insert ('', 'RELEASE_GIVE', USERINFO ('', 'UserName'), 0);
+                                    Insert ('', 'RELEASE_GIVE_POST', USERINFO ('', 'UserPost'), 0);
+                                  )
+                                ); // IF - //
+                                // ActualWarehouseLicense
+                                If(vLicenceNo <> qryKM.G144,
+                                  Block(
+                                    Insert ('', 'G142', vSvhName, 0);
+                                    Insert ('', 'G143', vSvhAddress, 0);
+                                    Insert ('', 'G1440', vLicenceType, 0);
+                                    Insert ('', 'G144', vLicenceNo, 0);
+                                    Insert ('', 'G145', vLicenceDate, 2);
+                                  ),
+                                  Block(
+                                    Insert ('', 'G142', qryKM.G142, 0);
+                                    Insert ('', 'G143', qryKM.G143, 0);
+                                    Insert ('', 'G1440', qryKM.G1440, 0);
+                                    Insert ('', 'G144', qryKM.G144, 0);
+                                    Insert ('', 'G145', qryKM.G145, 2);
+                                  )
+                                );
+                                IF (USERINFO ('', 'UserLogin') <> '',
+                                  Insert ('', 'User_Login', USERINFO ('', 'UserLogin'), 0)
+                                ); // IF - //
+                                Insert ('', '', '', 0);
+                                iCustomListIndex := iCustomListIndex + 1;
+                              )
+                            ); // WHILE - //
+                          )
+                        ); // IF - //
+                      )
+                    ); // IF - //
+
+
+                    // == ДОБАВЛЕНИЕ ЗАПИСИ В REL_COMM == //
+
+                    Insert ('REL_COMM', 'PLACEID', vPlaceId, 1);
+                    Insert ('', 'ID', vId, 1);
+                    Insert ('', 'COUNTER', vCounter, 1);
+                    Insert ('', 'G32', FIND_IDENTIF.G32, 1);
+                    IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodPlacesCount'))) > 0,
+                      Insert ('', 'RELEASE_G311', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodPlacesCount')), 1);
+                    ); // IF - //
+                    IF (XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodPlacesCount')) = 0,
+                      Insert ('', 'RELEASE_G313', 'часть места', 0);
+                    ); // IF - //
+                    IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodBrutto'))) > 0,
+                      Insert ('', 'RELEASE_G35', XMLNODEVALUE (XMLNODEFIND (xGood, 'GoodBrutto')), 1);
+                    ); // IF - //
+                    Insert ('', 'RELEASE_OUT_DATE', XMLNODEVALUE (XMLNODEFIND (xContainer, 'DateShipped')), 2);
+                    Insert ('', '', '', 0);
+                  )
+                ); // IF - //
+                CLOSEDATASET ('FIND_IDENTIF');
+
+                iGoodIndex := iGoodIndex + 1;
+              )
+            ); // WHILE - //
+
+            iContainerIndex := iContainerIndex + 1;
+          )
+        ); // WHILE - //
+      ),
+      Block (
+        // не найдена соответствующая ДО-1
+        iDO2Fail := iDO2Fail + 1;
+      )
+    ); // IF - //
+    CLOSEDATASET ('FIND_STS_ID');
+
+  )
+), // FUNC - ImportDO2 () //
+
+
+// проверяем и создаём рабочие каталоги
+CheckDirectories ();
+
+
+VAR ('mFiles', Memo, '');
+VAR ('sTmp', String, '');
+VAR ('iFilesCount', Integer, 0);
+VAR ('iFileIndex', Integer, 1);
+VAR ('sFileName', String, '');
+VAR ('xFile', Integer, XMLDOCUMENTCREATE ());
+VAR ('xDoc', Integer);
+VAR ('sDocType', String, '');
+VAR ('iDO1Count', Integer, 0);
+VAR ('iDO2Count', Integer, 0);
+VAR ('iDO1Fail', Integer, 0);
+VAR ('iDO2Fail', Integer, 0);
+
+
+FUNC ('LoadFiles',
+  Block (
+    PARAM ('pDir', String, 0);
+  ),
+  Block (
+    SHOWPROGRESS ('Загрузка данных, подождите..');
+    mFiles := GETFILELIST (pDir, '*.xml', '|');
+    iFileIndex := 1;
+    iFilesCount := SPLITSTR (mFiles, '|', sTmp);
+    IF (iFilesCount > 0,
+      Block (
+        Log ('Начало обработки ' + iFilesCount + ' входящих файлов');
+        WHILE (iFileIndex <= iFilesCount,
+          Block (
+            sFileName := EXTRACTSTR (mFiles, iFileIndex, '|');
+            XMLDOCUMENTLOAD (xFile, pDir + sFileName);
+            xDoc := XMLNODECHILD (XMLDOCUMENTROOT (xFile), 0);
+            sDocType := '';
+            sSubStatus := '';
+
+            // перехватываем исключения при обработке XML-файлов
+            // "плохой" файл перекладываем в ERRORS и переходим к загрузке следующего
+            TRYEXCEPT (
+              Block (
+    
+                // определяем тип документа ДО-1 или ДО-2 по наличию элемента ReportType
+                IF (XMLNODEFIND (xDoc, 'ReportType') * (XMLNODEVALUE (XMLNODEFIND (xDoc, 'ReportType')) = 'DO2'),
+                    sDocType := 'ДО-2',
+                    sDocType := 'ДО-1'
+                ); // IF - //
+
+                Log ('Загрузка файла ' + sDocType + ' от ' +char (39)+ sFileName +char (39));
+                CASE (sDocType, ['ДО-1',
+                                  Block (
+                                    sDoneDir := sWorkDir + 'DO1_IN\DONE\';
+                                    vCounter := 0;
+                                    If(GetVPlaceId(xDoc, 1)=1,  // при загрузке нашли площадку - все хорошо
+                                      block(
+                                        ImportDO1 (xDoc);
+                                        Log ('Создан ' + sDocType + ' из файла: ' +char(39)+ sFileName +char(39));
+                                        iDO1Count := iDO1Count + 1;
+                                        EpsLog (vPlaceId,
+                                            vId,
+                                            vCounter, // Counter
+                                            '', // DocumentId
+                                            'ДО-1', // Тип документа
+                                            vNBD, // Номер ДО
+                                            DoDate, // Дата ДО
+                                            'ДО-1 загружена из SOLVO', // Status
+                                            (Date () + Time (1)), // pRegDate
+                                            '', // JOurGUID
+                                            sSubStatus, // SubStatus
+                                            sFileName, // FileName
+                                            0, // Readed
+                                            (Date () + Time (1)) // DoDt
+                                        );
+                                        bAddNotifocation := 1;
+                                      ),
+                                      block( // при загрузке не нашли площадку - файл в Errors и сообщение в лог
+                                        iDO1Fail := iDO1Fail + 1,
+                                        Log ('ОШИБКА! Не найдено разрешение в таблице "Информация о складе", файл ' + sDocType + ': ' +char(39)+ sFileName +char(39)+ ' перемещен в ' +char(39)+ sWorkDir + 'ERRORS\' + char(39));
+                                        COPYFILE (pDir + sFileName, sWorkDir + 'ERRORS\' + sFileName);
+                                      )
+                                    )
+                                  ),
+                                 'ДО-2',
+                                  Block (
+                                    sDoneDir := sWorkDir + 'DO2_IN\DONE\';
+                                    vCounter := 0;
+                                    If(GetVPlaceId(xDoc, 2)=1,  // при загрузке нашли площадку - все хорошо
+                                      block(
+                                        ImportDO2 (xDoc);
+                                        Log ('Создан ' + sDocType + ' из файла: ' +char(39)+ sFileName +char(39));
+                                        iDO2Count := iDO2Count + 1;
+                                        EpsLog (vPlaceId,
+                                            vId,
+                                            vCounter,
+                                            '', // DocumentId
+                                            'ДО-2', // Тип документа
+                                            vNBD, // Номер ДО
+                                            DoDate, // Дата ДО
+                                            'ДО-2 загружена из SOLVO', // Status
+                                            (Date () + Time (1)), // pRegDate
+                                            '', // JourGUID
+                                            sSubStatus,
+                                            sFileName,
+                                            0,
+                                            (Date () + Time (1)) // DoDt
+                                        );
+                                        bAddNotifocation := 1;
+                                      ),
+                                      Block( // при загрузке не нашли площадку - файл в Errors и сообщение в лог
+                                        iDO2Fail := iDO2Fail + 1,
+                                        Log ('ОШИБКА! Не найдено разрешение в таблице "Информация о складе", файл ' + sDocType + ': ' +char(39)+ sFileName +char(39)+ ' перемещен в ' +char(39)+ sWorkDir + 'ERRORS\' + char(39));
+                                        COPYFILE (pDir + sFileName, sWorkDir + 'ERRORS\' + sFileName);
+                                      )
+                                    )
+                                  ),
+                                ],
+                ); // CASE - //
+    //            Log ('Ok..');
+
+    
+              ),
+              Block (
+                CASE (sDocType, ['ДО-1', iDO1Fail := iDO1Fail + 1,
+                                 'ДО-2', iDO2Fail := iDO2Fail + 1,
+                                ],
+                ); // CASE - //
+                Log ('ОШИБКА! '+EXCEPTIONMESSAGE());
+                Log ('Файл ' + sDocType + ': ' +char(39)+ sFileName +char(39)+ ' перемещен в ' +char(39)+ sWorkDir + 'ERRORS\' + char(39));
+                COPYFILE (pDir + sFileName, sWorkDir + 'ERRORS\' + sFileName);
+
+              )
+            ); // TRYEXCEPT - //
+
+            iFileIndex := iFileIndex + 1;
+            SETPROGRESS (iFileIndex, 100, iFilesCount);
+            COPYFILE (pDir + sFileName, sDoneDir + sFileName);
+            DELETEFILE (pDir + sFileName);
+          )
+        ); // WHILE - //
+      )
+    ); // IF - //
+    HIDEPROGRESS ();
+    iFilesCount
+  )
+), // FUNC - LoadFiles () //
+
+
+// получаем информацию о СВХ по текущему PLACEID
+//GetWhInfo ();
+
+// загружаем все файлы в каталоге INBOX\DO1
+VAR ('iFileCountDO1', integer, 0);
+iFileCountDO1 := LoadFiles (sWorkDir + 'DO1_IN\');
+
+// загружаем все файлы в каталоге INBOX\DO2
+VAR ('iFileCountDO2', integer, 0);
+iFileCountDO2 := LoadFiles (sWorkDir + 'DO2_IN\');
+
+
+// если какие-либо файлы загружались, показываем лог
+IF ((iFileCountDO1 > 0)|(iFileCountDO2 > 0),
+  Block (
+    Log (CHARSTR ('=', 40));
+    Log (RIGHTPAD ('Загружено ДО-1:', 28, ' ') + iDO1Count);
+    Log (RIGHTPAD ('Загружено ДО-2:', 28, ' ') + iDO2Count);
+    Log (RIGHTPAD ('Ошибок при загрузке ДО-1:', 28, ' ') + iDO1Fail);
+    Log (RIGHTPAD ('Ошибок при загруке ДО-2:', 28, ' ') + iDO2Fail);
+    Log (CHARSTR ('=', 40));
+    Log ('Обработка входящих файлов завершена' +char(13) + char(10));
+    IF (bAddNotifocation, AddNotification ());
+    SHOWLOGFILE (sLogFile, 'Результат загрузки данных из SOLVO (' + FDT ('DD.MM.YYYY', DATE ()) + ')');
+    GLOBALREFRESH ();
+  )
+);
+
+
+
+
+
+
+
+
+

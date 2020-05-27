@@ -1,0 +1,752 @@
+// *****************************************************************************
+// Название: создание ДО-1 из описи документов
+// Описание: Автоматическое создание формы ДО-1 из описи документов
+// Кнопка вызова: 0
+// Подпись кнопки: ДО-1 (из описи)
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+//=========== подключение скрипта для добавления N-месяцев к дате (вычисление срока окончания ВХ)
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+//===========
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+//===========
+
+// тестовая функция
+FUNC ('GetXmlDoc', '',
+  Block(
+    VAR ('xDoc', Integer, XMLDOCUMENTCREATE ());
+    XMLDOCUMENTLOAD (xDoc, 'F:\CTM\STS\STS-MED\iout\bakup\2019-07-12-14-33-29-000.xml');
+    XMLNODECHILD (XMLDOCUMENTROOT (xDoc), 0);
+  )
+), // FUNC - GetXmlDoc()
+
+//VAR ('xInventory', Integer, GetXmlDoc ());
+VAR ('xInventory', Integer, XMLNODECHILD (XmlRoot, 0));
+
+//========== подключение скрипта для выполнения SQL-запросов Insert2
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sql_Insert.prd');
+//==========
+
+//========== переменные для записи в EPS_LOG
+VAR ('DoDt', String, XMLNODEATTRIBUTE (xInventory, 'dodt'));
+VAR ('DoType', String, 'Опись документов');
+VAR ('DocId', String, XMLNODEVALUE (XMLNODEFIND (xInventory, 'cat_ru:DocumentID')));
+VAR ('DoNo', String, '');
+VAR ('DoDate', String, FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (xInventory, 'whdi:InventoryInstanceDate'))));
+VAR ('strStatus', String, '');
+VAR ('sSubStatus', String, '');
+VAR ('sJourGUID', String, '');
+VAR ('dRegDate', DateTime, Date() + Time(1));
+
+VAR ('sDo1List', String, '');
+//==========
+
+VAR ('iDo1Count', Integer, 0);
+VAR ('sSQL', String, '');
+VAR ('vPlaceId', String, '0');
+VAR ('vID', Integer);
+VAR ('vMainID', Integer);
+VAR ('vCounter', Integer);
+VAR ('iCounter', Integer);
+VAR ('vNBD', String, '');
+VAR ('vBDDate', DateTime);
+VAR ('vDeadline', DateTime);
+// информация об СВХ
+VAR ('vLicenseNo', String, '');
+VAR ('vLicenseDate', String, '');
+VAR ('vSvhName', String, '');
+VAR ('vSvhNo', String, '');
+VAR ('vSvhAddress', String, '');
+VAR ('vLicenceType', Integer, 1);
+// список дескрипторов транспортных средств
+VAR ('lstTransports', String, '');
+VAR ('xTransports', Integer);
+// список документов в описи
+VAR ('lstInvDocs', String, '');
+VAR ('xInvDocs', Integer);
+// порядковые номера
+VAR ('iGoodIndex', Integer, 1);
+VAR ('iPaperIndex', Integer, 1); // всегда 1, пока что каждый GoodsShipment это отдельная ДО-1
+
+
+FUNC ('GetNewCounter',
+  Block(
+    PARAM ('pTableName', String, 0);
+    PARAM ('pPlaceId', Integer, 1);
+    PARAM ('pId', Integer, 2);
+  ),
+  Block(
+    VAR ('iReturn', Integer, 0);
+    sSQL := 'SELECT MAX (COUNTER) AS COUNTER FROM ' + pTableName + ' WHERE PLACEID=' + pPlaceId + ' AND ID=' + pId;
+    OPENQUERY ('qCounter', 'STS_DB', sSQL);
+    iReturn := qCounter.COUNTER + 1;
+    CLOSEDATASET ('qCounter');
+    iReturn
+  )
+), // FUNC - GetNewCounter()
+
+FUNC ('GetWhInfo', '',
+  Block(
+    sSQL := 'SELECT' +
+            ' PLACEID, LICENCENO, LICENCEDATE, STORE_NO, ADDRESS, NAME, LICENCETYPE, CUSTOMS_CODE' +
+            ' FROM STORES' +
+            ' WHERE' +
+            ' LICENCENO=' +char(39)+ TRIM(XMLNODEVALUE (XMLNODEFIND (xWarehouseLicense, 'catWH_ru:CertificateNumber'))) +char(39);
+    IF (XMLNODEFIND (xWarehouseLicense, 'catWH_ru:CertificateDate'),
+      Block(
+        sSQL := sSQL + ' AND LICENCEDATE=' +char(39)+ FDT ('DD.MM.YYYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (xWarehouseLicense, 'catWH_ru:CertificateDate')), 'YYYY-MM-DD', '-')) +char(39);
+      )
+    ); // IF
+
+    OPENQUERY ('qStore', 'STS_DB', sSQL);
+    IF (FIELDISNULL ('qStore', 'PLACEID') = 0,
+      Block(
+        IF (RECORDCOUNT ('qStore') > 1,
+          Block(
+            IF (BOF ('qStore') = 0, FIRST ('qStore'));
+            VAR ('bFindStore', Boolean, False);
+            WHILE ((EOF ('qStore') = 0) * (bFindStore = False),
+              Block(
+                IF (qStore.CUSTOMS_CODE = xSender.Customs.Code,
+                  Block(
+                    vPlaceId := qStore.PLACEID;
+                    vLicenseNo := qStore.LICENCENO;
+                    IF (FIELDISNULL ('qStore', 'LICENCEDATE'), vLicenseDate := 'NULL', vLicenseDate := qStore.LICENCEDATE);
+                    vSvhName := qStore.NAME;
+                    vSvhNo := qStore.STORE_NO;
+                    vSvhAddress := qStore.ADDRESS;
+                    vLicenceType := qStore.LICENCETYPE;
+                    bFindStore := True;
+                  )
+                ); // IF
+                NEXT ('qStore');
+              )
+            ); // WHILE
+            IF (bFindStore = False,
+              Block(
+                //TODO: показывать выбор лицензии на которую будет создана ДО-1
+              )
+            ); // IF
+          ),
+          Block(
+            vPlaceId := qStore.PLACEID;
+            vLicenseNo := qStore.LICENCENO;
+            IF (FIELDISNULL ('qStore', 'LICENCEDATE'), vLicenseDate := 'NULL', vLicenseDate := qStore.LICENCEDATE);
+            vSvhName := qStore.NAME;
+            vSvhNo := qStore.STORE_NO;
+            vSvhAddress := qStore.ADDRESS;
+            vLicenceType := qStore.LICENCETYPE;
+          )
+        );
+      ),
+      Block(
+        vPlaceId := '0';
+      )
+    ); // IF
+    CLOSEDATASET ('qStore');
+  )
+), // FUNC - GetWhInfo()
+
+
+FUNC ('CreateDo1',
+  Block(
+
+  ),
+  Block(
+    sSQL := 'SELECT MAX(ID) AS ID FROM KRD_MAIN';
+    OPENQUERY ('qMaxId', 'STS_DB', sSQL);
+    vID := (qMaxId.ID + 1);
+    vMainId := vID;
+    CLOSEDATASET ('qMaxId');
+
+    //vNBD := SOLVE (INIFILE ('Docs', 'MakeBD_No', 'LEFTPAD(GENNO("NBD_KPS" + ' + vPlaceId + ', "№ ДО1(мв)/ДУ ЗТК"), 7, "0")'));
+    VAR ('sGenNBD', String, INIFILE ('Docs', 'MakeBD_No', 'LEFTPAD (GENNO ("NBD_KPS" +' + vPlaceId + ', "№ ДО1(мв)/ДУ ЗТК"), 7, "0")'));
+    sGenNBD := REGEXREPLACE (sGenNBD, '(KRD_MAIN.PLACEID)', vPlaceId, 1);
+    vNBD := SOLVE (sGenNBD);
+
+    IF (LENGTH (TRIM (sDo1List)) = 0,
+       sDo1List := vNBD,
+       sDo1List := sDo1List + ', ' + vNBD
+    );
+
+    vBDDate := FDT ('DD.MM.YYYY HH:NN:SS', Date() + Time(1));
+    vDeadline := AddMonths (vBDDate, 4);
+
+    // проверка заполненности выражения счетчика "№ по книге учета"
+    VAR ('sStoreDocNo', string, '');
+    IF(INIFILE ('Docs', 'StoreDoc_No', '') <> '',
+        sStoreDocNo:= SOLVE(INIFILE ('Docs', 'StoreDoc_No', '')),
+        Block(
+              sStoreDocNo:=INIFILE ('ContractDocNo', 'Default', '0', INIFILE ('Counters', 'Path', ProgramPath ()) + 'counters.ini');
+              VAR ('iStoreDocNo', Integer, CONVERT (sStoreDocNo , Integer) + 1);
+              sStoreDocNo := leftpad (iStoreDocNo, length(sStoreDocNo), '0');
+              WRITEINIFILE ('ContractDocNo', 'Default', sStoreDocNo, INIFILE ('Counters', 'Path', ProgramPath ()) + 'counters.ini');
+        )
+    );
+
+    // создаём форму ДО-1
+    PrepareInsert2 ();
+    Insert2 ('PLACEID', vPlaceId, 1);
+    Insert2 ('ID',              vID, 1);
+    Insert2 ('MAIN_ID',         vMainID, 1);
+    Insert2 ('PART_NO',         1, 1);
+    Insert2 ('PART_MODE',       0, 1);
+    Insert2 ('NBD',             vNBD);
+    Insert2 ('SHOW_NBD',        FDT('YYYYMMDD', Date() + Time(1))+LEFTPAD(RIGHT(vNBD, 5), 5, '0'));
+    Insert2 ('STORE_DOC_NO',    sStoreDocNo);
+    Insert2 ('BD_DATE',         vBDDate, 2);
+    Insert2 ('G144',            vLicenseNo);
+    Insert2 ('G145',            vLicenseDate, 2);
+    Insert2 ('G142',            vSvhName);
+    Insert2 ('G143',            vSvHAddress);
+    Insert2 ('G1440',           vLicenceType);
+    Insert2 ('PP',              DoNo,);
+    Insert2 ('STATUS_EPS',      'ДО-1 создана автоматически');
+    Insert2 ('AUTHOR',          USERINFO ('', 'UserName'));
+    Insert2 ('AUTHOR_POST',     USERINFO ('', 'UserPost'));
+
+    IF (EMPTY (REMOVECHAR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:OrganizationName')), char(39))), {do nothing},
+    Insert2 ('G022',            REMOVECHAR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:OrganizationName')), char(39)));
+    ); // IF
+    IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'catWH_ru:AddressLine'))), {do nothing},
+    Insert2 ('G023',            REMOVECHAR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'catWH_ru:AddressLine')), char(39)));
+    ); // IF
+    IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:CountryCode'))), {do nothing},
+    Insert2 ('G15A',            XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:CountryCode')));
+    ); // IF
+    IF (EMPTY (REMOVECHAR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsSHipment, 'catWH_ru:Consignee'), 'cat_ru:OrganizationName')), char(39))), {do nothing},
+    Insert2 ('G082',            REMOVECHAR(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'cat_ru:OrganizationName')), char(39)));
+    ); // IF
+    IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'catWH_ru:AddressLine'))), {do nothing},
+    Insert2 ('G083',            REMOVECHAR(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'catWH_ru:AddressLine')), char(39)));
+    ); // IF
+    IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (xCarrier, 'cat_ru:OrganizationName'))), {do nothing},
+    Insert2 ('G042', XMLNODEVALUE (XMLNODEFIND (xCarrier, 'cat_ru:OrganizationName')));
+    ); // IF
+    Insert2 ('G011',            'ИМ');
+    Insert2 ('G012',            '40');
+    Insert2 ('Z_MODE',          '3');
+    Insert2 ('A_MODE',          '7');
+    Insert2 ('BEG_KEEP',        (vBDDate + 1), 2);
+    Insert2 ('', '', 0, 'KRD_MAIN','STS_DB');
+    //showmessage ('Insert2 KRD_MAIN');
+    VAR ('iTransportsCount', Integer, SPLITSTR (lstTransports, '|', sSQL));
+    VAR ('iTransportsIndex', Integer, 1);
+
+    WHILE (iTransportsIndex <= iTransportsCount,
+      Block(
+        xTransports := EXTRACTSTR (lstTransports, iTransportsIndex, '|');
+        vCounter := GetNewCounter('KR_TRANS', vPlaceID, vID);
+
+        VAR ('sTranspCountry', String, '');
+        VAR ('sNTrailer', String, '');
+
+        IF (XMLNODEFIND (xTransports, 'Sea'),
+          Block(
+            sTranspCountry := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xTransports, 'catWH_ru:Sea'), 'catWH_ru:CountryCode'));
+            sNTrailer := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xTransports, 'catWH_ru:Sea'), 'catWH_ru:EntryNumber'));
+          ),
+          IF (XMLNODEFIND (xTransports, 'Avto'),
+            Block(
+              sNTrailer := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xTransports, 'Avto'), 'TrailerIdentifier'));
+            ),
+            IF (XMLNODEFIND (xTransports, 'Avia'),
+              Block(
+                sNTrailer := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xTransports, 'Avia'), 'FlightNumber'));
+                sSQL := 'UPDATE KRD_MAIN' +
+                        ' SET ARR_DATE=' + DBFORMATDATETIME (STRTODATE (xTransports.Avia.FlightDate, 'YYYY-MM-DD', '-'), GETDATABASETYPE ('STS_DB'), 0, 1, 1) +
+                        ' WHERE' +
+                        ' PLACEID=' + vPlaceId +
+                        ' AND MAIN_ID=' + vMainID +
+                        ' AND ARR_DATE IS NULL';
+                EXECUTESQL ('STS_DB', sSQL);
+              )
+            )
+          )
+        ); // IF
+
+        // добавляем транспортное средство
+        PrepareInsert2 ();
+        Insert2 ('PLACEID',         vPlaceID, 1);
+        Insert2 ('ID',              vID, 1);
+        Insert2 ('COUNTER',         vCounter, 1);
+        Insert2 ('CARNO',           XMLNODEVALUE (XMLNODEFIND (xTransports, 'catWH_ru:TransportIdentifier')));
+        Insert2 ('TRANSP_CODE',     XMLNODEVALUE (XMLNODEFIND (xTransports, 'catWH_ru:TransportModeCode')));
+        Insert2 ('TRANSP_COUNTRY',  sTranspCountry);
+        Insert2 ('NTRAILER',        sNTrailer);
+        Insert2 ('', '', 0, 'KR_TRANS','STS_DB');
+        //showmessage ('Insert2 KR_TRANS');
+
+        IF (XMLNODEFIND (xCarrier, 'CountryCode'),
+          sTranspCountry := XMLNODEVALUE (XMLNODEFIND (xCarrier, 'CountryCode'))
+        ); // IF
+
+        // обновляем данные ДО-1 информацией из первого транспортного средства
+        IF (iTransportsIndex = 1,
+          Block(
+            sSQL := 'UPDATE KRD_MAIN SET ' +
+                    'G261=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (xTransports, 'catWH_ru:TransportModeCode')) +char(39)+
+                    ', G040=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xTransports, 'catWH_ru:Sea'), 'catWH_ru:Captain'), 'cat_ru:PersonSurname')) +
+                                   ' ' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xTransports, 'catWH_ru:Sea'), 'catWH_ru:Captain'), 'cat_ru:PersonName')) +char(39)+
+                    // код страны перевозчика, заполняем по коду принадлежности транспортного средства
+                    ', G04_COUNTRY=' +char(39)+ sTranspCountry +char(39)+
+                    ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vMainID;
+            //showmessage (sSQL);
+            EXECUTESQL ('STS_DB', sSQL);
+          )
+        ); // IF - //
+
+        iTransportsIndex := iTransportsIndex + 1;
+      )
+    ); // WHILE - //
+
+
+    // вычисляем COUNTER для добавления транспортного документа
+    vCounter := GetNewCounter('KR_PAPER', vPlaceID, vID);
+    iCounter := GetNewCounter('KRD_DCD', vPlaceID, vID);
+    // определяем данные документа (а) по коду, б) по наименованию)
+    VAR ('sPrDocumentModeCode', String, XMLNODEVALUE (XMLNODEFIND (xGoodsShipment, 'catWH_ru:PresentedDocumentModeCode')));
+    VAR ('sPrDocumentName', String, XMLNODEVALUE (XMLNODEFIND (xGoodsShipment, 'cat_ru:PrDocumentName')));
+    VAR ('sPaperName', String, '');
+
+    IF (LENGTH (sPrDocumentModeCode) > 0,
+      Block(
+        // сначала ищем краткое наименование по коду в справочнике PAPERS
+        sPaperName := REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', sPrDocumentModeCode, 'PAPERNAME');
+
+        // пока по настройке в INI-файле
+        IF (INIFILE ('WHDocInventory', 'AddAllDocuments', 0) = 1,
+          Block(
+            // затем пробуем найти полное наименование в справочнике DOCG44 по коду
+            IF (LENGTH (sPaperName) = 0, sPaperName := COPY (REFERENCE ('DOCG44', 'KOD', sPrDocumentModeCode, 'NAIM'), 1, 30));
+          )
+        ); // IF
+
+        // если не нашли, то используем наименование полученное в XML-файле (чаще всего пустое)
+        IF (LENGTH (sPaperName) > 0, sPrDocumentName := sPaperName);
+      ),
+      Block(
+        IF (LENGTH (sPrDocumentName) > 0,
+          Block(
+            sPaperName := REFERENCE ('PAPERS', 'PAPERFULLNAME', sPrDocumentName, 'PAPERNAME');
+            IF (LENGTH (sPaperName) > 0,
+              Block(
+                sPrDocumentName := sPaperName;
+                sPrDocumentModeCode := REFERENCE ('PAPERS', 'PAPERFULLNAME', sPrDocumentName, 'PAPER_DOCG44_CODE');
+              ),
+              Block(
+                sPaperName := REFERENCE ('PAPERS', 'PAPERNAME', sPrDocumentName, 'PAPERNAME');
+                sPrDocumentModeCode := REFERENCE ('PAPERS', 'PAPERCODE', sPrDocumentName, 'PAPER_DOCG44_CODE');
+              )
+            );
+          )
+        ); // IF
+      )
+    ); // IF
+
+    // добавляем транспортный документ
+    PrepareInsert2 ();
+    Insert2 ('PLACEID', vPlaceId, 1);
+    Insert2 ('ID',              vID, 1);
+    Insert2 ('COUNTER',         vCounter, 1);
+    IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (xGoodsShipment, 'cat_ru:PrDocumentNumber'))),
+      Insert2 ('PAPERNO',       'Б\Н'),
+      Insert2 ('PAPERNO',       XMLNODEVALUE (XMLNODEFIND (xGoodsShipment, 'cat_ru:PrDocumentNumber')))
+    ); // IF
+    IF (LENGTH (sPrDocumentName) > 0,
+      Insert2 ('PAPERNAME',     sPrDocumentName);
+    ); // IF
+    IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (xGoodsShipment, 'cat_ru:PrDocumentDate'))), {do nothing},
+      Insert2 ('PAPERDATE',     XMLNODEVALUE (XMLNODEFIND (xGoodsShipment, 'cat_ru:PrDocumentDate')), 2);
+    ); // IF
+    IF (LENGTH (sPrDocumentModeCode) > 0,
+      Insert2 ('PAPERCODE',     sPrDocumentModeCode);
+    ); // IF
+    Insert2 ('', '', 0, 'KR_PAPER', 'STS_DB');
+    //showmessage ('Insert2 KR_PAPER');
+    Block(
+      VAR ('iInvDocsCount', Integer, SPLITSTR (lstInvDocs, '|', sSQL));
+      VAR ('iInvDocsIndex', Integer, 1);
+      WHILE (iInvDocsIndex <= iInvDocsCount,
+        Block(
+          xInvDocs := EXTRACTSTR (lstInvDocs, iInvDocsIndex, '|');
+
+          // по настройке добавляем все документы из 44-ой графы
+          VAR ('bCondition', Boolean, 0);
+          IF (INIFILE ('WHDocInventory', 'AddAllDocuments', 0) = 1,
+            Block(
+              bCondition := (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_WAYBILL') <> '1') *
+                            ((LENGTH (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_WAYBILL')) > 0) |
+                            ((LENGTH (REFERENCE ('DOCG44', 'KOD', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'InvDocCode')), 'NAIM')) > 0) *
+                             ((REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_DELIVERY') <> '1') |
+                              (LENGTH (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_DELIVERY')) = 0)
+                             )
+                            ));
+            ),
+            Block(
+              bCondition := (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_WAYBILL') <> '1') *
+                            (LENGTH (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_WAYBILL')) > 0);
+            )
+          ); // IF
+
+          IF (bCondition,
+            Block(
+              vCounter := CONVERT (vCounter, Integer) + 1;
+              PrepareInsert2 ();
+              Insert2 ('PLACEID', vPlaceId, 1);
+              Insert2 ('ID',              vID, 1);
+              Insert2 ('COUNTER',         vCounter, 1);
+              IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode'))) > 0,
+                Insert2 ('PAPERCODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')));
+              ); // IF
+              IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocNumber'))) > 0,
+                Insert2 ('PAPERNO',   XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocNumber')));
+              ); // IF
+              VAR ('sPaperName', String, '');
+              sPaperName := REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPERNAME');
+              IF (LENGTH (sPaperName) = 0, sPaperName := REFERENCE ('DOCG44', 'KOD', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'InvDocCode')), 'NAIM'));
+              IF (LENGTH (sPaperName) > 0,
+                Insert2 ('PAPERNAME', COPY (sPaperName, 1, 30));
+              ); // IF
+              IF (XMLNODEFIND (xInvDocs, 'whdi:InvDocDate'),
+                IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocDate'))) > 0,
+                  Insert2 ('PAPERDATE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocDate')), 2);
+                ); // IF
+              ); // IF
+              Insert2 ('', '', 0, 'KR_PAPER', 'STS_DB');
+            )
+          ); // IF
+          IF ((REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_DELIVERY') = '1') *
+              (LENGTH (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPER_IS_DELIVERY')) > 0),
+            Block(
+              iCounter := CONVERT (iCounter, Integer) + 1;
+              PrepareInsert2 ();
+              Insert2 ('PLACEID', vPlaceId, 1);
+              Insert2 ('ID',              vID, 1);
+              Insert2 ('COUNTER',         iCounter, 1);
+              IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode'))) > 0,
+                Insert2 ('PAPERCODE', REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPERCODE'));
+              ); // IF
+              IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocNumber'))) > 0,
+                Insert2 ('PAPERNO',   XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocNumber')));
+              ); // IF
+              IF (LENGTH (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPERNAME')) > 0,
+                Insert2 ('PAPERNAME', COPY (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocCode')), 'PAPERNAME'), 1, 30));
+              ); // IF
+              IF (XMLNODEFIND (xInvDocs, 'whdi:InvDocDate'),
+                IF (LENGTH (XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocDate'))) > 0,
+                  Insert2 ('PAPERCLOSE', XMLNODEVALUE (XMLNODEFIND (xInvDocs, 'whdi:InvDocDate')), 2);
+                ); // IF
+              ); // IF
+              Insert2 ('', '', 0, 'KRD_DCD', 'STS_DB');
+            )
+          ); // IF
+
+          iInvDocsIndex := iInvDocsIndex + 1;
+        )
+      ); // WHILE
+    );
+    Block(
+      VAR ('G043Address', String);
+      VAR ('G043FIO', String);
+      VAR ('G043POS', String);
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonSurname'))), {do nothing},
+        G043FIO := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonSurname'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonName'))), {do nothing},
+        G043FIO := G043FIO + ' ' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonName'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonMiddleName'))), {do nothing},
+        G043FIO := G043FIO + ' ' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonMiddleName'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonPost'))), {do nothing},
+        G043POS := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:CarrierPerson'), 'cat_ru:PersonPost'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:PostalCode'))), {do nothing},
+        G043Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:PostalCode'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:City'))), {do nothing},
+        IF (EMPTY (G043Address),
+          G043Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:City'));
+          G043Address := G043Address + ',' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:City'));
+        );
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:StreetHouse'))), {do nothing},
+        IF (EMPTY (G043Address),
+          G043Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:StreetHouse'));
+          G043Address := G043Address + ',' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:StreetHouse'));
+        );
+      );
+      IF (EMPTY (G043Address), G043Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND  (xCarrier, 'catWH_ru:Address'), 'cat_ru:StreetHouse')));
+
+    );
+
+    Block(
+      VAR ('G083Address', String);
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:Region'))), {do nothing},
+        G083Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:Region'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:City'))), {do nothing},
+        IF (EMPTY (G083Address),
+          G083Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:City'));
+          G083Address := G083Address + ',' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:City'));
+        );
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:StreetHouse'))), {do nothing},
+        IF (EMPTY (G083Address),
+          G083Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:StreetHouse'));
+          G083Address := G083Address + ',' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:StreetHouse'));
+        );
+      );
+      IF (EMPTY (G083Address), G083Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'catWH_ru:AddressLine')));
+    );
+
+    Block(
+      VAR ('G023Address', String);
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:Region'))), {do nothing},
+        G023Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:Region'));
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:City'))), {do nothing},
+        IF (EMPTY (G023Address),
+          G023Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:City'));
+          G023Address := G023Address + ',' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:City'));
+        );
+      );
+      IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:StreetHouse'))), {do nothing},
+        IF (EMPTY (G023Address),
+          G023Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:StreetHouse'));
+          G023Address := G023Address + ',' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:StreetHouse'));
+        );
+      );
+      IF (EMPTY (G023Address), G023Address := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'catWH_ru:AddressLine')));
+    );
+
+    // обновляем в ДО-1 данные об отправителе и получателе
+    sSQL := 'UPDATE KRD_MAIN SET ' +
+            'G022='  +char(39)+ REMOVECHAR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:OrganizationName')), char(39)) +char(39)+
+            ',G023=' +char(39)+ REMOVECHAR (G023Address, char(39)) +char(39)+
+            ',G043=' +char(39)+ REMOVECHAR (G043Address, char(39)) +char(39)+
+            ',G040P=' +char(39)+ REMOVECHAR (G043POS, char(39)) +char(39)+
+            ',G040=' +char(39)+ REMOVECHAR (G043FIO, char(39)) +char(39)+
+            //',G15A=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignor'), 'catWH_ru:Address'), 'cat_ru:CountryCode')) +char(39)+
+            ',G082=' +char(39)+ REMOVECHAR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'cat_ru:OrganizationName')), char(39)) +char(39)+
+            ',G083=' +char(39)+ REMOVECHAR (G083Address, char(39)) +char(39)+
+            //',G17A=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xGoodsShipment, 'catWH_ru:Consignee'), 'catWH_ru:Address'), 'cat_ru:CountryCode')) +char(39)+
+            ' WHERE ' +
+            ' PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vMainID;
+
+    EXECUTESQL ('STS_DB', sSQL);
+
+    VAR ('iGoodsShipmentCount', Integer, XMLNODECHILDCOUNT (xGoodsShipment));
+    VAR ('iGoodsShipmentIndex', Integer, 1);
+    VAR ('xItem', Integer, 0);
+
+    iGoodIndex := 1;
+    //showmessage(1);
+    // цикл по элементам GoodsShipment
+    WHILE (iGoodsShipmentIndex < iGoodsShipmentCount,
+      Block(
+        xItem := XMLNODECHILD (xGoodsShipment, iGoodsShipmentIndex);
+        // если находим whdi:Goods, то добавляем товар
+        IF (XMLNODENAME (xItem) = 'whdi:Goods',
+          Block(
+            VAR ('vG32', String, '0');
+            VAR ('sG312', String, '');
+            // вычисляем G32 для добавления новой записи
+            sSQL := 'SELECT MAX (G32) AS G32 FROM KRD_COMM WHERE PLACEID=' + vPlaceId + ' AND ID=' + vID;
+            OPENQUERY ('qG32', 'STS_DB', sSQL);
+            vG32 := qG32.G32 + 1;
+            CLOSEDATASET ('qG32');
+
+            VAR ('iGoodsChildCount', Integer, XMLNODECHILDCOUNT (xItem));
+            VAR ('iGoodsChildIndex', Integer, 0);
+            WHILE (iGoodsChildIndex < iGoodsChildCount,
+              Block(
+                IF (XMLNODENAME (XMLNODECHILD (xItem, iGoodsChildIndex)) = 'catWH_ru:GoodsDescription',
+                  Block(
+                    sG312 := sG312 + REMOVECHAR (XMLNODEVALUE (XMLNODECHILD (xItem, iGoodsChildIndex)), char(39));
+                  )
+                ); // IF
+                iGoodsChildIndex := iGoodsChildIndex + 1;
+              )
+            ); // WHILE
+            // добавляем товар
+            PrepareInsert2 ();
+            Insert2 ('PLACEID', vPlaceId, 1);
+            Insert2 ('ID',              vID, 1);
+            Insert2 ('G32',             vG32, 1);
+            Insert2 ('GN',              iGoodIndex, 1);
+            Insert2 ('G312',            sG312);
+            Insert2 ('G311',            IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceNumber')))), XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceNumber')), '0'), 1);
+            Insert2 ('G35',             IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:GoodsQuantity')))) > 0, XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:GoodsQuantity')), '0'), 1);
+            Insert2 ('G42',             IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:InvoiceCost')))) > 0, XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:InvoiceCost')), '0'), 1);
+            IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:GoodsTNVEDCode'))), {do nothing},
+               Insert2 ('G33',             XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:GoodsTNVEDCode')));
+            ); // IF
+            Insert2 ('N_TTN',           iPaperIndex, 1);
+            Insert2 ('N_TTN_G32',       iGoodIndex, 1);
+            Insert2 ('ACCEPTDATE',      vBDDate, 2);
+            Insert2 ('STORAGE_DATE',    (vDeadline + 1), 2);
+            Insert2 ('STORAGE_TYPE',    'НОР', 0);
+            Insert2 ('LEG_PERIOD',      120, 1);
+            Insert2 ('STORE_PERIOD',    120, 1);
+            Insert2 ('BOXNO',           CUSTOMSNOPART (vNBD, 3, RIGHT (vNBD, 7))+ '/' + LEFTPAD(iGoodIndex, 6, '0'));
+            Insert2 ('VALCODE',         XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:CurrencyCode')));
+            Insert2 ('G42_CURRENCY',    CURRENCYCODE (XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:CurrencyCode'))));
+
+            IF (INIFILE ('WHDocInventory', 'IgnoreMeasureQuantity', 0) = 0,
+              Block(
+                IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:MeasureQuantity'), 'catWH_ru:MeasureUnitQualifierCode'))), {do nothing},
+                   Insert2 ('G41A',            XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:MeasureQuantity'), 'catWH_ru:MeasureUnitQualifierCode')));
+                ); // IF
+                IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:MeasureQuantity'), 'catWH_ru:MeasureUnitQualifierName'))), {do nothing},
+                   Insert2 ('G315',            XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:MeasureQuantity'), 'catWH_ru:MeasureUnitQualifierName')));
+                ); // IF
+                IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:MeasureQuantity'), 'catWH_ru:GoodsQuantity'))), {do nothing},
+                   Insert2 ('G315A',           XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:MeasureQuantity'), 'catWH_ru:GoodsQuantity')), 1);
+                ); // IF
+              )
+            ); // IF
+
+            IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:CargoPlace'), 'catWH_ru:PackageCode'))), {do nothing},
+               Insert2 ('G313_CODE',            XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:CargoPlace'), 'catWH_ru:PackageCode')));
+            ); // IF
+            IF (EMPTY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceDescription'))), {do nothing},
+                 Insert2 ('G313',       XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xItem, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceDescription')));
+            ); // IF
+            Insert2 ('WITHOUT_UNLOAD', INIFILE ('KRD_COMM', 'WITHOUT_UNLOAD', 2), 1);
+            Insert2 ('', '', 0, 'KRD_COMM', 'STS_DB');
+            //showmessage ('Insert2 KRD_COMM');
+            iGoodIndex := iGoodIndex + 1;
+
+          )
+        ); // IF
+        // если находим whdi:Containers, то добавляем контейнер
+        IF (XMLNODENAME (xItem) = 'whdi:Containers',
+          Block(
+            // вычисляем COUNTER для добавления транспортного документа
+            vCounter := GetNewCounter('KRD_CONT', vPlaceID, vID);
+
+            // добавляем контейнер
+            PrepareInsert2 ();
+            Insert2 ( 'PLACEID', vPlaceID, 1);
+            Insert2 ('ID',              vID, 1);
+            Insert2 ('COUNTER',         vCounter, 1);
+            Insert2 ('CONTNO',          XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:ContainerNumber')));
+            Insert2 ('N_TTN',           '1', 1);
+            Insert2 ('G35',             IF (LENGTH (TRIM (XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:GrossWeightQuantity')))) > 0, XMLNODEVALUE (XMLNODEFIND (xItem, 'catWH_ru:GrossWeightQuantity')), '0'), 1);
+            Insert2 ('N_CONT',          vCounter, 1);
+            Insert2 ('', '', 0,'KRD_CONT', 'STS_DB');
+            //showmessage ('Insert2 KRD_CONT');
+          )
+        ); // IF
+        iGoodsShipmentIndex := iGoodsShipmentIndex + 1;
+      )
+    ); // WHILE
+
+    WriteEpsLog (vPlaceId,
+                vId,
+                0,
+                DocId,
+                'ДО-1',
+                vNBD,
+                vBDDate,
+                'ДО-1 создана автоматически',
+                Date() + Time(1),
+                '',
+                'Номер описи= ' + DoNo,
+                '',
+                '1',
+                Date() + Time(1),
+                2
+    ); // WriteEpsLog
+
+  )
+), // FUNC - CreateDo1()
+
+
+  // работаем только если найден раздел GoodsShipment
+  IF (XMLNODEFIND (xInventory, 'whdi:GoodsShipment'),
+    Block(
+      VAR ('xSender',           Integer, XMLNODEFIND (xInventory, 'whdi:Sender')); // отправитель
+      VAR ('xReceiver',         Integer, XMLNODEFIND (xInventory, 'whdi:Receiver')); // получатель
+      VAR ('xRegNumberDoc',     Integer, XMLNODEFIND (xInventory, 'whdi:RegNumberDoc')); // регистрационный номер
+      VAR ('xCarrier',          Integer, XMLNODEFIND (xInventory, 'whdi:Carrier'));  // перевозчик
+      VAR ('xWarehouseLicense', Integer, XMLNODEFIND (xInventory, 'whdi:WarehouseLicense')); // свидетельство СВХ
+      VAR ('xTransports',       Integer, XMLNODEFIND (xInventory, 'whdi:Transports')); // транспортные средства
+      VAR ('xGoodsShipment',    Integer, 0);
+
+      IF (xRegNumberDoc,
+        Block(
+          DoNo := xRegNumberDoc.CustomsCode + '/' + FDT ('DDMMYY', STRTODATE (xRegNumberDoc.RegistrationDate, 'YYYY-MM-DD', '-')) + '/' + xRegNumberDoc.GTDNumber;
+        )
+      ); // IF - //
+
+      // получаем PLACEID по номеру и дате свидетельства в описи
+      GetWhInfo ();
+
+      IF (vPlaceId <> '0',
+        Block(
+          // цикл по дочерним элементам описи
+          VAR ('iChildCount', Integer, XMLNODECHILDCOUNT (xInventory));
+          VAR ('iIndex', Integer, 1);
+          WHILE (iIndex < iChildCount,
+            Block(
+              xGoodsShipment := XMLNODECHILD (xInventory, iIndex);
+
+              // составляем список дескриптеров документов описи
+              IF (XMLNODENAME (xGoodsShipment) = 'whdi:InventDocument',
+                Block(
+                  IF (TRIM (LENGTH (lstInvDocs)) = 0,
+                     lstInvDocs := xGoodsShipment,
+                     lstInvDocs := lstInvDocs + '|' + xGoodsShipment
+                  ); // IF
+                )
+              ); // IF
+
+              // составляем список дескрипторов транспортных документов
+              IF (XMLNODENAME (xGoodsShipment) = 'whdi:Transports',
+                Block(
+                  IF (TRIM (LENGTH (lstTransports)) = 0,
+                    lstTransports := xGoodsShipment,
+                    lstTransports := lstTransports + '|' + xGoodsShipment
+                  ); // IF
+                )
+              ); // IF
+
+              // каждый раз вставая на whdi:GoodsShipment - создаём ДО-1
+              IF (XMLNODENAME (xGoodsShipment) = 'whdi:GoodsShipment',
+                Block(
+                  CreateDo1 ();
+                  iDo1Count := iDo1Count + 1;
+                )
+              );
+              iIndex := iIndex + 1;
+            )
+          ); // WHILE
+
+          // дописываем номера созданных ДО-1 в комментарий Лога ЭПС
+          strStatus := 'Автоматически создано ДО-1: ' + iDo1Count + ' шт.';
+          sSubStatus := '№№ (' + sDo1List + ')';
+        ),
+        Block(
+          VAR ('sSvhLicenceDate', String, '');
+          IF (XMLNODEFIND (xWarehouseLicense, 'catWH_ru:CertificateDate'),
+            sSvhLicenceDate := ' от ' + FDT ('DD.MM.YYYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (xWarehouseLicense, 'catWH_ru:CertificateDate')), 'YYYY-MM-DD', '-'))
+          ); // IF
+          RAISEEXCEPTION (
+            'В базе программы не найдена лицензия СВХ № ' + XMLNODEVALUE (XMLNODEFIND (xWarehouseLicense, 'catWH_ru:CertificateNumber')) +
+            sSvhLicenceDate +char(13)+
+            'Вероятно опсись документов рег. № ' + DoNo + ' предназначена для другого места хранения.'
+          );
+        )
+      ); // IF
+
+    )
+  ); // IF
+
+REFRESH ('KRD_MAIN');

@@ -1,0 +1,90 @@
+// *****************************************************************************
+// Название: Импорт сообщений из АСТО
+// Описание: Импорт сообщений из АСТО
+// Кнопка вызова: 1
+// Подпись кнопки: Импорт сообщений из АСТО
+// *****************************************************************************
+//
+
+// настройка на каталог обмена
+VAR ('sDir', String, INIFILE ('STS-MED', 'iout', ''));
+IF ((sDir = '')| (SHIFTPRESSED() = 1), IF (SELECTDIRECTORY ('sDir') = 0, RAISEEXCEPTION ('Отменено пользователем')));
+
+// лог-файл
+VAR ('sLogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\LOGS\ioutReading.log');
+CREATELOGFILE (sLogFile, 0);
+
+VAR ('sFileList', String, GETFILELIST (sDir, '*.xml', '|'));
+VAR ('sTmp', String, '');
+VAR ('iFileCount', Integer, SPLITSTR (sFileList, '|', sTmp));
+
+APPENDLOGFILE (sLogFile, 'СПИСОК ФАЙЛОВ В КАТАЛОГЕ:', sFileList, 'КОЛИЧЕСТВО ФАЙЛОВ:', iFileCount);
+IF (iFileCount = 0, RAISEEXCEPTION ('В каталоге не найдено xml-файлов'));
+
+VAR ('i', Integer, 1);
+VAR ('sFileName', String, '');
+WHILE (i <= iFileCount,
+  Block(
+    sFileName := INCLUDETRAILINGBACKSLASH (sDir) + EXTRACTSTR (sFileList, i, '|');
+//    APPENDLOGFILE (sLogFile, 'ЗАГРУЗКА ФАЙЛА:', sFileName);
+
+    VAR ('XmlFile', Integer, XMLDOCUMENTCREATE());
+    XMLDOCUMENTLOAD (XmlFile, sFileName);
+    VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+
+    VAR ('XmlMainNode', String, XMLNODENAME (XMLNODECHILD (XmlRoot, 0)));
+    APPENDLOGFILE (sLogFile, 'КОРНЕВАЯ ВЕТКА ФАЙЛА:', XMLNODENAME (XMLNODECHILD (XmlRoot, 0)));
+    
+    CASE (XmlMainNode, ['dori:DO1Reg',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DORegInfo_album.prd');
+                           ),
+                        'DO1Reg',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DO1RegInfo_album.prd');
+                           ),
+                        'DO2Reg',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DO2RegInfo_album.prd');
+                           ),
+                        'DO2Reg',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DO2RegInfo_album.prd');
+                           ),
+                        'DO3Reg',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DO3RegInfo_album.prd');
+                           ),
+                        'whgd:WHGoodsDeadline',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\WHGoodsDeadline_album.prd');
+                           ),
+                        'WHGoodsDeadline',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\WHGoodsDeadline_album.prd');
+                           ),
+                        'ResWHGoodsProlong',
+                          Block(
+                            EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\WHGoodsProlong_album.prd');
+                          ),
+                        'do3re:DO3Request',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DO3Request_album.prd');
+                           ),
+                        'DO3Request',
+                           Block(
+                             EXECUTESCRIPT (PROGRAMPATH() + 'DATA\IMPEX\SCRIPTS\ED\DO3Request_album.prd');
+                           ),
+                       ],
+
+    );
+
+    //DELETEFILE (sFile);
+    i := i + 1;
+  )
+);
+
+
+WRITEINIFILE ('STS-MED', 'iout', sDir);
+//SHOWLOGFILE (sLogFile, 'Результат импорта сообщений из АСТО');
+SHOWMESSAGE ('Выполнение завершено.');

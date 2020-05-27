@@ -1,0 +1,44 @@
+// *****************************************************************************
+// Название: Список ДО2
+// Описание: Список ДО2
+// Кнопка вызова: 0
+// Подпись кнопки: Список ДО2
+// Вызов по событию: 
+// *****************************************************************************
+//
+SETFILTER('KRD_MAIN', '');
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\DO2_List.cfm');
+FORMSETPROPERTY(frmDialog, 'dtFrom.Text', FORMATDATETIME('DD.MM.YYYY 00:00:00',NOW()));
+FORMSETPROPERTY(frmDialog, 'dtTo.Text', FORMATDATETIME('DD.MM.YYYY 23:59:59',NOW()));
+IF(FORMSHOWMODAL(frmDialog)=1,
+   BLOCK(
+     VAR('dtFrom', string, FORMGETPROPERTY(frmDialog, 'dtFrom.Text'));
+     VAR('dtTo', string, FORMGETPROPERTY(frmDialog, 'dtTo.Text'));
+     OPENQUERY('DO2', 'STS_DB', 'SELECT DISTINCT MAIN_ID,  RELEASE_NO, OUT_DOC_DATE FROM RELEASE R '+
+                                ' WHERE  OUT_DATE >=' + char(39) + dtFrom + char(39)+
+                                ' AND OUT_DATE <=' + char(39) + dtTo + char(39)
+                                );
+     IF(SELECTRECORDS('Выбранные ДО', 'DO2',
+                     [['RELEASE_NO', 'Номер ДО2', 10],
+                      ['OUT_DOC_DATE', 'Дата ДО2', 10]],
+                      'SELECTED_DO2', '', 'STS_DB'),
+                      BLOCK(
+                         VAR('sFilterText', memo,'');
+                         FIRST('SELECTED_DO2');
+                         VAR('sMAINID', string, UNIONVALUES('SELECTED_DO2', ['MAIN_ID'], ', ',''));
+                         OPENQUERY('GET_DO2', 'STS_DB', 'SELECT DISTINCT ID FROM RELEASE WHERE MAIN_ID IN(' + sMAINID+')');
+                         FIRST('GET_DO2');
+                         WHILE(EOF('GET_DO2')=0,
+                               BLOCK(
+                                 IF(sFilterText='', sFilterText :='ID='+GET_DO2.ID, sFilterText :=sFilterText + ' OR ID = ' + GET_DO2.ID);
+                                 NEXT('GET_DO2');
+                               )
+                         );
+                         SETFILTER('KRD_MAIN', sFilterText);
+                      ),
+                      RAISEEXCEPTION ('ДО2 не выбранны, выполнение прекращено')
+
+     );
+   )
+);
+

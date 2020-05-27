@@ -1,0 +1,138 @@
+// *****************************************************************************
+// Название: Загрузка требований ДО3
+// Описание: Загрузка требований
+// Кнопка вызова: 0
+// Подпись кнопки: Подгрузка ДО3
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sIOutDirectory', string, PROGRAMPATH () + 'STS-MED\iout\'+ USERINFO('', 'UserUuid'));
+sIOutDirectory := INCLUDETRAILINGBACKSLASH (sIOutDirectory);
+IF (DIRECTORYEXISTS (sIOutDirectory) = 0,
+   Block(
+        FORCEDIRECTORIES (sIOutDirectory);
+   ),
+); // IF - //
+
+
+
+VAR ('sSQL', string, '');
+VAR ('sResultMessage', String, '');
+
+VAR ('dDateFrom', datetime, DATE()-7);
+VAR ('dDateTo', datetime, NOW());
+IF( INPUTDATERANGE ('dDateFrom', 'dDateTo', 'Укажите период отбора')=0,RAISEEXCEPTION ('Отменено пользователем'));
+
+VAR ('iFromDate', float, convert(dDateFrom, float));
+VAR ('iToDate', float, convert(dDateTo, float));
+
+
+
+TRYEXCEPT (
+  BLOCK(
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\open_monitor_db.prd');
+
+    //Наш формат даты отличается от MS SQL на 2 единицы. Т.е. у них 0='01.01.1990' а у нас 0='30.12.1899' . В Access 0= '30.12.1899'
+    VAR ('iDTPopravka', integer, 0);
+    IF (GetDatabaseType ('dbMonitor')='MSSQL', iDTPopravka:=-2);
+
+    sSQL := 'SELECT * FROM [ED_ProcMessages] E WHERE  E.[ProcessedAt]>='+(iFromDate+iDTPopravka)+ ' AND E.[ProcessedAt]<='+(iToDate+iDTPopravka)+'  AND E.[MsgID]=' +char(39)+ 'CMN.13013' +char(39)+ ' ORDER BY E.[ProcessedAt]';
+    OPENQUERY ('qPM', sSQL, 'dbMonitor');
+  ),,
+  BLOCK(
+    CLOSEDATABASE('dbMonitor');
+    RAISEEXCEPTION ('Не удалось подключиться к БД Монитор ЭД. Ошибка: ' + EXCEPTIONMESSAGE());
+  )
+);
+
+TRYEXCEPT(
+  BLOCK(
+    SHOWINFORMATION ('Выполняется поиск требований ДО3, подождите..');
+    VAR ('iCounter', integer, 0);
+    IF (FIELDISNULL ('qPM', 'ID')=0,
+      WHILE(EOF('qPM')=0,
+        Block(
+          // подключаем функцию GetBackupFile
+          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd'); 
+          VAR ('sBackupFile', string, GetBackupFile (qPM.BackupFile, qPM.INCOMING));
+          VAR ('sFileName', string, ExtractFileName (sBackupFile));
+
+          IF (FILEEXISTS(sBackupFile),
+            Block(
+              VAR ('XmlDoc', Integer);
+              VAR ('XmlObject', Integer);
+              VAR ('XmlBody', Integer);
+              VAR ('sTempFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + sFileName);
+              CopyFile (sBackupFile, sTempFile);
+              XMLDoc := XMLDOCUMENTCREATE();
+              XMLDOCUMENTLOAD (XMLDoc, sTempFile);
+              XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+              XmlBody := XMLNODECHILD (XmlObject, 0);
+              XMLNODESETATTRIBUTE (XmlBody, 'dodt', FormatDateTime('DD.MM.YYYY HH:MM:SS', Date () + Time (1)));
+              XMLNODESAVE (XMLBody, sIOutDirectory + sFileName);
+              NEXT ('qPM');
+              iCounter := iCounter + 1;
+            ),
+            Block(
+              // не нужно информировать об этом
+              //showmessage ('Отсутствует файл резервной копии.' + sBackupFile);
+            )
+          ); // IF - //
+        )
+      ),
+      BLOCK(
+        sResultMessage := 'Не найдены требования ДО3 за указанный период';
+      )
+    );
+    HIDEINFORMATION ();
+{
+    IF (LENGTH (sResultMessage) = 0,
+      sResultMessage := 'Загрузка закончена. Обработано ' + iCounter + ' требование(й) ДО3'
+    ); // IF - //
+}
+  ),,
+  BLOCK(
+    HIDEINFORMATION ();
+    CLOSEDATASET('qPM');
+    CLOSEDATABASE('dbMonitor');
+    RAISEEXCEPTION ('Ошибка выгрузки: ' + EXCEPTIONMESSAGE());
+  )
+);
+
+CLOSEDATASET('qPM');
+CLOSEDATABASE('dbMonitor');
+
+TRYFINALLY (
+  Block(
+    GLOBALVAR('iShowProgressBar', Integer, 1);
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'data\impex\scripts\eps.imp');
+  ),
+  Block(
+    iShowProgressBar := 0;
+    REFRESH ('JRDO3');
+  )
+); // TRYFINALLY - //
+
+IF (LENGTH (sResultMessage) <> 0, showmessage (sResultMessage));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

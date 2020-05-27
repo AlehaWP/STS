@@ -1,0 +1,220 @@
+// *****************************************************************************
+// Название: sql_insert
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: sql_insert
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+{
+Подключение скрипта:
+  EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sql_insert.prd');
+
+Пример вызова:
+  Insert ('KRD_COMM', 'PLACEID', 1, 1);  // Начинает формировать новый SQL-запрос
+  Insert ('', 'ID', 700800900, 1); // Т.к. первый параметр пустой - продолжаем начатый ранее запрос
+  Insert ('', 'G32', 1, 1); // Последний параметр - тип данных (0 - Строка, 1 - Число, 2 - Дата)
+  Insert ('', 'G082', 'Описание товара', 0);
+  Insert ('', 'ACCEPTDATE', '2014-01-03 16:01:53', 2);
+  Insert ('', '', '', 0); // Завершает SQL-запрос и выполняет его
+}
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sqldate.prd');
+
+VAR ('sInsertA', String, '');
+VAR ('sInsertB', String, '');
+VAR ('sInsertStr', String, '');
+VAR ('sTableName', String, '');
+VAR ('sUpdateStr', String, '');
+VAR ('sUpdateFields', String, '');
+
+
+FUNC ('SQLStr',
+  Block(
+    PARAM ('pText', Memo, 0);
+  ),
+  Block(
+    REGEXREPLACE (pText, '([' +char(39)+ ']|[\000-\014]|[\016-\031])', '', 4)
+  )
+), // FUNC - SQLStr
+
+
+FUNC ('EscapeQuote',
+  Block (
+    PARAM ('pText', String, 0);
+  ),
+  Block (
+    //! пока экранируем только одинарные кавычки
+    //!REPLACESTR (REPLACESTR (pText, char (39), char (39) + char (39)), char (34), char (34) + char (34));
+    REPLACESTR (pText, char (39), char (39) + char (39));
+  )
+), // FUNC - EscapeQuote
+
+
+FUNC ('Insert',
+  Block(
+    PARAM ('pTableName', String, 0);
+    PARAM ('pFieldName', String, 1);
+    PARAM ('pFieldValue', String, 2);
+    PARAM ('pFieldType', Integer, 3); // 0 - String, 1 - Integer\Float, 2 - DateTime
+    PARAM ('pDatabaseName', String, 4, 'dbJournals');
+  ),
+  Block(
+    //pFieldValue := SQLStr(pFieldValue);
+    pFieldValue := EscapeQuote (pFieldValue);
+    // Если получили имя таблицы - начинаем новый INSERT-запрос
+    IF ((LENGTH (TRIM (pTableName)) > 0) * (LENGTH (TRIM (pFieldName)) > 0) * (LENGTH (TRIM (pFieldValue)) > 0),
+      Block(
+        sInsertA := 'INSERT INTO ' + pTableName + ' (' + pFieldName;
+        sInsertB := 'VALUES (' + pFieldValue;
+      ),
+      IF ((LENGTH (TRIM (pFieldName)) > 0) * (LENGTH (TRIM (pFieldValue)) > 0),
+        Block(
+          CASE (pFieldType,
+               [1, pFieldValue := char(39) + pFieldValue +char(39),
+                2, pFieldValue := SQLDate (pFieldValue, GetBaseDriver (0))
+               ],
+          );
+          sInsertA := sInsertA + ',' + pFieldName;
+          sInsertB := sInsertB + ',' + IF (pFieldType = 0, char (39) + pFieldValue + char (39), pFieldValue);
+        )
+      ); // IF
+    ); // IF
+
+    IF ((LENGTH (TRIM (pTableName)) = 0) * (LENGTH (TRIM (pFieldName)) = 0) * (LENGTH (TRIM (pFieldValue)) = 0),
+      Block(
+        sInsertA := sInsertA + ') ';
+        sInsertB := sInsertB + ')';
+        sInsertStr := sInsertA + sInsertB;
+        IF (LENGTH (TRIM (sInsertStr)) > 0,
+          Block(
+            DEBUGMESSAGE (sInsertStr, 1);
+            EXECUTESQL (pDatabaseName, sInsertStr);
+            sInsertA := '';
+            sInsertB := '';
+            sInsertStr := '';
+          )
+        );
+      )
+    ); // IF
+
+  )
+), // FUNC - Insert
+
+
+FUNC ('PrepareInsert2', '',
+  Block(
+    sInsertA := '';
+    sInsertB := '';
+    sInsertStr := '';
+  )
+);
+
+
+FUNC ('Insert2',
+  Block(
+    PARAM ('pFieldName',    String,  0);
+    PARAM ('pFieldValue',   String,  1, 'NULL');
+    PARAM ('pFieldType',    Integer, 2, 0); // 0 - String, 1 - Integer\Float, 2 - DateTime
+    PARAM ('pTableName',    String,  3, '');
+    PARAM ('pDatabaseName', String,  4, 'dbJournals');
+  ),
+  Block(
+    //pFieldValue := SQLStr (pFieldValue);
+    pFieldValue := EscapeQuote (pFieldValue);
+    IF ((LENGTH (TRIM (sInsertA)) = 0) * (LENGTH (TRIM (sInsertB)) = 0),
+      Block(
+        sInsertA := ' (' + pFieldName;
+        sInsertB := 'VALUES (' + CASE (pFieldType, [0, char(39)+pFieldValue+char(39), 2,SQLDate (pFieldValue, GETBASEDRIVER(0))],pFieldValue);
+      ),
+      IF ((LENGTH (TRIM (pFieldName)) > 0) * (LENGTH (TRIM (pFieldValue)) > 0)*(UPPERSTR (pFieldValue) <> 'NULL'),
+        Block(
+          CASE (pFieldType,
+               [0, pFieldValue := char(39) + pFieldValue +char(39),
+                2, pFieldValue := SQLDate (pFieldValue, GetBaseDriver (0))
+               ],
+          );
+          sInsertA := sInsertA + ',' + pFieldName;
+          sInsertB := sInsertB + ',' + pFieldValue;
+        )
+      ); // IF
+    ); // IF
+
+    IF ((LENGTH (TRIM (pFieldName)) = 0) * (LENGTH (TRIM (pFieldValue)) = 0) * (LENGTH (TRIM (pTableName)) > 0),
+      Block(
+        sInsertA := sInsertA + ') ';
+        sInsertB := sInsertB + ')';
+        //sInsertStr := 'INSERT INTO ' + CORRECTTABLENAME (CONVERT (pTableName, String)) + sInsertA + sInsertB;
+        sInsertStr := 'INSERT INTO ' + CONVERT (pTableName, String) + sInsertA + sInsertB;
+        IF (LENGTH (TRIM (sInsertStr)) > 0,
+          Block(
+            DEBUGMESSAGE (pDatabaseName + ': ' + sInsertStr, 1);
+            TRYFINALLY (
+              Block(
+                EXECUTESQL (pDatabaseName, sInsertStr);
+              ),
+              Block(
+                sInsertA := '';
+                sInsertB := '';
+                sInsertStr := '';
+              )
+            ); // TRYFINALLY
+          )
+        );
+      )
+    ); // IF
+
+  )
+), // FUNC - Insert2
+
+//Условие для выполнения должно быть обязательно, дабы не фиг всю таблицу апдейтить
+{
+Пример вызова:
+  UPDATE ('DOC_NO', '1');  // Добавляем поле со значением (обязательно стринг) в SQL-запрос
+  UPDATE ('ID', 700800900, 1); // Добавляем поле int со значением в SQL-запрос. Последний параметр тип данных
+  UPDATE ('G082', 'Описание товара', 0); // Добавляем поле str со значением в SQL-запрос. Последний параметр тип данных
+  UPDATE ('ACCEPTDATE', '2014-01-03 16:01:53', 2); // Добавляем поле datetime со значением в SQL-запрос. Последний параметр тип данных
+  IUPDATE ('', '', 0, 'KRD_MAIN', 'ID=1', 'STS_DB'); // Завершает SQL-запрос и выполняет его. Условие обязательно!!! Если условия нет можно написать 1=1
+}
+FUNC ('UPDATE',
+  Block(
+    PARAM ('pFieldName',    String,  0);
+    PARAM ('pFieldValue',   String,  1, '');
+    PARAM ('pFieldType',    Integer, 2, 0); // 0 - String, 1 - Integer\Float, 2 - DateTime, 3 - NULL
+    PARAM ('pTableName',    String,  3, '');
+    PARAM ('pFilter',    String,  4, '');
+    PARAM ('pDatabaseName', String,  5, 'dbJournals');
+  ),
+  Block(
+
+      IF ((LENGTH (TRIM (pFieldName)) > 0) * (LENGTH (TRIM (pFieldValue)) > 0),
+        Block(
+          IF (pFieldValue = 'NULL', pFieldType := 3);
+          CASE (pFieldType,
+               [0, pFieldValue := char(39) + EscapeQuote(pFieldValue) +char(39),
+                2, pFieldValue := SQLDate (pFieldValue, GetBaseDriver (0))
+               ],
+          );
+          if (LENGTH(TRIM(sUpdateFields)) > 0, sUpdateFields := sUpdateFields + ',');
+      sUpdateFields := sUpdateFields + pFieldName + '=' + pFieldValue;
+        )
+      ); // IF
+
+    IF ((LENGTH (TRIM (sUpdateFields)) > 0) *(LENGTH (TRIM (pTableName)) > 0) * (LENGTH (TRIM (pFilter)) > 0),
+      Block(
+        sUpdateStr := 'UPDATE ' + CONVERT (pTableName, String) + ' SET ' + sUpdateFields + ' WHERE ' + pFilter;
+        IF (LENGTH (TRIM (sUpdateStr)) > 0,
+          Block(
+            DEBUGMESSAGE (pDatabaseName + ': ' + sUpdateStr, 1);
+            EXECUTESQL (pDatabaseName, sUpdateStr);
+            sUpdateFields := '';
+            sUpdateStr := '';
+          )
+        );
+      )
+    ); // IF
+
+  )
+), // FUNC - UPDATE

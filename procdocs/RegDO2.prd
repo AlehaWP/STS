@@ -1,0 +1,19 @@
+// *****************************************************************************
+// Название: Рег. ДО2
+// Описание: Рег. ДО2
+// Кнопка вызова: 0
+// Подпись кнопки: Рег. ДО2
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('sDO2', string, INPUTTEXT ('Ввод параметров', 'Введите № ДО2'));
+VAR('sFIO', string, INPUTTEXT ('Ввод параметров', 'Введите ФИО инспектора'));
+VAR('sLNP', string, INPUTTEXT ('Ввод параметров', 'Введите ЛНП инспектора'));
+VAR('sRegNo', string, INPUTTEXT ('Ввод параметров', 'Введите регистрационный номер отчета'));
+
+EXECUTESQL('STS_DB', 'UPDATE RELEASE SET MC_STATUS="3", REG_RELEASE_NO='+char(39)+sRegNo+char(39)+
+                                                        ', GD2='+char(39)+sLNP+char(39)+
+                                                        ', FIO_INSPECTOR='+char(39)+sFIO+char(39)+
+                                                        ' WHERE ID='+KRD_MAIN.ID +
+                                                        ' AND ' + IF(sDO2 <> '', 'RELEASE_NO='+char(39)+sDO2+char(39),'  MC_STATUS='+char(39)+'И'+char(39)) );
+                                                        //' AND RELEASE_NO ='+char(39)+IF(sDO2 <> '', sDO2, REL_MAIN.RELEASE_NO)+char(39));

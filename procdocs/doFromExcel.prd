@@ -1,0 +1,175 @@
+// *****************************************************************************
+// Название: Создание ДО1 из Excel
+// Описание: Создание ДО1 из Excel
+// Кнопка вызова: 0
+// Подпись кнопки: Создание ДО1 из Excel
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+
+
+
+
+
+
+//---------------------------------------------Начало скрипта----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+VAR('vPlaceid', integer, KRD_MAIN.PLACEID);
+VAR('sFileName', String);
+VAR('vID', integer);
+VAR('sNBD', string);
+VAR('sSHOWNBD', string);
+Var('procPath', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'PROCDOCS\');
+EXECUTESCRIPT(procPath+'date.prd'); // функции работы с датами
+
+IF (SelectFile('sFileName', 'Выбор файла', 'XLS-файлы (*.xls)|*.xls'),
+    BLOCK(
+      LOCATE('STORES_2', 'PLACEID', vPLACEID);
+      VAR('vG144', string, STORES_2.LICENCENO);
+      VAR('vG142', string, STORES_2.NAME);
+      VAR('vG143', string, STORES_2.ADDRESS);
+      VAR('dG145', DateTime, STORES_2.LICENCEDATE);
+      VAR('vPlaceid', integer, STORES_2.PLACEID);
+      VAR('dtDate', datetime, NOW());
+      VAR ('dtStoreDate', DateTime);
+      VAR ('vStorePeriod', Integer, 1);
+
+      dtStoreDate := AddMonths(dtDate + 1, 60 / 30);
+      vStorePeriod := dtStoreDate - dtDate + 1;
+
+      OPENDATABASE ('DOLIST_DB', 'Microsoft Excel Driver (*.xls)', 'ODBC DSN=Excel');
+      OPENTABLE ('DOLIST', sFileName + '`.`BOSS$','', 'DOLIST_DB');
+      FIRST('DOLIST');
+      //OPENQUERY('GETID', 'STS_DB', 'SELECT MAX(ID) as ID FROM KRD_MAIN where placeid='+vPlaceid);
+      //vID:=GETID.ID;
+     // CLOSEDATASET('GETID');
+      WHILE(DOLIST.0<>'',
+            BLOCK(
+              sNBD := SOLVE (INIFILE('Docs','MakeBD_No',''));
+             // sSHOWNBD := FormatDateTime('YYYYMMDD', DATE()) + LEFTPAD(RIGHT(sNBD, 5), 5, '0');
+              vID := vID + 1;
+              APPENDRECORD('KRD_MAIN');
+              EDIT('KRD_MAIN');
+              SETFIELDVALUE('KRD_MAIN',
+                            //'PLACEID', vPlaceId,
+                            //'ID', vId,
+                            //'Main_Id', vID,
+                            'NBD', sNBD,
+                            //'SHOW_NBD', sSHOWNBD,
+                            'PART_NO',   1,
+                            'PART_MODE', 0,
+                            'G011', 'ИМ',
+                            'G012', '40',
+                            'G19', 1,
+                            'G210', 1,
+                            //'SENDER', iSender,
+                            //'RECEIVER', iReceiver,
+                            'G042', 'Перевозчик',
+                            'G043', '',
+                            'G044C', '',
+                            'G04_KPP', '',
+                            'G04_OGRN', '',
+                            'G04_COUNTRY', '',
+                            //'STORE_CONTRACT_NO', 'DO1.С_DOG',
+                            //'STORE_CONTRACT_DATE', 'DO1.C_DOGDATE',
+                            'G040', '',
+                            'AUTHOR', '',
+                            'AUTHOR_POST', '',
+                            'G06', '',
+                            'G022', DOLIST.3,
+                            'G023', '',
+                            'G15A', '',
+                            'G082', DOLIST.4,
+                            'G083', 'Адрес',
+                            'G084C', '',
+                            'G08_KPP', '',
+                            'G08_OGRN', '',
+                            'A_MODE',    '7',
+                            'SHIP_NAME', '',
+                            'BEG_KEEP', dtDate + 1,
+                            'BD_DATE', dtDate,
+                            'G142',vG142,
+                            'G143',vG143,
+                            'G144',vG144,
+                            'G1440', '2',
+                            'G145',dG145,
+                            'G261', '40',
+                            'WITH_PLACE', 1,
+                            'Z_MODE', 3,
+                            'NOTICE_RW_ONLY', 0
+              );
+              POST('KRD_MAIN');
+              
+              APPENDRECORD ('KRD_PAPERS_2');
+              EDIT ('KRD_PAPERS_2');
+              SETFIELDVALUE ('KRD_PAPERS_2',
+                             'PLACEID', KRD_MAIN.PLACEID,
+                             'ID',      KRD_MAIN.ID,
+                             'COUNTER', '1',
+                             'PAPERNAME', '',
+                             'PAPERNO',   '',
+                             'PAPERCODE', ''
+              );
+              POST ('KRD_PAPERS_2');
+              
+              APPENDRECORD('KRD_COMM');
+              EDIT('KRD_COMM');
+              SETFIELDVALUE ('KRD_COMM',
+              //               'PLACEID', vPlaceID,
+                //             'ID', vID,
+                  //           'G32', 1,
+                             'GN', 1,
+                             'G33', DOLIST.10,
+                             'G312', DOLIST.9,
+                             'G311', DOLIST.5,
+                             'G35', DOLIST.6,
+                             //'G315C', IF((DO1GOOD.G35CODE <> '166') & (DO1GOOD.G35CODE <> ''), DO1GOOD.G35),
+                             //'G41A', DO1GOOD.G41A,
+                             //'G315A', DO1GOOD.G31_7,
+                             'G42', FLOATROUND (DOLIST.7,2),
+                             'VALCODE', ,
+                             'ACCEPTDATE', dtDate,
+                             'STORAGE_TYPE', 'НОР',
+                             'LEG_PERIOD', '15',
+                             'STORE_PERIOD', vStorePeriod,
+                             'STORAGE_DATE', dtStoreDate,
+                            // 'N_CONT', iContN + 1,
+                             'N_TTN', 1,
+                             'N_TTN_G32', 1,
+                             'G313', 'Контейнер',   //IF(iFindCont,'Контейнер', 'Часть контейнера'),
+                             'BOXNO', sNBD + '/1',
+                             //'CONTNO',  sContNo
+              );
+              POST('KRD_COMM');
+
+              APPENDRECORD ('KRD_COMM_PAPERS_2');
+              EDIT ('KRD_COMM_PAPERS_2');
+              SETFIELDVALUE ('KRD_COMM_PAPERS_2',
+                             'PLACEID', KRD_MAIN.PlaceID,
+                             'ID', KRD_MAIN.ID,
+                             'G32', 1,
+                             'DOC_TYPE',    '13',
+                             'DOC_COUNTER', 1
+              );
+              POST ('KRD_COMM_PAPERS_2');
+              
+              APPENDRECORD ('KRD_TRANSP_2');
+              EDIT ('KRD_TRANSP_2');
+              SETFIELDVALUE ('KRD_TRANSP_2',
+                             'PLACEID',     KRD_MAIN.PlaceID,
+                             'ID',          KRD_MAIN.ID,
+                             'COUNTER',     '1',
+                             'TRANSP_CODE', '',
+                             'CARNO',       '',
+                             'NTRAILER',    ''
+              );
+              POST ('KRD_TRANSP_2');
+
+                  
+              NEXT('DOLIST');
+            )
+      );
+    ),
+    RAISEEXCEPTION ('Файл не выбран, выполнение прекращено')
+);

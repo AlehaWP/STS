@@ -1,0 +1,65 @@
+// *****************************************************************************
+// Название: WHGoodsDeadline
+// Описание: WHGoodsDeadline
+// Кнопка вызова: 1
+// Подпись кнопки: WHGoodsDeadline
+// *****************************************************************************
+//
+
+VAR ('XmlDoc', Integer, XMLNODECHILD (XmlRoot, 0));
+
+IF (XMLNODENAME (XMLNODECHILD (XmlRoot, 0)) = 'WHGoodsDeadline',
+  Block(
+    CASE (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'WHSign')),
+         [1, Block(
+               // уведомление об истечении сроков временного хранения товаров
+               APPENDLOGFILE (sLogFile, 'ПОЛУЧЕНО УВЕДОМЛЕНИЕ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+               VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+               VAR ('vID', String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+               APPENDLOGFILE (sLogFile, 'PLACEID = ' + vPlaceID + ', ID = ' + vID);
+
+               IF ((vPlaceID <> '') * (vID <> ''),
+                 Block(
+                   OPENQUERY ('qryDO1', 'STS_DB', 'SELECT NBD FROM KRD_MAIN WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                   IF (RECORDCOUNT ('qryDO1') > 0,
+                     Block(
+                       FORMCREATE (frmWHGD, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\GoodsDeadline.cfm');
+
+                       FORMSETPROPERTY (frmWHGD, 'Caption', 'Уведомление № ' +XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'DocumentNumber'))+ ' от ' +FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'DocumentDate')))+ ' об истечении сроков временного хранения товаров');
+                       FORMSETPROPERTY (frmWHGD, 'rtDO1.Text', qryDO1.NBD);
+                       FORMSETPROPERTY (frmWHGD, 'rtPlacementDate.Text', FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'PlacementDate'))));
+                       FORMSETPROPERTY (frmWHGD, 'rtEndDate.Text',       FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'EndDate'))));
+                       FORMSETPROPERTY (frmWHGD, 'rtCode.Text',          XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'Customs'), 'cat_ru:Code')));
+                       FORMSETPROPERTY (frmWHGD, 'rtPersonSurname.Text', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'CustomInspector'), 'cat_ru:PersonSurname')));
+                       FORMSETPROPERTY (frmWHGD, 'rtPersonName.Text',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'CustomInspector'), 'cat_ru:PersonName')));
+                       FORMSETPROPERTY (frmWHGD, 'rtLNP.Text',           XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'CustomInspector'), 'catWH_ru:LNP')));
+
+                       FORMSHOWMODAL (frmWHGD);
+                     )
+                   ); // IF - //
+                   
+                 )
+               ); // IF - //
+             ),
+          2, Block(
+               // акт об истечении сроков временного хранения товаров
+               APPENDLOGFILE (sLogFile, 'ПОЛУЧЕН АКТ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+             )],
+    ); // CASE - //
+  ),
+  Block(
+    CASE (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:WHSign')),
+         [1, Block(
+               // уведомление об истечении сроков временного хранения товаров
+               APPENDLOGFILE (sLogFile, 'ПОЛУЧЕНО УВЕДОМЛЕНИЕ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+             ),
+          2, Block(
+               // акт об истечении сроков временного хранения товаров
+               APPENDLOGFILE (sLogFile, 'ПОЛУЧЕН АКТ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+             )],
+    ); // CASE - //
+  )
+); // IF - //
+
+
+

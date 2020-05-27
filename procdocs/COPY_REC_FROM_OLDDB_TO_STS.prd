@@ -1,0 +1,199 @@
+// *****************************************************************************
+// Название: Копирование данных ВЭД-Склад из одной БД в пустую
+// Описание: Копирование данных ВЭД-Склад из одной БД в пустую
+// Кнопка вызова: 0
+// Подпись кнопки: Копирование данных ВЭД-Склад из одной БД в пустую
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//БД STS_DB должна быть пустая
+//Скрипт копирует все таблицы из указанной БД в текущую базу ВЭД-Склад
+
+
+//Для БД STS_DB получаем чистый список таблиц из БД шаблона программы. Сделано на случай если БД ВЭД-Склад в SQL и TABLELIST ('STS_DB' возвращает огромное кол-во вспомогательных таблиц, которые нам не нужны
+FUNC ('GET_TABLE_LIST',,
+      BLOCK(
+            VAR ('sResult', string, '');
+            OPENDATABASE ('STS_DB_TABLE_LIST', 'STANDARD', 'PATH='+PROGRAMPATH() + 'DATA\');
+            sResult := TABLELIST ('STS_DB_TABLE_LIST', '|');
+            CLOSEDATABASE ('STS_DB_TABLE_LIST');
+            sResult;
+      )
+),
+
+//Открываем БД источник. Проверяем открылась ли БД. Если нет возвращаем ошибку. Выполнение зхаканчиваем.
+FUNC ('Open_STS_DB',
+      PARAM('sDB_NAME', string,0),
+      BLOCK (
+             VAR ('iResult', integer, 0);
+             TRYEXCEPT (
+                        BLOCK(
+                             IF (OPENDATABASE (sDB_NAME, sDB_NAME, 1),iResult := 1);
+                             IF(TABLELIST (sDB_NAME, '|')='', iresult := 0);
+                        ),,
+                        BLOCK(
+                              APPENDLOGFILE ('COPY_REC_LOG',EXCEPTIONMESSAGE());
+                              iResult := 0;
+                        )
+             );
+             iResult;
+             
+      )
+),
+
+
+//Копируем данные указнной таблицы
+FUNC ('CopyRec',
+      BLOCK (
+             PARAM('TableName', string, 0);
+             PARAM('DB_FROM', string, 1);
+             PARAM('DB_TO', string, 2);
+      ),
+      BLOCK (
+             //Получаем данные таблицы источника. Если БД Firebird и таблица RELEASE добавляем к названию _
+             VAR ('OldTableName', string, 'OLD_'+TableName);
+             CONST ('sDriverNameFrom', String, UPPERSTR(INIFILE ('Database', 'Driver Name', 'PARADOX')));
+             VAR ('sSQL', string, '');
+             sSQL := 'SELECT * FROM '+TableName;
+             IF ((sDriverNameFrom= 'INTRBASE') * (TableName= 'RELEASE'),
+                  sSQL := sSQL + '_'
+             );
+             OPENQUERY (OldTableName, sSQL, DB_FROM);
+
+             //Если БД назаначения Firebird и таблица RELEASE добавляем к названию _
+             VAR ('NewTableName', string, 'NEW_'+TableName);
+             CONST ('sDriverNameTo', String, UPPERSTR(INIFILE ('Database', 'DbmsType', 'PARADOX')));
+             IF ((sDriverNameFrom= 'INTRBASE') * (TableName= 'RELEASE'),
+                 TableName := TableName + '_'
+             );
+
+             TRYEXCEPT(//Пытаемся открыть таблицу для копирования в БД назаначения
+                       IF (DB_TO = 'STS_DB',
+                           OPENTABLE (NewTableName , DB_TO, TableName, ''),
+                           OPENTABLE (NewTableName, TableName, '', DB_TO, 1); 
+                       ),
+                       //Если таблица открылась копируем данные
+                       TRYEXCEPT (
+                                  COPYRECORDS(OldTableName, NewTableName),,
+                                  APPENDLOGFILE ('COPY_REC_LOG',EXCEPTIONMESSAGE())
+                                  //showmessage ('Ошибка копирования полей таблицы '+TableName)
+                       ),
+                       //Закрываем наборы данных
+                       BLOCK (
+                             CLOSEDATASET (NewTableName);
+                             CLOSEDATASET (OldTableName);
+                       ),
+                       APPENDLOGFILE ('COPY_REC_LOG',EXCEPTIONMESSAGE())
+             );
+
+      )
+
+),
+
+//Создаем файл лога
+CREATELOGFILE ('COPY_REC_LOG');
+APPENDLOGFILE ('COPY_REC_LOG', '----------------------------------------Начало работы '+NOW()+'--------------------------------------------------');
+
+
+
+
+
+
+VAR ('sSourceBDAlias', string, 'BD_SOURCE');
+VAR ('sDestinationBDAlias', string, '');
+//showmessage (CHOICEVARIANT ('В какую БД копируем?', 3, 1, ['ВЭД_СКЛАД', 'ЖУРНАЛЫ', 'СПРАВОЧНИКИ'], 'COPY_REC_BD'));
+//Узнаем куда мы будем копировать данные
+
+APPENDLOGFILE ('COPY_REC_LOG','-------------------------------------Выбираем БД назначения '+NOW()+'---------------------------------------------');
+CASE (CHOICEVARIANT ('В какую БД копируем?', 3, 0, ['ВЭД_СКЛАД', 'ЖУРНАЛЫ', 'СПРАВОЧНИКИ'], 'COPY_REC_BD'),
+      [0, sDestinationBDAlias := 'STS_DB',
+       1, sDestinationBDAlias := 'dbJournalse',
+       2, sDestinationBDAlias := 'dbReference'
+      ],
+      APPENDLOGFILE ('COPY_REC_LOG', 'Выполнение отменено')
+);
+//CASE (Выражение, [Значение 1, Результат 1, Значение 2, Результат 2, ...], Результат по умолчанию
+VAR ('sTList', string, '');
+TRYEXCEPT (sTList := TABLELIST (sDestinationBDAlias, '|'),,
+          BLOCK (
+                 sTlist := '';
+                 APPENDLOGFILE ('COPY_REC_LOG',EXCEPTIONMESSAGE())
+          )
+);
+
+SHOWPROGRESS ('Копирование таблиц');
+APPENDLOGFILE ('COPY_REC_LOG', '------------------Открываем БД источник, проверяем БД назначения на существование таблиц '+NOW()+'----------------------');
+IF ( sTlist <>'',
+    IF (Open_STS_DB(sSourceBDAlias),
+        BLOCK(
+              APPENDLOGFILE ('COPY_REC_LOG', '----------------------------------------Открыта БД источник '+NOW()+'--------------------------------------------------');
+              //VAR ('sTList', string, TABLELIST ('dbJournals', '|')); //Для копирования БД журналов раскоментировать
+
+              VAR ('sTList', string, GET_TABLE_LIST() );
+              IF (sDestinationBDAlias = 'STS_DB',
+                  sTList := GET_TABLE_LIST()//ЕСЛИ БД ВЭД СКЛАД получаем чистый список таблиц из шаблона
+              );
+
+              //Разбираем строку со списком таблиц. Каждую копируем
+              VAR ('sFirstTable', string, '1');
+              VAR ('iTableQuantity', integer, 0);
+              VAR ('iCounter', integer, 1);
+              VAR ('sTableName', string, '');
+
+              iTableQuantity := SPLITSTR (sTList, '|', sFirstTable);
+              WHILE (iCounter <= iTableQuantity,
+                    BLOCK(
+                          SETPROGRESS (iCounter, 100, iTableQuantity);
+                          sTableName := EXTRACTSTR (sTList, iCounter, '|');
+
+                          //Убираем DB из названия если есть
+                          IF (STRPOS ('.DB', sTableName), sTableName := EXTRACTSTR (sTableName, 1, '.DB'));
+                          //Убираем схему из названия. Сделано для SQL
+                          IF (STRPOS ('.', sTableName), sTableName := EXTRACTSTR (sTableName, 2, '.'));
+
+                          APPENDLOGFILE ('COPY_REC_LOG', '----------------------------------------Таблица  '+sTableName+ '---------------------------------------------------------');
+                          // Копируем данные
+                          TRYEXCEPT (CopyRec(sTableName, sSourceBDAlias, sDestinationBDAlias),,
+                                     APPENDLOGFILE ('COPY_REC_LOG',EXCEPTIONMESSAGE())
+                          );
+                          APPENDLOGFILE ('COPY_REC_LOG', '----------------------------------------Копирование завершено  '+NOW ()+ '---------------------------------------');
+                          iCounter := iCounter + 1;
+                    );
+              );
+              CLOSEDATABASE (sSourceBDAlias);
+        ),APPENDLOGFILE ('COPY_REC_LOG', 'База данных источник не открыта') //Open_STS_DB(sSourceBDAlias)=0,
+    ), APPENDLOGFILE ('COPY_REC_LOG', 'База данных назанчения пустая') // sTlist = ''
+);
+
+HIDEPROGRESS ();
+APPENDLOGFILE ('COPY_REC_LOG', '----------------------------------------Копирование БД завершено  '+NOW ()+ '------------------------------------');
+SHOWLOGFILE ('COPY_REC_LOG', 'Результаты переноса данных');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

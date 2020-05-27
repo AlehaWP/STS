@@ -1,0 +1,171 @@
+// *****************************************************************************
+// Название: ChekRest2
+// Описание: Вычисление остатков по каждой
+// Кнопка вызова: 0
+// Подпись кнопки: Вычисление остатков по каждой
+// *****************************************************************************
+//
+
+VAR ('sFilePath', String, PROGRAMPATH() + 'TMP_DB\');
+VAR ('sSql', String, '');
+
+
+sFilePath := PROGRAMPATH() + 'TMP_DB\';
+DELETEFILE (sFilePath+'tmpCOMM.DBF');
+    //sFilePath := PROGRAMPATH();
+  //создаём tmpMAIN
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sFilePath);
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpCOMM.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'PLACEID INT, ';
+      sSQL := sSQL + 'ID INT, ';
+      sSQL := sSQL + 'G32 INT, ';
+      sSQL := sSQL + 'GN SMALLINT, ';
+      sSQL := sSQL + 'COUNTER SMALLINT, ';
+      sSQL := sSQL + 'MAIN_ID INTEGER, ';
+      sSQL := sSQL + 'MAIN_COUNT SMALLINT, ';
+      sSQL := sSQL + 'MAIN_NO SMALLINT, ';
+      sSQL := sSQL + 'NBD CHARACTER(100), ';
+      sSQL := sSQL + 'REL_NO CHARACTER(100), ';
+      sSQL := sSQL + 'G33 CHARACTER(21), ';
+      sSQL := sSQL + 'REL_G33 CHARACTER(21), ';
+      sSQL := sSQL + 'G312 BLOB, ';
+      sSQL := sSQL + 'REL_G312 BLOB, ';
+      sSQL := sSQL + 'G082 CHARACTER(254), ';
+      sSQL := sSQL + 'REL_G082 CHARACTER(254), ';
+      sSQL := sSQL + 'ACCEPTDATE CHARACTER(50), ';
+      sSQL := sSQL + 'BEG_KEEP CHARACTER(50), ';
+      sSQL := sSQL + 'STOR_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'REL_OUT_D CHARACTER(50), ';
+      sSQL := sSQL + 'OUT_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'BOXNO  CHARACTER(254), ';
+      sSQL := sSQL + 'REL_BOXNO  CHARACTER(254), ';
+      sSQL := sSQL + 'STORENUM  CHARACTER(254), ';
+      sSQL := sSQL + 'G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G42_CURRENCY CHARACTER(15), ';
+      sSQL := sSQL + 'G221 CHARACTER(15), ';
+      sSQL := sSQL + 'DOC_NO CHARACTER(100), ';
+      sSQL := sSQL + 'LIC_NO CHARACTER(50), ';
+      sSQL := sSQL + 'NAME CHARACTER(254), ';
+      sSQL := sSQL + 'LIC_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'STOR_TYPE CHARACTER(15) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+//CLOSEDATASET('TmpMAIN');  CLOSEDATABASE ('TMP_DB');
+CLOSEDATABASE ('TMP_DB');
+
+FUNC ('CreateDO2',
+      Block(
+             Param('sPlaceID', integer, 0);
+             Param('sMainId', integer, 1);
+             Param('sMainCounter', integer, 2);
+      ),//end block param
+      Block(
+        OPENQUERY ('qryRC', 'STS_DB', 'SELECT'+
+                                      '  RC.PLACEID, RC.ID,'+
+                                      '  RC.RELEASE_G311, RC.RELEASE_G35, RC.RELEASE_G38, RC.RELEASE_G315, RC.RELEASE_G33, RC.RELEASE_G312,'+
+                                      '  RC.RELEASE_G315A,  RC.RELEASE_G315C,  RC.RELEASE_G42, RC.RELEASE_BOXNO, RC.RELEASE_OUT_DATE, '+
+                                      '  R.MAIN_ID, R.MAIN_NO, R.MAIN_COUNTER, R.COUNTER, R.DOC_NO, R.DOC_TYPE,'+
+                                      '  R.DOC_CODE, R.RELEASE_DATE,  R.OUT_DATE, R.OUT_DOC_DATE, '+
+                                      '  R.G082 as Rel_G082, R.G083, R.G084C, R.G08_KPP, R.G08_OGRN, R.G042 as Rel_G042, R.TRANSPNO, R.G022,'+
+                                      '  R.DELIVERYDOCS, R.TRANSPDOCS, '+
+                                      '  KC.G32, KC.GN, KC.G312, KC.G315CN, KC.G33, KC.G311, KC.G35, KC.G38,'+
+                                      '  KC.FACT_G35, KC.FACT_G38, KC.FACT_G315C, KC.FACT_G315A, KC.FACT_G311, KC.FACT_G42,' +
+                                      '  KC.G42, KC.G42_CURRENCY, KC.VALCODE,'+
+                                      '  KC.G315A, KC.G315, KC.G41A, KC.G315C, KC.G31_82, KC.BOXNO,'+
+                                      '  KC.SVHAREA, KC.SVHHANGAR, KC.SVHRACK, KC.SVHCELL,'+
+                                      '  KC.ACCEPTDATE, KC.STORAGE_DATE,'+
+                                      '  M.NBD, M.BD_DATE, M.PART_NO, M.BEG_KEEP, M.G082, M.G042, M.G221, M.G142, M.G145, M.G144, '+
+                                      '  S.NAME, S.LICENCEDATE, S.LICENCENO, S.STORE_TYPE '+
+                                      'FROM '+
+                                      '  REL_COMM RC LEFT JOIN RELEASE R ON ((RC.PLACEID = R.PLACEID) AND (RC.ID = R.ID) AND (RC.COUNTER = R.COUNTER)) '+
+                                      '  LEFT JOIN KRD_MAIN M ON ((M.PLACEID = RC.PLACEID) AND (M.ID = RC.ID) ) '+
+                                      '  LEFT JOIN KRD_COMM KC ON ((RC.PLACEID = KC.PLACEID) AND (RC.ID = KC.ID) AND (RC.G32 = KC.G32)) '+
+                                      '  LEFT JOIN STORES S ON (S.PLACEID = RC.PLACEID) '+
+                                      'WHERE ' +
+                                      '  (RC.PLACEID = '+  sPlaceId + ') AND (R.MAIN_ID = ' + sMainId +')  AND ' +
+                                      '  (R.MAIN_COUNTER = ' + sMainCounter +  ')  ' +
+                                      'ORDER BY ' +
+                                      '   R.MAIN_NO, KC.G32');//openquery('qryRC')
+      FIRST('qryRC');
+      WHILE (EOF('qryRC') = 0,
+             Block(
+               APPENDRECORD ('TmpCOMM');
+               EDITRECORD('TmpCOMM');
+               SETFIELDVALUE('TmpCOMM',
+                'PLACEID', qryRC.PLACEID,
+                'ID', qryRC.ID,
+                'G32', qryRC.G32,
+                'GN', qryRC.GN,
+                'COUNTER', qryRC.COUNTER,
+                'MAIN_ID', qryRC.MAIN_ID,
+                'MAIN_COUNT', qryRC.MAIN_COUNTER,
+                'MAIN_NO', qryRC.MAIN_NO,
+                'NBD', qryRC.NBD,
+                'REL_NO', qryRC.RELEASE_NO,
+                'G33', qryRC.G33,
+                'REL_G33', qryRC.RELEASE_G33,
+                'G312', qryRC.G312,
+                'REL_G312', qryRC.RELEASE_G312,
+                'G082', qryRC.G082,
+                'REL_G082', qryRC.RELEASE_G082,
+                'ACCEPTDATE', qryRC.ACCEPTDATE,
+                'BEG_KEEP', qryRC.BEG_KEEP,
+                'STOR_DATE', qryRC.STORAGE_DATE,
+                'REL_OUT_D', qryRC.REL_OUT_DATE,
+                'OUT_DATE', qryRC.OUT_DATE,
+                'BOXNO', qryRC.BOXNO,
+                'REL_BOXNO', qryRC.RELEASE_BOXNO,
+                'STORENUM', ,
+                'G311', sG311,
+                'REL_G311', qryRC.RELEASE_G311,
+                'REST_G311', ,
+                'G35', sG35,
+                'REL_G35', qryRC.RELEASE_G35,
+                'REST_G35', ,
+                'G38', sG38,
+                'REL_G38', qryRC.RELEASE_G38,
+                'REST_G38', ,
+                'G315A', sG315A,
+                'REL_G315A', qryRC.RELEASE_G315A,
+                'REST_G315A', ,
+                'G315C', sG315C,
+                'REL_G315C', qryRC.RELEASE_G315C,
+                'REST_G315C', ,
+                'G42', sG42,
+                'REL_G42', qryRC.RELEASE_G42,
+                'REST_G42', ,
+                'G42_CUR', qryRC.G42_CURRENCY,
+                'G221', qryRC.G221,
+                'DOC_NO', qryRC.DOC_NO,
+                'LIC_NO', qryRC.LICENCENO,
+                'NAME', qryRC.NAME,
+                'LIC_DATE', qryRC.LICENCEDATE,
+                'STOR_TYPE', qryRC.STORE_TYPE.
+               );
+               POSTRECORD('TmpCOMM');
+             )//block
+      );
+
+
+      )//block Func Test
+
+);

@@ -1,0 +1,30 @@
+// *****************************************************************************
+// Название: Перенумерация ГН
+// Описание: Перенумерация ГН
+// Кнопка вызова: 0
+// Подпись кнопки: Перенумерация ГН
+// *****************************************************************************
+//
+Var('vGN', integer, 0);
+SETFILTER ('KRD_MAIN_2', 'MAIN_ID = '+KRD_MAIN.MAIN_ID );
+FIRST('KRD_MAIN_2');
+WHILE( EOF('KRD_MAIN_2') = 0,
+    BLOCK(
+      SETFILTER('KRD_COMM_2', 'PLACEID= '+KRD_MAIN_2.PLACEID+'AND ID='+KRD_MAIN_2.ID);
+      FIRST('KRD_COMM_2');
+      WHILE(EOF('KRD_COMM_2') = 0,
+        BLOCK(//showmessage(vGN);
+          vGN := vGN + 1;
+          EDIT('KRD_COMM_2');
+          SETFIELDVALUE('KRD_COMM_2',
+                        'GN', vGN
+          );
+          POST('KRD_COMM_2');
+          NEXT('KRD_COMM_2');
+        )
+      );
+      SETFILTER('KRD_COMM_2', '');
+      NEXT('KRD_MAIN_2');
+    )
+);
+SETFILTER ('KRD_MAIN_2', '');

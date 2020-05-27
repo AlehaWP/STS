@@ -1,0 +1,19 @@
+// *****************************************************************************
+// Название: Рег. ДО2
+// Описание: Рег. ДО2
+// Кнопка вызова: 0
+// Подпись кнопки: Рег. ДО2
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR('sFIO', string, INPUTTEXT ('Ввод параметров', 'Введите ФИО инспектора'));
+VAR('sLNP', string, INPUTTEXT ('Ввод параметров', 'Введите ЛНП инспектора'));
+VAR('sRegNo', string, INPUTTEXT ('Ввод параметров', 'Введите регистрационный номер отчета'));
+VAR('sDate', string, INPUTTEXT ('Ввод параметров', 'Введите дату в формате DD.MM.YYYY HH:MM:SS'));
+EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET MC_STATUS_BD="3", STATUS_EPS = "ДО-1 зарегистрирована" '+
+                                                         IF(sRegNo<>'',', REG_NBD='+char(39)+sRegNo+char(39))+
+                                                         IF(sDate<>'',', GD1='+char(39)+sDate+char(39))+
+                                                         IF(sLNP<>'',', GD2='+char(39)+sLNP+char(39))+
+                                                         IF(sFIO<>'',', FIO_INSPECTOR='+char(39)+sFIO+char(39))+
+                                                         ' WHERE MAIN_ID='+KRD_MAIN.MAIN_ID );

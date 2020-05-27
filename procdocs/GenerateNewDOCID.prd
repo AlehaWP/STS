@@ -1,0 +1,94 @@
+// *****************************************************************************
+// Название: Открыть новую процедуру
+// Описание: Открыть новую процедуру
+// Кнопка вызова: 0
+// Подпись кнопки: Открыть новую процедуру
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GENERATEUUID_2', ,
+  Block(
+    Var('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+)),
+
+FUNC('Make_DOCUMENTID',
+     BLOCK(
+        param('bdName', string,0);
+     ),
+     BLOCK(
+            VAR('iPlaceid', integer, FIELDVALUE(bdName, 'PLACEID'));
+            VAR('iMainId', integer, FIELDVALUE(bdName, 'MAIN_ID'));
+            VAR('sStatus', string, FIELDVALUE(bdName, 'MC_STATUS_BD'));
+            
+            OPENQUERY('GET_STAUS', 'SELECT * FROM EPS_LOG WHERE PLACEID='+iPlaceid+' AND ID='+iMainId+' AND DocStatus = '+Char(39)+'ДО1 отправлена'+Char(39), 'dbJournals');
+            IF((sStatus <> '3')*(RECORDCOUNT('GET_STAUS', 1) = 0),
+               BLOCK(
+                  VAR ('sSQL', Memo , "");
+            //Id:= KRD_MAIN."Id";
+                  SSql := ' UPDATE KRD_MAIN '+
+                          ' SET DOCUMENTID='+ char(39) + GENERATEUUID_2() + char(39) +
+                          ' , STATUS_EPS=' +char(39)+char(39)+
+                          ' , MC_STATUS_BD=' +char(39)+char(39)+
+                          ' WHERE MAIN_ID=' + iMainId +
+                          ' AND PLACEID=' + iPlaceid;
+                  EXECUTESQL ('STS_DB', sSQL);
+
+                  LOCATE ('STORES_2', 'PLACEID', [iPlaceid]);
+                  OPENQUERY ('qryNUM', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM EPS_LOG ', 'dbJournals');
+                  VAR('iMaxID', Integer, qryNUM.MAX_ID + 1);
+
+                  OPENTABLE ('EPS_LOG_5', 'EPS_LOG', '', 'dbJournals', 1);
+                  APPENDRECORD ('EPS_LOG_5');
+                  EDITRECORD ('EPS_LOG_5');
+                  SETFIELDVALUE('EPS_LOG_5', 'JOURNAL_MASTER_ID', iMaxId);    // Ключевое поле //
+                  SETFIELDVALUE ('EPS_LOG_5', 'PLACEID', iPlaceid);
+                  SETFIELDVALUE ('EPS_LOG_5', 'ID', iMainId);
+                  SETFIELDVALUE ('EPS_LOG_5', 'COUNTER', 0);
+                  SETFIELDVALUE ('EPS_LOG_5', 'DocumentId', FIELDVALUE(bdName, 'DOCUMENTID'));
+                  SETFIELDVALUE ('EPS_LOG_5', 'DocType', 'ДО1');
+                  SETFIELDVALUE ('EPS_LOG_5', 'DocNo',   FIELDVALUE(bdName, 'NBD'));
+                  SETFIELDVALUE ('EPS_LOG_5', 'DocDate', FIELDVALUE(bdName, 'BD_DATE'));
+                  SETFIELDVALUE ('EPS_LOG_5', 'DocStatus', 'Присвоен новый DOCUMENTID');
+                  SETFIELDVALUE ('EPS_LOG_5', 'RegDate', NOW());
+                  SETFIELDVALUE ('EPS_LOG_5', 'LICENCENO', STORES_2.LICENCENO);
+                  SETFIELDVALUE ('EPS_LOG_5', 'LICENCEDATE', STORES_2.LICENCEDATE);
+                  SETFIELDVALUE ('EPS_LOG_5', 'JOURGUID', GENERATEUUID());
+		  SETFIELDVALUE ('EPS_LOG_5', 'READED', '0');
+                  SETFIELDVALUE ('EPS_LOG_5', 'SUBSTATUS', '');
+                  PostRecord('EPS_LOG_5');
+                  CloseDataset('EPS_LOG_5');
+
+
+               ),
+               SHOWMESSAGE('Нет возможности открыть новую процедуру, т.к ДО № '+FIELDVALUE(bdName, 'NBD')+' уже присвоен статус: '+ IF(sStatus = '3', '"зарегистрировано"', '"ДО1 отправлена"'))
+            );
+     )
+),
+
+//showmessage(GETSELECTEDCOUNT());
+GETSELECTEDDOCS ('KRD_MAIN_7');
+IF(RECORDCOUNT('KRD_MAIN_7') > 0,
+   BLOCK(
+      FIRST('KRD_MAIN_7');
+      WHILE(EOF('KRD_MAIN_7')=0,
+            BLOCK(
+               Make_DOCUMENTID('KRD_MAIN_7');
+               NEXT('KRD_MAIN_7');
+            );
+      );
+   ),
+   BLOCK(
+      Make_DOCUMENTID('KRD_MAIN');
+   )
+);
+
+CLOSEDATASET('KRD_MAIN_7');
+GLOBALREFRESH();
+
+
+
+

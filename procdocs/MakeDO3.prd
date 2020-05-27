@@ -1,0 +1,39 @@
+// *****************************************************************************
+// Название: Создание ДО2
+// Описание: Создание ДО2
+// Кнопка вызова: 0
+// Подпись кнопки: Создание ДО2
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sFilePath', String, PROGRAMPATH() + 'TMP_DB\');
+VAR ('sSql', String, '');
+
+
+FORCEDIRECTORIES(TEMPDIRECTORY() + 'TMP_DB\');
+sFilePath := TEMPDIRECTORY() + 'TMP_DB\';
+DELETEFILE (sFilePath+'tmpCOMM.DBF');
+
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sFilePath);
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpCOMM.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'PLACEID INT, ';
+      sSQL := sSQL + 'ID INT, ';
+      sSQL := sSQL + 'G32 INT, ';
+      sSQL := sSQL + 'GN SMALLINT, ';
+      sSQL := sSQL + 'COUNTER SMALLINT, ';
+      sSQL := sSQL + 'MAIN_ID INTEGER, ';
+      sSQL := sSQL + 'MAIN_COUNT SMALLINT, ';
+      sSQL := sSQL + 'MAIN_NO SMALLINT, ';
+      sSQL := sSQL + 'NBD CHARACTER(100), ';
+      sSQL := sSQL + 'G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G35 NUMERIC(19,2) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+APPENDLOGFILE('Time', 'Создали базу ' + TEMPDIRECTORY() + 'TMP_DB\' + TIME(1));	
+
+

@@ -1,0 +1,46 @@
+// *****************************************************************************
+// Название: Создание таблицы обмена с Солво
+// Описание: Создание таблицы обмена с Солво
+// Кнопка вызова: 0
+// Подпись кнопки: Создание таблицы обмена с Солво
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC ('GetDir',,
+      BLOCK(
+        VAR('sDir', string);
+        SELECTDIRECTORY ('sDir');
+        sDir := INCLUDETRAILINGBACKSLASH(sDir);
+        WRITEINIFILE ('DO1_AUTO', 'DirectoryPath', sDir);
+      )
+),
+
+FUNC('CreateKRD_SOLVOID',,
+     EXECUTESQL('STS_DB',
+                'CREATE TABLE KRD_SOLVOID '+
+                '( '+
+                'PLACEID INT, '+
+                'ID INT, '+
+                'CUSTREPID INT, '+
+                'G32 INT, '+
+                'GOODID INT, '+
+                'TOVINCONT INT, '+
+                'TOVINTTN INT, '+
+                'CONTID INT, '+
+                'CONTCOUNTER INT, '+
+                'CONTINTTN INT, '+
+                'TTNCOUNTER INT, '+
+                'VESID INT, '+
+                'BILLID INT, '+
+                'EXPDO1 INT, '+
+                'XMLNAME CHAR(254) '+
+                ')'
+     )
+),
+
+//IF(TABLEEXISTS ('KRD_SOLVOID' , 'STS_DB'),,CreateKRD_SOLVOID());
+CreateKRD_SOLVOID();
+RAISEEXCEPTION ('Создали');
+
+

@@ -1,0 +1,151 @@
+// *****************************************************************************
+// Название: OnDocSend
+// Описание: Обработка сигнала OnDocSend от Монитор ЭД
+// Кнопка вызова: 0
+// Подпись кнопки: OnDocSend
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('xOnDocSend', Integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('sSQL', String, '');
+
+VAR ('vPlaceId', String, XmlNodeAttribute (xOnDocSend, 'whid'));
+VAR ('vId', String);
+VAR ('vCounter', String, XmlNodeAttribute (xOnDocSend, 'do2id'));
+VAR ('DocId', String, XmlNodeAttribute (xOnDocSend, 'do1id'));
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', String, '');
+VAR ('strStatus', String, '');
+VAR ('dRegDate', DateTime, DATE()+TIME(1));
+VAR ('sJourGUID', String, '');
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 1);
+VAR ('DoDt', String, XmlNodeAttribute (xOnDocSend, 'dodt'));
+
+CASE (XmlNodeValue (XmlNodeFind (xOnDocSend, 'DocType')),
+     ['whdtContractInfo',
+       Block(
+         sSQL := 'SELECT' +
+                 ' PLACEID, DOGNUMBER, DOGDATE' +
+                 ' FROM CONTRACTINFO' +
+                 ' WHERE' +
+                 ' DOCUMENTID=' +char(39)+ DocId +char(39);
+         OPENQUERY ('qContractInfo', 'dbJournals', sSQL, 1);
+         vPlaceId := qContractInfo.PLACEID;
+         DoType := 'Договор ВХ';
+         DoNo := qContractInfo.DOGNUMBER;
+         DoDate := qContractInfo.DOGDATE;
+         CLOSEDATASET ('qContractInfo');
+         IF (XMLNODEVALUE (XMLNODEFIND (xOnDocSend, 'SendResult')) = 'True',
+           Block(
+             strStatus := 'Договор ВХ отправлен';
+             sSubStatus := '';
+           ),
+           Block(
+             strStatus := 'Ошибка! Договор ВХ не отправлен';
+             sSubStatus := XMLNODEVALUE (XMLNODEFIND (xOnDocSend, 'ErrorDescription'));
+           )
+         ); // IF
+         sSQL := 'UPDATE CONTRACTINFO' +
+                 ' SET EPS_STATUS=' +char(39)+ strStatus +char(39)+
+                 ' WHERE' +
+                 ' DOCUMENTID=' +char(39)+ DocId +char(39);
+         EXECUTESQL ('dbJournals', sSQL);
+       ),
+       'whdtDeclStateChange',
+       Block(
+         DoType := '';
+       ),
+       'whdtDO1',
+       Block(
+         // ЗАКОММЕНТИРОВАНО, ТАК КАК ДУБЛИРУЕТСЯ СООБЩЕНИЕМ Do1StatusChanged (Отправлен запрос на открытие процедуры)
+
+         sSQL := 'SELECT ID, NBD, DOCUMENTID, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vPlaceId + ' AND DOCUMENTID=' +char(39)+ DocId +char(39);
+         OPENQUERY ('qFindId', 'STS_DB', sSQL);
+         vId := qFindId.ID;
+         DoNo := qFindId.NBD;
+         DoDate := qFindId.BD_DATE;
+
+         //sSQL := 'SELECT NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId;
+         DoType := 'ДО-1';
+         IF (XMLNODEVALUE (XMLNODEFIND (xOnDocSend, 'SendResult')) = 'True',
+           Block(
+             strStatus := 'Отправлен запрос на открытие процедуры';
+             sSubStatus := '';
+           ),
+           Block(
+             strStatus := 'Ошибка! Запрос на открытие процедуры не отправлен';
+             sSubStatus := XMLNODEVALUE (XMLNODEFIND (xOnDocSend, 'ErrorDescription'));
+             iReaded := 0;
+             sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ strStatus +char(39)+ ' WHERE PLACEID=' + vPlaceId + ' AND DOCUMENTID=' +char(39)+ DocId +char(39);
+             EXECUTESQL ('STS_DB', sSQL);
+           )
+         ); // IF - //
+{
+         sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ strStatus +char(39)+ ' WHERE PLACEID=' + vPlaceId + ' AND DOCUMENTID=' +char(39)+ DocId +char(39);
+         EXECUTESQL ('STS_DB', sSQL);
+}
+       ),
+       'whdtDO2',
+       Block(
+         // В FireBird (драйвер INTRBASE) имя таблицы RELEASE должно быть с подчеркивагием "_"
+         IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+            sSQL := 'SELECT ID, RELEASE_NO, OUT_DATE FROM RELEASE_ WHERE PLACEID=' + vPlaceId + ' AND DOCUMENTID=' +char(39)+ DocId +char(39)+ ' AND MAIN_COUNTER=' + vCounter,
+            sSQL := 'SELECT ID, RELEASE_NO, OUT_DATE FROM RELEASE WHERE PLACEID=' + vPlaceId + ' AND DOCUMENTID=' +char(39)+ DocId +char(39)+ ' AND MAIN_COUNTER=' + vCounter
+         ); // IF - INTRBASE //
+         OPENQUERY ('qFindId', 'STS_DB', sSQL);
+
+         DoType := 'ДО-2';
+         DoNo := qFindId.RELEASE_NO;
+         DoDate := qFindId.OUT_DATE;
+         vId := qFindId.ID;
+
+         IF (XMLNODEVALUE (XMLNODEFIND (xOnDocSend, 'SendResult')) = 'True',
+            strStatus := 'ДО-2 № ' + DoNo + ' отправлена',
+            Block(
+              strStatus := 'Ошибка! ДО-2 № ' + DoNo + ' не отправлена';
+              sSubStatus := XMLNODEVALUE (XMLNODEFIND (xOnDocSend, 'ErrorDescription'));
+            )
+         ); // IF - //
+
+         // 2: Найти ДО-1 и обновить статус ЭПС в ДО-1
+         //sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ strStatus +char(39)+ ' WHERE PLACEID=' + vPlaceId + ' AND ID=' + vId;
+         sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ strStatus +char(39)+
+                 ' WHERE PLACEID=' + vPlaceId + ' AND ID IN ' + 
+                 '(SELECT DISTINCT R.ID FROM ' + IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' R WHERE R.PLACEID=' + vPlaceId +
+                 ' AND R.MAIN_ID=(SELECT R2.MAIN_ID FROM ' + IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' R2 WHERE R2.PLACEID=' + vPlaceId +
+                 ' AND R2.ID=' + vId + ' AND R2.COUNTER=' + vCounter + '))';
+         EXECUTESQL ('STS_DB', sSQL);
+       ),
+       'whdtDO3',
+       Block(
+         DoType := 'ДО-3';
+       ),
+       'whdtDocsRegNotif',
+       Block(
+         DoType := '';
+       ),
+       'whdtInventory',
+       Block(
+         DoType := 'Опись документов';
+       ),
+       'whdtInventoryRequest',
+       Block(
+         DoType := 'Запрос описи документов';
+       ),
+       'whdtIssue',
+       Block(
+         DoType := '';
+       ),
+       'whdtTransit',
+       Block(
+         DoType := '';
+       )
+     ],
+);
+
+

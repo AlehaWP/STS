@@ -1,0 +1,356 @@
+// *****************************************************************************
+// Название: Статистика ЭПС
+// Описание: Статистика ЭПС
+// Кнопка вызова: 1
+// Подпись кнопки: Статистика ЭПС
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('dt2H', DateTime, CONVERT (CONVERT (Now(), Float) - 0.083333333, DateTime));
+VAR ('dt2Week', DateTime, CONVERT (CONVERT (Now(), Float) - 14, DateTime));
+VAR ('dt24H', DateTime, CONVERT (CONVERT (Now(), Float) - 1, DateTime));
+
+VAR ('sSQL', String, '');
+VAR ('sSQLMemo', Memo, '');
+
+VAR('sSTS_DataBase', String, '' );
+VAR('sSTS_ConnString',String, '' );
+
+VAR ('iCount', Integer, 0);
+VAR ('iIndex', Integer, 0);
+
+VAR ('bUpdate', String, INIFILE ('EpsControl', 'Update', 'True'));
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\STSParams.prd' );
+STSParams();
+
+FUNC ('Dispose', '',
+  Block(
+    // запоминаем размер окна ("на полный экран" или "в окне")
+    IF (FORMGETPROPERTY (frmControl, 'WindowState') <> 'wiMininized',
+      Block(
+        WRITEINIFILE ('EpsControl', 'WindowState', FORMGETPROPERTY (frmControl, 'WindowState'));
+        WRITEINIFILE ('EpsControl', 'Update', FORMGETPROPERTY (frmControl, 'cbxUpdate.Checked'));
+      )
+    ); // IF - //
+    FORMDESTROY (frmControl);
+  )
+),
+
+VAR ('sTmpDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'TMPDB\');
+FUNC ('GenTmpTable', '',
+  Block(
+    IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd') = 1,
+      Block(
+        EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+      ),
+      Block(
+        RAISEEXCEPTION ('Не найден скрипт "sqldate.prd"');
+      )
+    );
+
+{
+    TRYEXCEPT (
+      Block(
+}
+        // проверяем наличие каталога временной БД
+        IF (DIRECTORYEXISTS (sTmpDir),
+          Block(
+            IF (bUpdate = 'True', CLEARDIRECTORY (sTmpDir));
+          ),
+          Block(
+            FORCEDIRECTORIES (sTmpDir);
+          ),
+        ); // IF - //
+        
+        // открываем базу данных
+        OPENDATABASE ('tmpDB', 'STANDARD', 'PATH=' + sTmpDir);
+        IF (bUpdate = 'True' | (TABLEEXISTS ('TMPTABLE.DBF', 'tmpDB') = 0),
+          Block(
+            EXECUTESQL ('tmpDB', 'CREATE TABLE ' +char(39)+ sTmpDir + 'TMPTABLE.DBF' +char(39)+
+                                 ' (PLACEID INT' +
+                                 ',MAIN_ID INT' +
+                                 ',M_COUNTER INT' +
+                                 ',STAGE VARCHAR(200)' +
+                                 ',DO_TYPE VARCHAR(200)' +
+                                 ',DO_NO VARCHAR(200)' +
+                                 ',DO_DATE TIMESTAMP' +
+                                 ',DOCUMENTID VARCHAR(200)' +
+                                 ',DATECORR TIMESTAMP' +
+                                 ',DOC_TYPE VARCHAR(200)' +
+                                 ',DOC_NO VARCHAR(200)' +
+                                 ',EPS_STATUS VARCHAR(250)' +
+                                 ')'
+            ); // EXECUTESQL - //
+    {
+            TRYEXCEPT (
+              Block(
+    }
+				SHOWINFORMATION ('Запрос данных..');
+                sSQLMemo := 'SELECT PLACEID, MAIN_ID, PART_MODE AS MAIN_COUNTER, ' +char(39)+ 'Превышен срок 24 часа' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ' AS DO_TYPE, NBD AS DO_NO, BD_DATE AS DO_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ' AS DOC_TYPE, ' +char(39)+ '                       ' +char(39)+ ' AS DOC_NO FROM KRD_MAIN' +
+                            ' WHERE DATECORR <= ' + SQLDate(dt24H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt2Week, sSTS_DataBase) + ' AND (REG_NBD IS NULL OR REG_NBD = ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                            ' UNION ' +
+                            ' SELECT PLACEID, MAIN_ID, MAIN_COUNTER, ' +char(39)+ 'Превышен срок 24 часа' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-2' +char(39)+ ', RELEASE_NO, OUT_DATE, DOCUMENTID, DATECORR, DOC_TYPE, DOC_NO FROM ' + IF (UPPERSTR (sSTS_DataBase) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                            ' WHERE DATECORR <= ' + SQLDate(dt24H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt2Week, sSTS_DataBase) + ' AND (REG_RELEASE_NO IS NULL OR REG_RELEASE_NO= ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                            ' UNION ' +
+                            ' SELECT PLACEID, MAIN_ID, 0, ' +char(39)+ 'Превышен срок 2 часа ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ', NBD, BD_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ', ' +char(39)+ '                       ' +char(39)+ ' FROM KRD_MAIN ' +
+                            ' WHERE DATECORR <= ' + SQLDate(dt2H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt24H, sSTS_DataBase) + ' AND (REG_NBD IS NULL OR REG_NBD = ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                            ' UNION ' +
+                            ' SELECT PLACEID, MAIN_ID,MAIN_COUNTER, ' +char(39)+ 'Превышен срок 2 часа ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-2' +char(39)+ ', RELEASE_NO, OUT_DATE, DOCUMENTID, DATECORR,DOC_TYPE, DOC_NO FROM ' + IF (UPPERSTR (sSTS_DataBase) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                            ' WHERE DATECORR <= ' + SQLDate(dt2H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt24H, sSTS_DataBase) + ' AND (REG_RELEASE_NO IS NULL OR REG_RELEASE_NO= ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                            ' UNION ' +
+                            ' SELECT PLACEID, MAIN_ID, 0, ' +char(39)+ 'Недавно подан        ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ', NBD, BD_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ', ' +char(39)+ '                       ' +char(39)+ ' FROM KRD_MAIN' +
+                            ' WHERE DATECORR > ' + SQLDate(dt2H, sSTS_DataBase) + ' AND (REG_NBD IS NULL OR REG_NBD = ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                            ' UNION ' +
+                            ' SELECT PLACEID, MAIN_ID, MAIN_COUNTER, ' +char(39)+ 'Недавно подан        ' +char(39)+ ' AS STAGE,  ' +char(39)+ 'ДО-2' +char(39)+ ', RELEASE_NO, OUT_DATE, DOCUMENTID, DATECORR, DOC_TYPE, DOC_NO FROM ' + IF (UPPERSTR (sSTS_DataBase) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                            ' WHERE ' + 'DATECORR > ' + SQLDate(dt2H, sSTS_DataBase) + ' AND (REG_RELEASE_NO IS NULL OR REG_RELEASE_NO= ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                            '  ORDER BY 9,7 ASC';
+                OPENQUERY ('qStat', 'STS_DB', sSQLMemo);
+				HIDEINFORMATION ();
+				SHOWINFORMATION ('Вычисление количества записей..');
+                iCount := RECORDCOUNT ('qStat');
+				HIDEINFORMATION ();
+                iIndex := 1;
+                SHOWPROGRESS ('Подготовка данных, подождите..');
+                OPENTABLE ('tmpT', 'TMPTABLE.DBF', '', 'tmpDB', 1);
+                WHILE (EOF ('qStat') = 0,
+                  Block(
+                    sSQL := 'SELECT DOCSTATUS, DODT FROM EPS_LOG WHERE PLACEID=' + qStat.PLACEID + ' AND ID=' + qStat.MAIN_ID;
+                    IF (qStat.DO_TYPE = 'ДО-2', sSQL := sSQL + ' AND COUNTER=' + qStat.MAIN_COUNTER);
+                    sSQL := sSQL + ' ORDER BY DODT ASC';
+                    OPENQUERY ('qES', sSQL, 'dbJournals');
+                    LAST ('qES');
+                    APPENDRECORD ('tmpT');
+                    EDIT ('tmpT');
+                    SETFIELDVALUE ('tmpT',
+                                   'PLACEID',      qStat.PLACEID,
+                                   'MAIN_ID',      qStat.MAIN_ID,
+                                   'M_COUNTER',    qStat.MAIN_COUNTER,
+                                   'STAGE',        qStat.STAGE,
+                                   'DO_TYPE',      qStat.DO_TYPE,
+                                   'DO_NO',        qStat.DO_NO,
+                                   'DO_DATE',      qStat.DO_DATE,
+                                   'DOCUMENTID',   qStat.DOCUMENTID,
+                                   'DATECORR',     qStat.DATECORR,
+                                   'DOC_TYPE',     qStat.DOC_TYPE,
+                                   'DOC_NO',       qStat.DOC_NO,
+                                   'EPS_STATUS',   qES.DOCSTATUS,
+                    ); // SETFIELDVALUE - //
+                    POST ('tmpT');
+                    NEXT ('qStat');
+                    SETPROGRESS (iIndex, 100, iCount);
+                    iIndex := iIndex + 1;
+                  )
+                ); // WHILE - //
+                HIDEPROGRESS ();
+                // фиксируем ДатуВремя обновления таблицы
+                WRITEINIFILE ('EpsControl', 'UpdateDate', 'ВНИМАНИЕ! Последнее обновление данных выполнено: ' + FDT ('DD.MM.YYYY HH:NN:SS', Date()+Time(1)));
+              )
+            );  // IF - bUpdate = 'True' //
+            
+            EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\STSParams.prd' );
+            IF (STSParams (),
+              Block(
+                IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd') = 1,
+                  Block(
+                    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+                  ),
+                  Block(
+                    RAISEEXCEPTION ('Не найден скрипт "sqldate.prd"');
+                  )
+                );
+
+                FORMCREATE ('frmControl', INCLUDETRAILINGBACKSLASH (PROGRAMPATH()) + 'FORMS\eps_control.cfm');
+
+                FORMSETPROPERTY (frmControl, 'WindowState',       INIFILE ('EpsControl', 'WindowState', 'wsMaximized'));
+                FORMSETPROPERTY (frmControl, 'lblUpdate.Caption', INIFILE ('EpsControl', 'UpdateDate', ''));
+                FORMSETPROPERTY (frmControl, 'cbxUpdate.Checked', bUpdate);
+                FORMSETPROPERTY (frmControl, 'nTempDB.Connected', 'False');
+                FORMSETPROPERTY (frmControl, 'nTempDB.Params',    'PATH=' + sTmpDir);
+                FORMSETPROPERTY (frmControl, 'nTempDB.Connected', 'True');
+                FORMSETPROPERTY (frmControl, 'tblTemp.Active',    'True');
+                
+                VAR ('iForm', Integer, 0);
+
+                WHILE (iForm <> 2,
+                  Block(
+                    iForm := FORMSHOWMODAL (frmControl);
+
+                    CASE (iForm, [1,
+                                  Block(
+                                    // ПЕРЕЙТИ К ДОКУМЕНТУ
+                                    IF (tblTemp.DO_TYPE = 'ДО-1',
+                                      Block(
+                                        IF (LOCATE ('KRD_MAIN', 'PLACEID;MAIN_ID', [tblTemp.PLACEID, tblTemp.MAIN_ID]) = 0,
+                                          Block(
+                                            Dispose ();
+                                            RAISEEXCEPTION ('ДО-1 не найдена. Снимите фильтры с книги учёта и попробуйте снова.');
+                                          )
+                                        ); // IF - //
+                                      )
+                                    ); // IF - //
+                                    IF (tblTemp.DO_TYPE = 'ДО-2',
+                                      Block(
+                                        IF ((LOCATE ('KRD_MAIN', 'PLACEID;MAIN_ID', [tblTemp.PLACEID, tblTemp.MAIN_ID]) = 0) | (LOCATE ('REL_MAIN', 'PLACEID;MAIN_ID;MAIN_COUNTER', [tblTemp.PLACEID, tblTemp.MAIN_ID, tblTemp.M_COUNTER]) = 0),
+                                          Block(
+                                            Dispose ();
+                                            RAISEEXCEPTION ('ДО-2 не найдена. Снимите фильты с книги учёта и попробуйте снова.');
+                                          )
+                                        ); // IF - //
+                                      )
+                                    ); // IF - //
+                                    iForm := 2;
+                                  ),
+                                  2,
+                                  Block(
+                                    // ЗАКРЫТЬ ОКНО
+
+                                  ),
+                                  6,
+                                  Block(
+                                    // ПОКАЗАТЬ В МОНИТОР ЭД
+                                    // ОТКРЫТИЕ МОНИТОРА ЭД С ФИЛЬТРОМ ПО ТЕКУЩЕМУ ПРОТАКОЛУ
+                                     VAR ('XmlShowLog', Integer, XMLDOCUMENTCREATE());
+                                     VAR ('XmlShowLogRoot', Integer);
+                                     VAR ('sShowLogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+                                     IF (USERINFO ('', 'UserUUID') <> '', sShowLogFile := sShowLogFile + USERINFO ('', 'UserUUID') + '\');
+                                     IF (tblTemp.DO_TYPE = 'ДО-1',
+                                       Block(
+                                         sShowLogFile := sShowLogFile + 'SHOWLOGDO1_' + tblTemp.PLACEID + '_' + tblTemp.DOCUMENTID + '_' + tblTemp.M_COUNTER + '.xml';
+                                       ),
+                                       Block(
+                                         sShowLogFile := sShowLogFile + 'SHOWLOGDO2_' + tblTemp.PLACEID + '_' + tblTemp.DOCUMENTID + '_' + tblTemp.M_COUNTER + '.xml';
+                                       )
+                                     );
+                                     XmlShowLogRoot := XMLDOCUMENTROOT (XmlShowLog);
+                                     XMLNODESETVALUE (XMLNODEADDCHILD (XmlShowLogRoot, 'ShowLog'), 'Просмотр протокола ДО-1');
+                                     XMLDOCUMENTSAVE (XmlShowLog,  sShowLogFile);                                  ),
+                                  4,
+                                  Block(
+                                    // ОБНОВИТЬ
+                                    FORMSETPROPERTY (frmControl, 'nTempDB.Connected', 'False');
+                                    FORMSETPROPERTY (frmControl, 'nTempDB.Params',    'PATH=' + sTmpDir);
+                                    CLOSEDATABASE ('tmpDB');
+                                    
+                                    // проверяем наличие каталога временной БД
+                                    IF (DIRECTORYEXISTS (sTmpDir),
+                                      Block(
+                                        CLEARDIRECTORY (sTmpDir);
+                                      ),
+                                      Block(
+                                        FORCEDIRECTORIES (sTmpDir);
+                                      ),
+                                    ); // IF - //
+
+                                    // открываем базу данных
+                                    OPENDATABASE ('tmpDB', 'STANDARD', 'PATH=' + sTmpDir);
+                                    EXECUTESQL ('tmpDB', 'CREATE TABLE ' +char(39)+ sTmpDir + 'TMPTABLE.DBF' +char(39)+
+                                                         ' (PLACEID INT' +
+                                                         ',MAIN_ID INT' +
+                                                         ',M_COUNTER INT' +
+                                                         ',STAGE VARCHAR(200)' +
+                                                         ',DO_TYPE VARCHAR(200)' +
+                                                         ',DO_NO VARCHAR(200)' +
+                                                         ',DO_DATE TIMESTAMP' +
+                                                         ',DOCUMENTID VARCHAR(200)' +
+                                                         ',DATECORR TIMESTAMP' +
+                                                         ',DOC_TYPE VARCHAR(200)' +
+                                                         ',DOC_NO VARCHAR(200)' +
+                                                         ',EPS_STATUS VARCHAR(250)' +
+                                                         ')'
+                                    ); // EXECUTESQL - //
+                                    sSQLMemo := 'SELECT PLACEID, MAIN_ID, PART_MODE AS MAIN_COUNTER, ' +char(39)+ 'Превышен срок 24 часа' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ' AS DO_TYPE, NBD AS DO_NO, BD_DATE AS DO_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ' AS DOC_TYPE, ' +char(39)+ '                       ' +char(39)+ ' AS DOC_NO FROM KRD_MAIN' +
+                                                ' WHERE DATECORR <= ' + SQLDate(dt24H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt2Week, sSTS_DataBase) + ' AND (REG_NBD IS NULL OR REG_NBD = ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                                                ' UNION ' +
+                                                ' SELECT PLACEID, MAIN_ID, MAIN_COUNTER, ' +char(39)+ 'Превышен срок 24 часа' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-2' +char(39)+ ', RELEASE_NO, OUT_DATE, DOCUMENTID, DATECORR, DOC_TYPE, DOC_NO FROM ' + IF (UPPERSTR (sSTS_DataBase) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                                                ' WHERE DATECORR <= ' + SQLDate(dt24H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt2Week, sSTS_DataBase) + ' AND (REG_RELEASE_NO IS NULL OR REG_RELEASE_NO= ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                                                ' UNION ' +
+                                                ' SELECT PLACEID, MAIN_ID, 0, ' +char(39)+ 'Превышен срок 2 часа ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ', NBD, BD_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ', ' +char(39)+ '                       ' +char(39)+ ' FROM KRD_MAIN ' +
+                                                ' WHERE DATECORR <= ' + SQLDate(dt2H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt24H, sSTS_DataBase) + ' AND (REG_NBD IS NULL OR REG_NBD = ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                                                ' UNION ' +
+                                                ' SELECT PLACEID, MAIN_ID,MAIN_COUNTER, ' +char(39)+ 'Превышен срок 2 часа ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-2' +char(39)+ ', RELEASE_NO, OUT_DATE, DOCUMENTID, DATECORR,DOC_TYPE, DOC_NO FROM ' + IF (UPPERSTR (sSTS_DataBase) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                                                ' WHERE DATECORR <= ' + SQLDate(dt2H, sSTS_DataBase) + ' AND DATECORR > ' + SQLDate(dt24H, sSTS_DataBase) + ' AND (REG_RELEASE_NO IS NULL OR REG_RELEASE_NO= ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                                                ' UNION ' +
+                                                ' SELECT PLACEID, MAIN_ID, 0, ' +char(39)+ 'Недавно подан        ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ', NBD, BD_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ', ' +char(39)+ '                       ' +char(39)+ ' FROM KRD_MAIN' +
+                                                ' WHERE DATECORR > ' + SQLDate(dt2H, sSTS_DataBase) + ' AND (REG_NBD IS NULL OR REG_NBD = ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                                                ' UNION ' +
+                                                ' SELECT PLACEID, MAIN_ID, MAIN_COUNTER, ' +char(39)+ 'Недавно подан        ' +char(39)+ ' AS STAGE,  ' +char(39)+ 'ДО-2' +char(39)+ ', RELEASE_NO, OUT_DATE, DOCUMENTID, DATECORR, DOC_TYPE, DOC_NO FROM ' + IF (UPPERSTR (sSTS_DataBase) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                                                ' WHERE ' + 'DATECORR > ' + SQLDate(dt2H, sSTS_DataBase) + ' AND (REG_RELEASE_NO IS NULL OR REG_RELEASE_NO= ' +char(39)+char(39)+ ') AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                                                '  ORDER BY 9,7 ASC';
+                                    OPENQUERY ('qStat', 'STS_DB', sSQLMemo);
+                                    OPENTABLE ('tmpT', 'TMPTABLE.DBF', '', 'tmpDB', 1);
+                                    iCount := RECORDCOUNT ('qStat');
+                                    iIndex := 1;
+                                    SHOWPROGRESS ('Подготовка данных, подождите..');
+                                    WHILE (EOF ('qStat') = 0,
+                                      Block(
+                                        sSQL := 'SELECT DOCSTATUS, DODT FROM EPS_LOG WHERE PLACEID=' + qStat.PLACEID + ' AND ID=' + qStat.MAIN_ID;
+                                        IF (qStat.DO_TYPE = 'ДО-2', sSQL := sSQL + ' AND COUNTER=' + qStat.MAIN_COUNTER);
+                                        sSQL := sSQL + ' ORDER BY DODT ASC';
+                                        OPENQUERY ('qES', sSQL, 'dbJournals');
+                                        LAST ('qES');
+                                        APPENDRECORD ('tmpT');
+                                        EDIT ('tmpT');
+                                        SETFIELDVALUE ('tmpT',
+                                                       'PLACEID',      qStat.PLACEID,
+                                                       'MAIN_ID',      qStat.MAIN_ID,
+                                                       'M_COUNTER',    qStat.MAIN_COUNTER,
+                                                       'STAGE',        qStat.STAGE,
+                                                       'DO_TYPE',      qStat.DO_TYPE,
+                                                       'DO_NO',        qStat.DO_NO,
+                                                       'DO_DATE',      qStat.DO_DATE,
+                                                       'DOCUMENTID',   qStat.DOCUMENTID,
+                                                       'DATECORR',     qStat.DATECORR,
+                                                       'DOC_TYPE',     qStat.DOC_TYPE,
+                                                       'DOC_NO',       qStat.DOC_NO,
+                                                       'EPS_STATUS',   qES.DOCSTATUS,
+                                        ); // SETFIELDVALUE - //
+                                        POST ('tmpT');
+                                        NEXT ('qStat');
+                                        SETPROGRESS (iIndex, 100, iCount);
+                                        iIndex := iIndex + 1;
+                                      )
+                                    ); // WHILE - //
+                                    HIDEPROGRESS ();
+                                    // фиксируем ДатуВремя обновления таблицы
+                                    WRITEINIFILE ('EpsControl', 'UpdateDate', 'ВНИМАНИЕ! Последнее обновление данных выполнено: ' + FDT ('DD.MM.YYYY HH:NN:SS', Date()+Time(1)));
+                                    FORMSETPROPERTY (frmControl, 'lblUpdate.Caption', INIFILE ('EpsControl', 'UpdateDate', ''));
+                                    FORMSETPROPERTY (frmControl, 'nTempDB.Connected', 'True');
+                                    FORMSETPROPERTY (frmControl, 'tblTemp.Active',    'True');
+                                  ),
+                                  5,
+                                  Block(
+                                    // - ничего не делаем пока
+                                    showmessage (5);
+                                  )
+                                  ]
+                    ); // CASE - //
+
+                  )
+                ); // WHILE - iForm <> 2 //
+
+                Dispose ();
+              )
+            ); // IF - //
+
+{
+          ),
+          Block(
+            // БЛОК ИСКЛЮЧЕНИЯ - не удалось открыть таблицу
+            RAISEEXCEPTION ('Не удалось открыть таблицу TMPTABLE.DBF');
+          )
+        );
+}
+        CLOSEDATABASE ('tmpDB');
+{
+      ),
+      Block(
+        // БЛОК ИСКЛЮЧЕНИЯ
+        RAISEEXCEPTION ('Не удалось получить набор данных');
+      )
+    ); // TRYEXCEPT - //
+}
+  )
+), // FUNC - GenTmpTable() //
+
+GenTmpTable();

@@ -1,0 +1,39 @@
+// *****************************************************************************
+// Название: Показ документа
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: showDocXSLT
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\utils\xslt_func.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\utils\monitored.prd');
+// подключение функции GetBackupFile
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\utils\get_backup_file.prd');
+
+VAR ('sConnStringME', String, '');
+
+sConnStringME := ConnStringBaseMonitorEd();
+
+IF (TRIM (sConnStringME) <> '',
+  Block(
+    VAR ('sSQL', String, '');
+    sSQL := 'SELECT' +
+            ' BACKUPFILE, INCOMING, FMTVERSION' +
+            ' FROM ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' DOCID LIKE ' +char(39)+ '%' + DOCUMENTID + '%' +char(39);
+    OPENDATABASE ('dbMonitor', 'ActiveX Data Objects (ADO)', sConnStringME);
+    OPENQUERY ('qPM', sSQL, 'dbMonitor');
+        
+    VAR ('sBackupFile', String, GetBackupFile (qPM.BackupFile, qPM.INCOMING));
+    IF (FILEEXISTS (sBackupFile), ShowXml2Html(sBackupFile, qPM.FMTVERSION), SHOWMESSAGE ('Файл не найден.', 2, 'Показ документа'));
+
+    CLOSEDATASET ('qPM');
+    CLOSEDATABASE ('dbMonitor');
+  ),
+  SHOWMESSAGE ('Пустая строка подключения к базе Монитора ЭД', 2, 'Показ документа');
+); // IF

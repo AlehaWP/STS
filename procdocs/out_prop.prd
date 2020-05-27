@@ -1,0 +1,262 @@
+// *****************************************************************************
+// Название: Изменение всех количественных хар-к выдаваемых товаров пропорционально одной
+// Описание: Пропорциональное изменение характеристик выдаваемого в акте выдачи
+// Кнопка вызова: 0
+// Подпись кнопки: Акт выдачи - пропорции
+// *****************************************************************************
+//
+
+FUNC ('GetUserChoiceFromForm', , // показываем форму настроек и получаем пользовательский выбор
+Block(
+  Var('iType', Integer);
+  FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\out_prop.cfm');
+  iType := INIFILE (sIniSection, 'CommType', '1', sIniFile);
+  CASE (iType,
+  [1, FORMSETPROPERTY(frmDialog, 'rbtnG315A.Checked', 'True'),
+   2, FORMSETPROPERTY(frmDialog, 'rbtnG311.Checked', 'True'),
+   3, FORMSETPROPERTY(frmDialog, 'rbtnG42.Checked', 'True'),
+   4, FORMSETPROPERTY(frmDialog, 'rbtnG35.Checked', 'True'),
+   5, FORMSETPROPERTY(frmDialog, 'rbtnG38.Checked', 'True'),
+   6, FORMSETPROPERTY(frmDialog, 'rbtnG315C.Checked', 'True'),
+   7, FORMSETPROPERTY(frmDialog, 'rbtnOutAll.Checked', 'True')
+   ]
+  );
+  if(FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено'));
+
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnG315A.Checked') = 'True', iType := 1);
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnG311.Checked') = 'True', iType := 2);
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnG42.Checked') = 'True', iType := 3);
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnG35.Checked') = 'True', iType := 4);
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnG38.Checked') = 'True', iType := 5);
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnG315C.Checked') = 'True', iType := 6);
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnOutAll.Checked') = 'True', iType := 7);
+  
+  WRITEINIFILE (sIniSection, 'CommType', iType, sIniFile);
+  WRITEINIFILE (sIniSection, 'ShowDialog', FORMGETPROPERTY(frmDialog, 'chkShow.Checked'), sIniFile);
+  FORMDESTROY(frmDialog);
+  iType
+)
+),
+
+{выдаем товар пропорционально выбранному sMainField}
+FUNC ('OutProportionally',
+Block(
+  Param('sMainField', String, 0),
+  Param('fMainRest', Float, 1),
+), 
+Block(
+  // коэффициент выдачи = введенное количество/все количество
+  Var('fCoeff', Float);
+  // введенное количество
+  Var('fMainCount', Float);
+
+  fMainCount := FIELDVALUE ('OUT_COMM_2', 'OUT_'+sMainField);
+  {2.3 проверяем введенное(текущее) количество, должно быть <= остаток}
+  If(fMainCount > VALUE ('fRest'+sMainField), RAISEEXCEPTION ('Вы пытаетесь выдать больше товара, чем осталось!!!'));
+  {2.3.1 вычисляем коэффициент выдачи = введенное(текущее) количество/все количество}
+  fCoeff := fMainCount/VALUE ('fIn'+sMainField);
+  {2.3.2 вычисляем выдаваемое= коэффициент*остаток, округляем в меньшую сторону }
+  
+  Edit('OUT_COMM_2');
+  SETFIELDVALUE('OUT_COMM_2',
+    'OUT_G35', Trunc(fRestG35*fCoeff*10000)/10000,
+    'OUT_G38', Trunc(fRestG38*fCoeff*10000)/10000,
+    'OUT_G311', Trunc(fRestG311*fCoeff*100)/100,
+    'OUT_G42', Trunc(fRestG42*fCoeff*100)/100,
+    'OUT_G315A', Trunc(fRestG315A*fCoeff*100)/100,
+    'OUT_G315C', Trunc(fRestG315C*fCoeff*100)/100
+  );
+  SETFIELDVALUE('OUT_COMM_2', 'OUT_'+sMainField, fMainCount);
+  Post('OUT_COMM_2');
+
+)
+),
+
+{    Алгоритм
+    0. смотрим на статус документа, если зарегистрирован - ничего не делаем
+    1. Вызываем форму с радиобаттонами:
+    изменить количественные характеристики выдаваемых товаров пропорционально введенному
+     - кол-ву в доп. единицах
+     - количеству мест
+     - весу
+     - весу нетто
+     - стоимости
+     - объему
+    - выдать все остатки
+    галка "показывать в следующий раз" как в ДО1.ФР3
+    2. бежим по товарам
+     2.1 вычисляем остатки по каждому товару без учета текущего акта выдачи
+     2.2 если нажали "выдать все" - выдаем остатки, иначе
+     2.3 проверяем введенное(текущее) количество, должно быть <= остаток
+       2.3.1 вычисляем коэффициент выдачи = введенное(текущее) количество/все количество;
+             только по выбранному параметру
+       2.3.2 вычисляем выдаваемое= коэффициент*остаток, округляем в меньшую сторону }
+
+
+{--------Переменные-----------------------------------------------------------------}
+
+Var('fInG35', Float, 0);
+Var('fInG38', Float, 0);
+Var('fInG311', Float, 0);
+Var('fInG42', Float, 0);
+Var('fInG315A', Float, 0);
+Var('fInG315C', Float, 0);
+
+Var('fOutG35', Float, 0);
+Var('fOutG38', Float, 0);
+Var('fOutG311', Float, 0);
+Var('fOutG42', Float, 0);
+Var('fOutG315A', Float, 0);
+Var('fOutG315C', Float, 0);
+
+Var('fRestG35', Float, 0);
+Var('fRestG38', Float, 0);
+Var('fRestG311', Float, 0);
+Var('fRestG42', Float, 0);
+Var('fRestG315A', Float, 0);
+Var('fRestG315C', Float, 0);
+
+Var('iPlaceID', Integer);
+Var('iID', Integer);
+Var('iActOutID', Integer);
+Var('iG32', Integer);
+
+Var('iRecordCount', Integer, 0);
+Var('iCurrentRecord', Integer, 1);
+Var('ProgrItem', Float, 0);
+Var('sIniFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'proc.ini');
+Var('sIniSection', String, 'out_prop.prd');
+
+// какую характеристику товара выбрал пользователь
+Var('iCommType', Integer, 0); 
+{   1 - кол-во в доп. единицах
+    2 - количество мест
+    3 - стоимость
+    4 - вес брутто
+    5 - вес нетто
+    6 - объем
+    7 - выдать все остатки}
+//Взяли из ini-шника "Только таможенные документы учета"
+Var('CustomDocsOnly', Integer, CONVERT(IniFile('RegBook', 'CustomsDocsOnly', '0'), Integer));
+//Совместимость с АИСТом
+Var('AistCompatible', Integer, CONVERT(IniFile('Docs', 'AistCompatible', '0'), Integer)); {включена ли настройка "Совместимость с АИСТом", 1-да, 0-нет}
+//Отключен ли блок складских документов
+Var('StoreDocsBlock', Integer, CONVERT(IniFile('Database', 'StoreDocsBlock', '0'), Integer));
+Var('bUseStoreDocs', Boolean, False);
+
+IF ((StoreDocsBlock = 1) * ((AistCompatible = 1) | ((AistCompatible = 0) * (CustomDocsOnly = 0))),
+  bUseStoreDocs := True,
+  bUseStoreDocs := False
+);
+
+{-----------------------------------------------------------------------------------}
+If(bUseStoreDocs = 'False', RAISEEXCEPTION ('Складские документы отключены в настройках программы!'));
+
+{0. смотрим на статус документа, если зарегистрирован - ничего не делаем}
+If(OUT_MAIN.MC_STATUS = '3', RAISEEXCEPTION ('Акт выдачи зарегистрирован. Изменения запрещены.'));
+
+{1. Вызываем форму с радиобаттонами или смотрим в инишнике, как хотим менять характеристики}
+If((INIFILE (sIniSection, 'ShowDialog', 'True', sIniFile)='True') | SHIFTPRESSED(),
+   iCommType := GetUserChoiceFromForm(),
+   iCommType := INIFILE (sIniSection, 'CommType', '1', sIniFile)
+);
+
+iPlaceID := OUT_MAIN.PLACEID;
+iID := OUT_MAIN.ID;
+iActOutID := OUT_MAIN.ACTOUTID;
+// открываем и фильтруем таблицу товаров текущего акта выдачи
+OPENTABLE ('OUTCOMM', 'STS_DB', 'OUT_COMM', 'PLACEID;ID;ACTOUTID', 1);
+SETRANGE ('OUTCOMM', [iPlaceID, iID, iActOutID]);
+
+{2. бежим по товарам}
+FIRST ('OUTCOMM');
+WHILE(EOF('OUTCOMM')=0,
+  Block(
+    {2.1 вычисляем остатки по каждому товару}
+
+    iG32 := OUTCOMM.G32;
+    SETRANGE ('KRD_COMM_2', [iPlaceID, iID, iG32]);
+
+    fInG35 := KRD_COMM_2.G35;
+    fInG38 := KRD_COMM_2.G38;
+    fInG311 := KRD_COMM_2.G311;
+    fInG42 := KRD_COMM_2.G42;
+    fInG315C := KRD_COMM_2.G315C;
+    fInG315A := KRD_COMM_2.G315A;
+
+    IF(bUseStoreDocs,
+      IF((INIFILE ('Docs', 'DoFactInfo', '0') = '1')*FINDKEY('IN_COMM_2', [iPlaceID, iID, iG32]), Block(
+        fInG35 := IN_COMM_2.G35;
+        fInG38 := IN_COMM_2.G38;
+        fInG311 := IN_COMM_2.G311;
+        fInG42 := IN_COMM_2.G42;
+        fInG315C := IN_COMM_2.G315C;
+        fInG315A := IN_COMM_2.G315A;
+      )),
+      IF(INIFILE ('Docs', 'DoFactInfo', '0') = '1', Block(
+        fInG35 := KRD_COMM_2.FACT_G35;
+        fInG38 := KRD_COMM_2.FACT_G38;
+        fInG311 := KRD_COMM_2.FACT_G311;
+        fInG42 := KRD_COMM_2.FACT_G42;
+        fInG315C := KRD_COMM_2.FACT_G315C;
+        fInG315A := KRD_COMM_2.FACT_G315A;
+      ))
+    );
+    CANCELRANGE('KRD_COMM_2');
+
+    // выпущено
+    SETRANGE('OUT_COMM_2', [iPlaceID, iID, iG32]);
+
+    fOutG35 := SUMVALUES ('OUT_COMM_2', 'OUT_G35');
+    fOutG38 := SUMVALUES ('OUT_COMM_2', 'OUT_G38');
+    fOutG311 := SUMVALUES ('OUT_COMM_2', 'OUT_G311');
+    fOutG42 := SUMVALUES ('OUT_COMM_2', 'OUT_G42');
+    fOutG315C := SUMVALUES ('OUT_COMM_2', 'OUT_G315C');
+    fOutG315A := SUMVALUES ('OUT_COMM_2', 'OUT_G315A');
+
+    CANCELRANGE('OUT_COMM_2');
+
+    // остатки без текущего акта выдачи
+    fRestG311 := fInG311 - fOutG311 + OUTCOMM.OUT_G311;
+    fRestG35 := fInG35 - fOutG35 + OUTCOMM.OUT_G35;
+    fRestG38 := fInG38 - fOutG38 + OUTCOMM.OUT_G38;
+    fRestG42 := fInG42 - fOutG42 + OUTCOMM.OUT_G42;
+    fRestG315C := fInG315C - fOutG315C + OUTCOMM.OUT_G315C;
+    fRestG315A := fInG315A - fOutG315A + OUTCOMM.OUT_G315A;
+
+    // переходим к конкретному товару
+    SETRANGE('OUT_COMM_2', [iPlaceID, iID, iG32, iActOutID]);
+    {2.2 если нажали "выдать все" - выдаем остатки}
+    If(iCommType = 7,
+      Block(
+        Edit('OUT_COMM_2');
+        SETFIELDVALUE('OUT_COMM_2',
+          'OUT_G35', fRestG35,
+          'OUT_G38', fRestG38,
+          'OUT_G311', fRestG311,
+          'OUT_G42', fRestG42,
+          'OUT_G315A', fRestG315A,
+          'OUT_G315C', fRestG315C
+        );
+        Post('OUT_COMM_2');
+      ),
+      Block(
+      {2.3 иначе выдаем товар пропорционально}
+        CASE (iCommType,
+        [1, OutProportionally('G315A', fRestG315A),
+         2, OutProportionally('G311', fRestG311),
+         3, OutProportionally('G42', fRestG42),
+         4, OutProportionally('G35', fRestG35),
+         5, OutProportionally('G38', fRestG38),
+         6, OutProportionally('G315C', fRestG315C),
+         ]
+        )
+      )
+    );
+    CANCELRANGE('OUT_COMM_2');
+    NEXT('OUTCOMM')
+  )
+);
+REFRESH ('OUT_COMM');
+GLOBALREFRESH ();
+

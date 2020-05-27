@@ -1,0 +1,29 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+ OPENDATABASE ('BASE_SQL', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=SQLOLEDB.1;Password=sts;Persist Security Info=True;User ID=sts;Initial Catalog=STS_DATA;Data Source=192.168.1.63');
+                                                        // 'Initial Catalog=STS_DATA;Data Source=192.168.1.63', 'FileLinkMode=0');
+ OPENQUERY ('ORG', 'SELECT * FROM ORGANIZ', 'BASE_SQL');
+
+ OPENTABLE ('ORGANIZ_2', 'STS_DB', 'ORGANIZ', 'PLACEID;ORGID');
+ FIRST('ORG');
+ WHILE(EOF('ORG') = 0,
+       BLOCK(
+         TRYEXCEPT (BLOCK(
+                       IF(LOCATE('ORGANIZ_2','PLACEID; ORGID', [ORG.PLACEID, ORG.ID])*(ORG.PLACEID = 14),
+                       ,COPYRECORD ('ORG', 'ORGANIZ_2'));
+                       NEXT('ORG');
+                    )
+         , NEXT('ORG')
+         );
+
+        )
+ );
+ CLOSEDATASET ('ORGANIZ_2');
+ CLOSEDATASET ('ORG');
+  //Provider=SQLOLEDB.1;Password=sts;Persist Security Info=True;User ID=sts;Initial Catalog=STS_DATA;Data Source=192.168.1.63

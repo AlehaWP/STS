@@ -1,0 +1,86 @@
+// *****************************************************************************
+// Название: Заполнение времени в актах выдачи из backup
+// Описание: Заполнение времени в актах выдачи из backup
+// Кнопка вызова: 0
+// Подпись кнопки: Заполнение времени в актах выдачи из backup
+// *****************************************************************************
+//
+VAR ('sNameDirectory', string, '');
+VAR ('sNameDirectoryDate', string, '');
+VAR ('sNameDirectoryTime', string, '');
+VAR ('iAddDayToName', integer, 0);
+VAR ('iFindDirectory', integer, 0);
+VAR ('iHour', integer, 0);
+VAR ('iMinute', integer, 0);
+VAR ('iSecond', integer, 0);
+VAR ('iFindDirectory', integer, 0);
+//VAR ('iAddDayToName', integer, 0);
+//VAR ('iFindDirectory', integer, 0);
+VAR('FileList', memo);
+VAR('Now_DO_Date', DateTime, '');
+
+FUNC('GetBaseFromBackup',,
+     BLOCK(
+       iAddDayToName := 0;
+       iFindDirectory = 0;
+       sNameDirectory := '';
+       WHILE((iAddDayToName < 30)*(iFindDirectory = 0),
+             Block(
+               iAddDayToName := iAddDayToName + 1;
+               sNameDirectory := FORMATDATETIME('YYYYMMDD', OUT_MAIN_2.G542 + iAddDayToName);
+               iFindDirectory := DIRECTORYEXISTS(PROGRAMPATH() + 'BACKUP\' + sNameDirectory);
+               sNameDirectoryDate := PROGRAMPATH() + 'BACKUP\' + sNameDirectory;
+               IF(iFindDirectory,
+                  Block(
+                     sNameDirectoryTime := '';
+                     iFindDirectory := 0;
+                     iHour := 8;
+                     iMinute := 40;
+                     iSecond := 00;
+                     While((iHour < 24)*(iFindDirectory = 0),
+                           BLOCK(
+                             iSecond := iSecond + 1;
+                             if(iSecond = 60, Block(iMinute := iMinute + 1; iSecond := 0;));
+                             if(iMinute = 60, Block(iHour := iHour + 1; iMinute := 0;));
+                             iFindDirectory := DIRECTORYEXISTS(sNameDirectoryDate + '\' + LEFTPAD (convert(iHour, string), 2, '0') + '_' + LEFTPAD (convert(iMinute, string), 2, '0') + '_' + LEFTPAD (convert(iSecond, string), 2, '0'));
+                           )
+                     );
+                   )
+               );
+               sNameDirectoryTime := sNameDirectoryDate + '\' + LEFTPAD (convert(iHour, string), 2, '0') + '_' + LEFTPAD (convert(iMinute, string), 2, '0') + '_' + LEFTPAD (convert(iSecond, string), 2, '0');
+             )
+       );
+       IF(iFindDirectory,
+          BLOCK(
+             ZIPEXTRACTFILE(sNameDirectoryTime + '\backup.dat', sNameDirectoryDate + '\DATA');
+          )
+       );
+       Now_DO_Date := OUT_MAIN_2.G542;
+     )
+),
+
+FIRST('OUT_MAIN_2');
+WHILE(EOF('OUT_MAIN_2')=0,
+      BLOCK(
+        IF(LENGTH (convert(OUT_MAIN_2.G542, string)) < 11,,
+           BLOCK(
+             IF((iFindDirectory = 1)*(Now_DO_Date <> OUT_MAIN_2.G542), CLEARDIRECTORY(sNameDirectoryDate + '\DATA'));
+             IF(Now_DO_Date = OUT_MAIN_2.G542, , GetBaseFromBackup());
+             IF(DIRECTORYEXISTS(sNameDirectoryDate + '\DATA'),
+               BLOCK(
+                 OPENDATABASE ('STS_DB_old', 'STANDARD', 'PATH=' + sNameDirectoryDate + '\DATA');
+                 OPENQUERY ('Find_time', 'SELECT G542 FROM OUT_MAIN WHERE OUT_MAIN.NDA =' + char(39) + OUT_MAIN_2.NDA + char(39),'STS_DB_old');
+                 EDIT('OUT_MAIN_2');
+                 SETFIELDVALUE('OUT_MAIN_2',
+                               'G542', Find_time.G542
+                 );
+                 POST('OUT_MAIN_2');
+               )
+             );
+             
+           )
+        );
+        NEXT('OUT_MAIN_2');
+      )
+);
+

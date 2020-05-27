@@ -1,0 +1,155 @@
+// *****************************************************************************
+// Название: Загрузка требования о проведении операций
+// Описание: Загрузка требования о проведении операций
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузка требования о проведении операций
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC('GetAddress',
+     PARAM ('iDescriptElement', integer, 0),
+     BLOCK(
+       VAR('sAddress', string, '');
+       sAddress:=XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:PostalCode')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:CounryName')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:Region'))+ ' ' +XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:StreetHouse'));
+       sAddress;
+     );
+),
+
+FUNC('GetIdentityCard',
+     PARAM ('iDescriptElement', integer, 0),
+     BLOCK(
+       VAR('sIdentityCard', string, '');
+       sIdentityCard:=XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardName')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardSeries')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardNumber')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardDate')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:OrganizationName'));
+       sIdentityCard;
+     );
+),
+
+FUNC('GetDate',
+     BLOCK(
+       PARAM ('iParrentElement', integer, 0),
+       PARAM ('sElementName', string, 1),
+     ),
+     BLOCK(
+       VAR('dDate', datetime);
+       //showmessage(iParrentElement);
+       dDate:=STRTODATE(XMLNODEVALUE(XMLNODEFIND(iParrentElement,sElementName)),'YYYY-MM-DD', '-');
+       dDate;
+     );
+),
+
+
+{
+  VAR ('sPath', String, '');
+  IF (SELECTFILE ('sPath', 'Выбор уведомления о выпуске', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+  VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+  XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+  VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+}
+
+OPENTABLE ('OPERATE', 'JRREQOPER', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+
+
+VAR ('XmlReqOper', Integer, XMLNODECHILD (XmlRoot, 0));
+      VAR ('sDocumentID', string, XMLNODEVALUE (XMLNODEFIND (XmlTransitInfo, 'cat_ru:DocumentID')));
+
+IF(LOCATE('OPERATE', 'DocumentID', sDocumentID)=0,
+   BLOCK(
+      OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM JRREQOPER', 'dbJournals');
+      VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+
+      VAR('iCustoms', integer, XMLNODEFIND (XmlReqOper, 'reqop:Customs'));
+
+      VAR('iDeclarant', integer, XMLNODEFIND (XmlReqOper, 'reqop:Declarant'));
+          VAR('iRFOrganizationFeatures', integer, XMLNODEFIND (iDeclarant, 'cat_ru:RFOrganizationFeatures'));
+          VAR('iRepresentative', integer, XMLNODEINDEX (XMLNODEFIND (iDeclarant, 'reqop:Representative')));
+              VAR('iRepOrganizationFeatures', integer, XMLNODEINDEX (XMLNODEFIND (iRepresentative, 'cat_ru:RFOrganizationFeatures')));
+
+      VAR('iTransportation', integer, XMLNODEFIND (XmlReqOper, 'reqop:Transportation'));
+      VAR('iWeighing', integer, XMLNODEFIND (XmlReqOper, 'reqop:Weighing'));
+      VAR('iDifferentDefinitionQuantity', integer, XMLNODEFIND (XmlReqOper, 'reqop:DifferentDefinitionQuantity'));
+      VAR('iLoading', integer, XMLNODEFIND (XmlReqOper, 'reqop:Loading'));
+      VAR('iUnloading', integer, XMLNODEFIND (XmlReqOper, 'reqop:Unloading'));
+      VAR('iOverload', integer, XMLNODEFIND (XmlReqOper, 'reqop:Overload'));
+      VAR('iCorrectionPackaging', integer, XMLNODEFIND (XmlReqOper, 'reqop:CorrectionPackaging'));
+      VAR('iUnpacking', integer, XMLNODEFIND (XmlReqOper, 'reqop:Unpacking'));
+      VAR('iPacking', integer, XMLNODEFIND (XmlReqOper, 'reqop:Packing'));
+      VAR('iRepackaging', integer, XMLNODEFIND (XmlReqOper, 'reqop:Repackaging'));
+      VAR('iOpeningLocationGoods', integer, XMLNODEFIND (XmlReqOper, 'reqop:OpeningLocationGoods'));
+      VAR('iDivisionConsignment', integer, XMLNODEFIND (XmlReqOper, 'reqop:DivisionConsignment'));
+      VAR('iCustomsPerson', integer, XMLNODEFIND (XmlReqOper, 'reqop:CustomsPerson'));
+      VAR('iPersonSignature', integer, XMLNODEFIND (XmlReqOper, 'reqop:PersonSignature'));
+      VAR('iDirectionRequirement', integer, XMLNODEFIND (XmlReqOper, 'reqop:DirectionRequirement'));
+          VAR('iDirectionReqCustomsPerson', integer, XMLNODEFIND (iDirectionRequirement, 'reqop:CustomsPerson'));
+          VAR('iDirectionReqPerson', integer, XMLNODEFIND (iDirectionRequirement, 'reqop:Person'));
+          VAR('iDirectionReqAddress', integer, XMLNODEFIND (iDirectionRequirement, 'reqop:Address'));
+
+      APPENDRECORD ('OPERATE');
+      EDIT ('OPERATE');
+      SETFIELDVALUE('OPERATE',
+                    'JOURNAL_MASTER_ID', iJMID,
+                    'JOURNAL_UUID', GENERATEUUID (),
+                    'DocumentId',sDocumentID,
+                    'Status','',//XMLNODEVALUE(XMLNODEFIND(, '')),
+                    'sendReqOp','',//XMLNODEVALUE(XMLNODEFIND(, '')),
+                    'ReqDate',GetDate(XmlReqOper, 'reqop:ReqDate'),
+                    'DocSign',XMLNODEVALUE(XMLNODEFIND(XmlReqOper, 'reqop:DocSign')),
+                    'CustomsCode',XMLNODEVALUE(XMLNODEFIND(iCustoms, '')),
+                    'CustomsOfficeName',XMLNODEVALUE(XMLNODEFIND(iCustoms, '')),
+                    'CustomsCountryCode',XMLNODEVALUE(XMLNODEFIND(iCustoms, '')),
+                    'DeclOrgName',XMLNODEVALUE(XMLNODEFIND(iDeclarant, '')),
+                    'DeclINN',XMLNODEVALUE(XMLNODEFIND(iRFOrganizationFeatures, '')),
+                    'ReprOrgName',XMLNODEVALUE(XMLNODEFIND(iRepresentative, '')),
+                    'ReprINN',XMLNODEVALUE(XMLNODEFIND(iRepOrganizationFeatures, '')),
+                    'DocFinishSign','',
+                    'TranspValue',XMLNODEVALUE(XMLNODEFIND(iTransportation, '')),
+                    'TranspRemark',XMLNODEVALUE(XMLNODEFIND(iTransportation, '')),
+                    'TranspFinish',XMLNODEVALUE(XMLNODEFIND(iTransportation, '')),
+                    'WeighValue',XMLNODEVALUE(XMLNODEFIND(iWeighing, '')),
+                    'WeighRemark',XMLNODEVALUE(XMLNODEFIND(iWeighing, '')),
+                    'WeighFinish',XMLNODEVALUE(XMLNODEFIND(iWeighing, '')),
+                    'DiffValue',XMLNODEVALUE(XMLNODEFIND(iDifferentDefinitionQuantity, '')),
+                    'DiffRemark',XMLNODEVALUE(XMLNODEFIND(iDifferentDefinitionQuantity, '')),
+                    'DiffFinish',XMLNODEVALUE(XMLNODEFIND(iDifferentDefinitionQuantity, '')),
+                    'LoadValue',XMLNODEVALUE(XMLNODEFIND(iLoading, '')),
+                    'LoadRemark',XMLNODEVALUE(XMLNODEFIND(iLoading, '')),
+                    'LoadFinish',XMLNODEVALUE(XMLNODEFIND(iLoading, '')),
+                    'UnloadValue',XMLNODEVALUE(XMLNODEFIND(iUnloading, '')),
+                    'UnloadRemark',XMLNODEVALUE(XMLNODEFIND(iUnloading, '')),
+                    'UnloadFinish',XMLNODEVALUE(XMLNODEFIND(iUnloading, '')),
+                    'OverloadValue',XMLNODEVALUE(XMLNODEFIND(iOverload, '')),
+                    'OverloadRemark',XMLNODEVALUE(XMLNODEFIND(iOverload, '')),
+                    'OverloadFinish',XMLNODEVALUE(XMLNODEFIND(iOverload, '')),
+                    'CorrPackValue',XMLNODEVALUE(XMLNODEFIND(iCorrectionPackaging, '')),
+                    'CorrPackRemark',XMLNODEVALUE(XMLNODEFIND(iCorrectionPackaging, '')),
+                    'CorrPackFinish',XMLNODEVALUE(XMLNODEFIND(iCorrectionPackaging, '')),
+                    'UnPackValue',XMLNODEVALUE(XMLNODEFIND(iUnpacking, '')),
+                    'UnPackRemark',XMLNODEVALUE(XMLNODEFIND(iUnpacking, '')),
+                    'UnPackFinish',XMLNODEVALUE(XMLNODEFIND(iUnpacking, '')),
+                    'PackValue',XMLNODEVALUE(XMLNODEFIND(iPacking, '')),
+                    'PackRemark',XMLNODEVALUE(XMLNODEFIND(iPacking, '')),
+                    'PackFinish',XMLNODEVALUE(XMLNODEFIND(iPacking, '')),
+                    'RePackValue',XMLNODEVALUE(XMLNODEFIND(iRepackaging, '')),
+                    'RePackRemark',XMLNODEVALUE(XMLNODEFIND(iRepackaging, '')),
+                    'RePackFinish',XMLNODEVALUE(XMLNODEFIND(iRepackaging, '')),
+                    'OpenValue',XMLNODEVALUE(XMLNODEFIND(iOpeningLocationGoods, '')),
+                    'OpenRemark',XMLNODEVALUE(XMLNODEFIND(iOpeningLocationGoods, '')),
+                    'OpenFinish',XMLNODEVALUE(XMLNODEFIND(iOpeningLocationGoods, '')),
+                    'DivValue',XMLNODEVALUE(XMLNODEFIND(iDivisionConsignment, '')),
+                    'DivRemark',XMLNODEVALUE(XMLNODEFIND(iDivisionConsignment, '')),
+                    'DivFinish',XMLNODEVALUE(XMLNODEFIND(iDivisionConsignment, '')),
+                    'InspFIO',XMLNODEVALUE(XMLNODEFIND(iCustomsPerson, '')),
+                    'InspLNP',XMLNODEVALUE(XMLNODEFIND(iCustomsPerson, ''))
+      );
+      POST('OPERATE');
+     
+   )
+);
+
+
+CLOSEDATASET ('OPERATE');
+
+
+

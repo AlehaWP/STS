@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<TfrxReport Version="5.3.1" DotMatrixReport="False" EngineOptions.ConvertNulls="False" EngineOptions.MaxMemSize="10000000" IniFile="\Software\Fast Reports" PreviewOptions.Buttons="2047" PreviewOptions.Zoom="1" PrintOptions.Printer="По умолчанию" PrintOptions.PrintOnSheet="0" ReportOptions.CreateDate="42626.5451008796" ReportOptions.Description.Text="" ReportOptions.Name="ВЭД-Склад (Диспетчер) ()" ReportOptions.LastChange="42626.5451494676" ScriptLanguage="PascalScript" ScriptText.Text="begin&#13;&#10;&#13;&#10;end.">
+  <Datasets>
+    <item DataSet="JRTRANSITINFO" DataSetName="JRTRANSITINFO"/>
+    <item DataSet="JRTDTransport" DataSetName="JRTDTransport"/>
+    <item DataSet="JrTDConsigment" DataSetName="JrTDConsigment"/>
+    <item DataSet="JrTdGoodsItem" DataSetName="JrTdGoodsItem"/>
+    <item DataSet="JrTDProducedDocument" DataSetName="JrTDProducedDocument"/>
+    <item DataSet="JrTdSeal" DataSetName="JrTdSeal"/>
+  </Datasets>
+  <TfrxDataPage Name="Data" Height="1000" Left="0" Top="0" Width="1000"/>
+  <TfrxReportPage Name="Page1" PaperWidth="210" PaperHeight="297" PaperSize="9" LeftMargin="10" RightMargin="10" TopMargin="10" BottomMargin="10" ColumnWidth="0" ColumnPositions.Text="" LargeDesignHeight="True" HGuides.Text="" VGuides.Text="" VirtualPage="False"/>
+</TfrxReport>

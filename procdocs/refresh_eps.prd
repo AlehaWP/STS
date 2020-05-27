@@ -1,0 +1,357 @@
+// *****************************************************************************
+// Название: refresh_eps
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: refresh_eps
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+// скрипт повторной обработки ключевых сообщений
+// регистрация отчетности - CMN.13010
+// отказ в регистрации отчетности - CMN.13019
+// принятие Комм. акта \ Письма - CMN.13021
+// отказ в принятии Комм. акта \ Письма - CMN.130
+
+// подключаем функцию GetBackupFile (используется для определения пути к файлу резервной копии Монитор ЭД)
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd');
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+IF (VAREXISTS ('sBackupFile') = 0, VAR ('sBackupFile', String, ''));
+IF (VAREXISTS ('sRelease') = 0, VAR ('sRelease', String, CORRECTTABLENAME ('RELEASE')));
+
+VAR ('sDirToSave', String, INCLUDETRAILINGBACKSLASH (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\' + USERINFO ('', 'USERUUID')));
+VAR ('sXmlFileToSave', String, '');
+
+// глобальные переменные для идентификации протокола Монитор ЭД
+VAR ('iWHId', Integer, 0);
+VAR ('sWHDocId', String, '');
+VAR ('iWHDocId2', Integer, 0);
+
+
+FUNC ('ImportStatus',
+  Block(
+    PARAM ('pFile', String, 0);
+    PARAM ('pInitEnvelopeId', String, 1, '');
+  ),
+  Block(
+    // если есть ссылка на файл, то загружаем
+    IF (LENGTH (pFile) > 0,
+      Block(
+        VAR ('xFile', Integer, XMLDOCUMENTCREATE ());
+        XMLDOCUMENTLOAD (xFile, pFile);
+        VAR ('xDoc', Integer, XMLNODECHILD (XMLDOCUMENTROOT (xFile), 0));
+
+        xDoc := xDoc.Body.Signature.Object;
+        IF (XMLNODEFIND (xDoc, 'ED_Container'),
+          Block(
+            xDoc := xDoc.ED_Container.ContainerDoc.DocBody.Signature.Object;  
+          )
+        ); // IF
+        xDoc := XMLNODECHILD (xDoc, 0);
+        
+        XMLNODESETATTRIBUTE (xDoc, 'dodt', FDT ('DD.MM.YYYY HH:NN:SS', Date()+Time(1)));
+        XMLNODESETATTRIBUTE (xDoc, 'whid',  iWHId);
+        XMLNODESETATTRIBUTE (xDoc, 'do1id', sWHDocId);
+        XMLNODESETATTRIBUTE (xDoc, 'do2id', iWHDocId2);
+        IF (LENGTH (pInitEnvelopeId) > 0,
+          Block(
+              XMLNODESETATTRIBUTE (xDoc, 'initEnvelopeId', pInitEnvelopeId);
+              sSQL := 'SELECT' +
+                      ' MSGID' + 
+                      ' FROM ED_PROCMESSAGES' + 
+                      ' WHERE' +
+                      ' ENVELOPEID=' +char(39)+ pInitEnvelopeId +char(39)+
+                      ' AND WHID=' + iWHId +
+                      ' AND WHDOCID=' +char(39)+ sWHDocId +char(39)+
+                      ' AND WHDOCID2=' + iWHDocId2;              
+              OPENQUERY ('qInitMsg', dbMonitor, sSQL, 0);
+              CASE (qInitMsg.MSGID,
+                [
+                  'CMN.13020',
+                  Block(
+                    XMLNODESETATTRIBUTE (xDoc, 'ml', 0);
+                  ),
+                  'CMN.13023',
+                  Block(
+                    XMLNODESETATTRIBUTE (xDoc, 'ml', 1);
+                  )
+                ], 
+              ); // CASE
+              CLOSEDATASET ('qInitMsg');              
+          )
+        ); // IF
+
+        sXmlFileToSave := sDirToSave + EXTRACTSTR (pFile, SPLITSTR (pFile, '\', sSQL), '\');
+        XMLNODESAVE (xDoc, sXmlFileToSave);
+        XMLDESTROY (xFile);
+
+        // получаем пространство имён cat_ru
+        VAR ('sCatRuNamespace', String, '');
+        VAR ('mBackupFileContent', Memo, STRINGFROMFILE (pFile, '65001'));
+        IF (REGEXMATCH (mBackupFileContent, 'xmlns:cat_ru="(\S+)"', 1, 'sCatRuNamespace') = 0,
+          Block(
+            sCatRuNamespace := 'urn:customs.ru:CommonAggregateTypes:5.10.0';
+          )
+        ); // IF
+        // добавляем пространство имён cat_ru
+        xDoc := XMLDOCUMENTCREATE();
+        XMLDOCUMENTLOAD (xDoc, sXmlFileToSave);
+        XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xDoc), 0), 'xmlns:cat_ru', sCatRuNamespace);
+        XMLDOCUMENTSAVE (xDoc, sXmlFileToSave);
+        XMLDESTROY (xDoc);
+      )
+    ); // IF
+  )
+); // FUNC - ImportStatus
+
+
+FUNC('RefreshDO', '',
+  Block(  
+    sSQL := 'SELECT' +
+            ' MSGID, INCOMING, BACKUPFILE' +
+            ' FROM ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' WHID=' + iWHId + 
+            ' AND WHDOCID=' +char(39)+ sWHDocId +char(39)+
+            ' AND WHDOCID2=' + iWHDocId2 +
+            ' AND MSGID IN (' +char(39)+ 'CMN.13039' +char(39)+ ',' +char(39)+ 'CMN.13010' +char(39)+ ',' +char(39)+ 'CMN.13019' +char(39)+ ')';
+    OPENQUERY ('qEDProcMessages', dbMonitor, sSQL, 0);
+    IF (LOCATE ('qEDProcMessages', 'MSGID', ['CMN.13039']),
+      Block(
+        // загужаем отмену подачи ДО
+        // showmessage ('загужаем отмену подачи ДО');
+        sBackupFile := GetBackupFile(qEDProcMessages.BACKUPFILE, qEDProcMessages.INCOMING);
+        ImportStatus(sBackupFile);
+      ),
+      IF (LOCATE ('qEDProcMessages', 'MSGID', ['CMN.13010']),
+        Block(
+          // загужаем регистрацию ДО
+          // showmessage ('загужаем регистрацию ДО');
+          sBackupFile := GetBackupFile(qEDProcMessages.BACKUPFILE, qEDProcMessages.INCOMING);
+          ImportStatus(sBackupFile);
+        ),
+        IF (LOCATE ('qEDProcMessages', 'MSGID', ['CMN.13019']),
+          Block(
+            // загружаем отказ в регистрации
+            // showmessage ('загружаем отказ в регистрации');
+            sBackupFile := GetBackupFile(qEDProcMessages.BACKUPFILE, qEDProcMessages.INCOMING);
+            ImportStatus(sBackupFile);
+          )
+        ) // IF
+      ) // IF
+    );
+    CLOSEDATASET ('qEDProcMessages');
+  )
+); // FUNC - RefreshDO
+
+
+FUNC ('RefreshCA', '',
+  Block(    
+    sSQL := 'SELECT' +
+            ' MSGID, INITENVELOPEID, INCOMING, BACKUPFILE' +
+            ' FROM ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' WHID=' + iWHId + 
+            ' AND WHDOCID=' +char(39)+ sWHDocId +char(39)+
+            ' AND WHDOCID2=0' + iWHDocId2 +
+            ' AND MSGID IN (' +char(39)+ 'CMN.13021' +char(39)+ ',' +char(39)+ 'CMN.13022' +char(39)+ ')';
+    OPENQUERY ('qEDProcMessages', dbMonitor, sSQL, 0);
+    IF (LOCATE ('qEDProcMessages', 'MSGID', ['CMN.13021']),
+      Block(
+        // загужаем принятие Комм. акта \ Письма
+        // showmessage ('загужаем принтие Комм. акта \ Письма');
+        sBackupFile := GetBackupFile(qEDProcMessages.BACKUPFILE, qEDProcMessages.INCOMING);
+        ImportStatus(sBackupFile, qEDProcMessages.INITENVELOPEID);
+      ),
+      IF (LOCATE ('qEDProcMessages', 'MSGID', ['CMN.13022']),
+        Block(
+          // загужаем отказ в принятии Комм. акта \ Письма
+          // showmessage ('загужаем отказ в принятии Комм. акта \ Письма');
+          sBackupFile := GetBackupFile(qEDProcMessages.BACKUPFILE, qEDProcMessages.INCOMING);
+          ImportStatus(sBackupFile, qEDProcMessages.INITENVELOPEID);
+        )
+      ) // IF
+    );
+    CLOSEDATASET ('qEDProcMessages');      
+  )
+);
+
+
+FUNC ('RefreshEps',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+    PARAM ('pDocId', String, 2);
+  ),
+  Block(
+
+    TRYFINALLY (
+      Block(
+        LOCATE ('KRD_MAIN_2', 'PLACEID;ID', [pPlaceId, pId]);
+        
+        // подключение функции записи в EPS_LOG
+        EXECUTESCRIPT ('PROCDOCS\write_eps_log.prd');
+        WriteEpsLog (
+            KRD_MAIN_2.PLACEID,
+            KRD_MAIN_2.MAIN_ID,
+            0,
+            KRD_MAIN_2.DOCUMENTID,
+            'ДО-1',
+            KRD_MAIN_2.NBD,
+            KRD_MAIN_2.BD_DATE,
+            'Обновление статуса ЭПС (вручную)',
+            FDT ('DD.MM.YYYY HH:NN:SS', (Date()+Time(1))),
+            GENERATEUUID (),
+            'Запустил пользователь ' + gComputerName + ' ' + gUserName,
+            '',
+            '1',
+            FDT ('DD.MM.YYYY HH:NN:SS', (Date()+Time(1))),
+            2
+        ); // WriteEpsLog
+
+        // подключаемся к базе Монитор ЭД
+        VAR ('dbMonitor', String, EXECUTESCRIPT ('ProcDocs\open_monitor_db.prd'));
+
+        // ОБРАБАТЫВАЕМ ДО-1
+        // TODO:
+        iWHId := KRD_MAIN_2.PLACEID;
+        sWHDocId := KRD_MAIN_2.DOCUMENTID;
+        iWHDocId2 := 0;
+        // если ДО зарегистрирована и в ней есть рег. номер
+        // то ничего не делаем
+        // в противном случае проверяем наличие CMN.13010, CMN.13019, CMN.13039
+        CASE (KRD_MAIN_2.MC_STATUS_BD,
+          [
+            '3',
+            Block(
+              // если отсутствует рег. номер ДО 
+              // (или, возможно, "Дата регистрации" \ "ФИО Инспектора"), то
+              // проверяем статус по Монитору ЭД
+              IF ((LENGTH (KRD_MAIN_2.REG_NBD) = 0),
+                Block(
+                  RefreshDO();
+                )
+              ); // IF
+            ),
+            '1', 
+            Block(
+              // если "Отказ" не связан с отменой подачи ДО, то
+              // проверяем статус по Монитору
+              IF (1,
+                Block(
+                  RefreshDO();
+                )
+              ); // IF
+            )
+          ],
+          Block(
+            // проверяем статус по Монитору ЭД
+            RefreshDO();
+          )
+        ); // CASE
+
+
+        // ОБРАБАТЫВАЕМ КОММ. АКТЫ \ ПИСЬМА
+        // TODO:
+        // если Комм. акт \ Письмо зарегистрирован(о) или отказан(о), то ничего не делаем
+        // в противном случае проверяем наличие CMN.13021, CMN.13022
+        SETFILTER ('KRD_DOP_2', 'PLACEID=' + pPlaceId + ' AND ID=' + pId);
+        IF (BOF ('KRD_DOP_2') = 0, FIRST ('KRD_DOP_2'));
+        WHILE (EOF ('KRD_DOP_2') = 0,
+          Block(            
+            iWHId := KRD_MAIN_2.PLACEID;
+            sWHDocId := KRD_MAIN_2.DOCUMENTID;
+            iWHDocId2 := 0;
+            CASE (KRD_DOP_2.DOC_REG_STATUS,
+              [
+                '3',
+                Block(
+                  IF ((LENGTH (KRD_DOP_2.DOC_REG_NO) = 0),
+                    Block(
+                      // TODO:
+                      RefreshCA();
+                    )
+                  ); // IF
+                ),
+                '1',
+                Block(
+                  // TODO:
+                  RefreshCA();
+                )
+              ],
+              Block(
+                // TODO:
+                RefreshCA();
+              )
+            ); // CASE
+            NEXT ('KRD_DOP_2');
+          )
+        ); // WHILE
+        SETFILTER ('KRD_DOP_2', '');
+
+        // ОБРАБАТЫВАЕМ ДО-2
+        // TODO:
+        // если ДО зарегистрирована и в ней есть рег. номер
+        // или в регистрации ДО отказано, то ничего не делаем
+        // в противном случае проверяем наличие CMN.13010, CMN.13019, CMN.13039
+        SETFILTER ('REL_MAIN_2', 'PLACEID=' + pPlaceId + ' AND ID=' + pId);
+        IF (BOF ('REL_MAIN_2') = 0, FIRST ('REL_MAIN_2'));
+        WHILE (EOF ('REL_MAIN_2') = 0,
+          Block(            
+            iWHId := REL_MAIN_2.PLACEID;
+            sWHDocId := REL_MAIN_2.DOCUMENTID;
+            iWHDocId2 := REL_MAIN_2.MAIN_COUNTER;
+            // если ДО зарегистрирована и в ней есть рег. номер
+            // или в регистрации ДО отказано, то ничего не делаем
+            // в противном случае проверяем наличие CMN.13010, CMN.13019, CMN.13039
+            CASE (REL_MAIN_2.MC_STATUS,
+            [
+                '3', 
+                Block(
+                  // если отсутствует рег. номер ДО 
+                  // (или, возможно, "Дата регистрации" \ "ФИО Инспектора"), то
+                  // проверяем статус по Монитору ЭД
+                  IF ((LENGTH (REL_MAIN_2.REG_RELEASE_NO) = 0),
+                    Block(
+                      RefreshDO();
+                    )
+                  ); // IF
+                ),
+                '1', 
+                Block(
+                  // если "Отказ" не связан с отменой подачи ДО, то
+                  // проверяем статус по Монитору
+                  IF (1,
+                    Block(
+                      RefreshDO();
+                    )
+                  ); // IF
+                )
+              ],
+              Block(
+                // проверяем статус по Монитору ЭД
+                RefreshDO();
+              )
+            ); // CASE
+            NEXT ('REL_MAIN_2');
+          )
+        ); // WHILE
+        SETFILTER ('REL_MAIN_2', '');
+      ),
+      Block(
+        // закрываем подключениек БД Монитор ЭД
+        CLOSEDATABASE (dbMonitor);
+
+        // Запускаем обработку сформированных "значимых" сообщений
+        EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\eps.imp');
+
+        SHOWMESSAGE ('Ручное обновление статуса завершено.', 1, 'ВЭД-Склад: Лог ЭПС');
+      )
+    ); // TRYFINALLY
+
+  )
+); // FUNC - RefreshEps

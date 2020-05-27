@@ -1,0 +1,195 @@
+// *****************************************************************************
+// Название: ДО2.Альбом(ИМ)
+// Описание: Импорт ДО2 в формате СВХ.Альбом
+// Кнопка вызова: 1
+// Подпись кнопки: ДО2.Альбом(ИМ)
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('Report', Integer, GetCurrentReportNode());
+VAR ('sScriptPath', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\');
+VAR ('sXmlVersion', String, XMLNODEATTRIBUTE (Report, 'xmlns:do2r'));
+VAR ('bSeaPort', Integer, INIFILE ('Extention', 'SeaPort', 0));
+VAR ('sFileName', String, '\do2_album.imp');
+
+IF (bSeaPort, sFileName := '\do2_seaport.imp');
+
+//sXmlVersion := RIGHT (sXmlVersion, 5);
+sXmlVersion := COPY(sXmlVersion, 57, LENGTH(sXmlVersion)-56);  //атрибут минус urn:customs.ru:Information:WarehouseDocuments:DO1Report:
+                                                               //получается номер версии альбома
+CASE (sXmlVersion,
+  [
+    '5.0.3',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.5',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.7',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.8',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.9',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.10', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.11', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.12', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.13', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.14', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.15', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.0.16', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.1.0',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.4.0',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.4.1',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.4.2',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.4.3',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.6.0',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.6.1',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.8.0',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.9.0',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.9.1',  EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.11.0', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.12.0', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.12.1', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.13.0', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.13.1', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.13.2', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.13.3', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.13.3', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.13.4', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.14.0', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.14.2', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.14.3', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.14.5', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+    '5.15.0', EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName),
+  ],
+  //выбираем формат автоматически, по датам
+  Block(
+    IF (Date () < STRTODATE ('01.02.2012', 'DD.MM.YYYY', '.'),
+      sXmlVersion := '5.0.3',
+      Block(
+        IF (Date () < STRTODATE ('01.07.2012', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.5',
+          sXmlVersion := '5.0.7'
+        );
+        IF (Date () < STRTODATE ('01.09.2012', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.7',
+          sXmlVersion := '5.0.8'
+        );
+        IF (Date () < STRTODATE ('01.11.2012', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.8',
+          sXmlVersion := '5.0.9'
+        );
+        IF (Date () < STRTODATE ('06.02.2013', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.9',
+          sXmlVersion := '5.0.10'
+        );
+        IF (Date () < STRTODATE ('17.04.2013', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.10',
+          sXmlVersion := '5.0.11'
+        );
+        IF (Date () < STRTODATE ('01.07.2013', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.11',
+          sXmlVersion := '5.0.12'
+        );
+        IF (Date () < STRTODATE ('31.10.2013', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.12',
+          sXmlVersion := '5.0.13'
+        );
+        IF (Date () < STRTODATE ('20.01.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.13',
+          sXmlVersion := '5.0.14'
+        );
+        IF (Date () < STRTODATE ('03.02.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.14',
+          sXmlVersion := '5.0.15'
+        );
+        IF (Date () < STRTODATE ('25.02.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.15',
+          sXmlVersion := '5.0.16'
+        );
+        IF (Date () < STRTODATE ('01.04.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.0.16',
+          sXmlVersion := '5.1.0'
+        );
+        IF (Date () < STRTODATE ('01.07.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.1.0',
+          sXmlVersion := '5.4.0'
+        );
+        IF (Date () < STRTODATE ('01.08.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.4.0',
+          sXmlVersion := '5.4.1'
+        );
+        IF (Date () < STRTODATE ('30.10.2014', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.4.1',
+          sXmlVersion := '5.4.3'
+        );
+        IF (Date () < STRTODATE ('19.01.2015', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.4.3',
+          sXmlVersion := '5.6.0'
+        );
+        IF (Date () < STRTODATE ('06.04.2015', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.6.0',
+          sXmlVersion := '5.6.1'
+        );
+        IF (Date () < STRTODATE ('06.07.2015', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.6.1',
+          sXmlVersion := '5.8.0'
+        );
+        IF (Date () < STRTODATE ('01.10.2015', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.8.0',
+          sXmlVersion := '5.9.0'
+        );
+        IF (Date () < STRTODATE ('03.02.2016', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.9.0',
+          sXmlVersion := '5.9.1'
+        );
+        IF (Date () < STRTODATE ('01.10.2016', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.9.1',
+          sXmlVersion := '5.11.0'
+        );
+        IF (Date () < STRTODATE ('05.07.2017', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.11.0',
+          sXmlVersion := '5.12.0'
+        );
+        IF (Date () < STRTODATE ('10.01.2018', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.12.0',
+          sXmlVersion := '5.13.0'
+        );
+        IF (Date () < STRTODATE ('14.03.2018', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.13.0',
+          sXmlVersion := '5.13.1'
+        );
+        IF (Date () < STRTODATE ('03.04.2018', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.13.1',
+          sXmlVersion := '5.13.2'
+        );
+        IF (Date () < STRTODATE ('18.07.2018', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.13.2',
+          sXmlVersion := '5.13.3'
+        );
+        IF (Date () < STRTODATE ('04.12.2018', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.13.3',
+          sXmlVersion := '5.13.4'
+        );
+        IF (Date () < STRTODATE ('04.02.2019', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.13.4',
+          sXmlVersion := '5.14.0'
+        );
+        IF (Date () < STRTODATE ('01.04.2019', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.14.0',
+          sXmlVersion := '5.14.2'
+        );
+        IF (Date () < STRTODATE ('01.07.2019', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.14.2',
+          sXmlVersion := '5.14.3'
+        );
+        IF (Date () < STRTODATE ('01.10.2019', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.14.3',
+          sXmlVersion := '5.14.5'
+        );
+        IF (Date () < STRTODATE ('01.02.2020', 'DD.MM.YYYY', '.'),
+          sXmlVersion := '5.14.5',
+          sXmlVersion := '5.15.0'
+        );
+      )
+    );
+    EXECUTESCRIPT (sScriptPath + sXmlVersion + sFileName);
+  ) // автомат - //
+); // CASE

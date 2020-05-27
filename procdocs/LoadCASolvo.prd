@@ -1,0 +1,572 @@
+// *****************************************************************************
+// Название: Обмен КА
+// Описание: Обмен КА
+// Кнопка вызова: 1
+// Подпись кнопки: Обмен КА
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+
+func ('GetDir',,
+      BLOCK(
+        VAR('sDir', string);
+        SELECTDIRECTORY ('sDir');
+        sDir := INCLUDETRAILINGBACKSLASH(sDir);
+        WRITEINIFILE ('CA', 'DirectoryPath', sDir);
+      )
+),
+
+func('quot',PARAM ('sStr', string, 0), char(39) + sStr + char(39)),
+
+
+
+FUNC('CreateKRD_SOLVOID_KA',,
+     EXECUTESQL('STS_DB',
+                'IF OBJECT_ID ('+quot('KRD_SOLVOID_KA')+') IS NULL '+
+                'CREATE TABLE KRD_SOLVOID_KA '+
+                '( '+
+                'PLACEID INT, '+
+                'ID INT, '+
+                'COUNTER INT, '+
+                'CUSTREPID INT, '+
+                'ACTID INT, '+
+                'EXPKA INT, '+
+                'SENDER INT, '+
+                'XMLNAME CHAR(254) '+
+                ')'
+     )
+),
+
+CreateKRD_SOLVOID_KA();
+
+
+func ('checkCatalogs', PARAM ('sCatalogName', string, 0),
+     BLOCK(
+           VAR('sDirPathBackup', string, sCatalogName+ 'BACKUP\');
+           VAR('sDirPathError', string, sCatalogName+ 'ERRORS\');
+
+           IF(DIRECTORYEXISTS(sCatalogName)<>1,IF (FORCEDIRECTORIES(sCatalogName)=0,sCatalogName := 'error'));
+           IF(DIRECTORYEXISTS(sDirPathBackup)<>1,IF (FORCEDIRECTORIES(sDirPathBackup)=0,sCatalogName := 'error'));
+           IF(DIRECTORYEXISTS(sDirPathError)<>1,IF (FORCEDIRECTORIES(sDirPathError)=0,sCatalogName := 'error'));
+           sCatalogName
+     )
+),
+
+func ('getDataBrunch', PARAM ('sPathToXML', string, 0),
+     BLOCK(
+
+           VAR ('XMLDOC', Integer, XMLDOCUMENTCREATE());
+           XMLDOCUMENTLOAD(XMLDOC, sPathToXML);
+           VAR ('iRoot', Integer, XMLDOCUMENTROOT (XMLDOC));
+           XMLNODECHILD(iRoot,0)
+     )
+),
+
+func('findDO1byCustRepID',PARAM ('CustRepID', integer, 0),
+     BLOCK(
+           OPENQUERY ('FIND_DO1', 'STS_DB', 'SELECT PLACEID, ID FROM KRD_SOLVOID WHERE CUSTREPID='+CustRepID);
+           IF (FIELDISNULL('FIND_DO1','ID')=0, BLOCK(vPlaceid:=FIND_DO1.PLACEID; vId:=FIND_DO1.ID;));
+           CLOSEDATASET ('FIND_DO1');
+     )
+),
+
+func('error',,
+     BLOCK(
+     )
+),
+
+
+FUNC('FindOldActs',
+     BLOCK(
+           PARAM ('iPlaceid', integer, 0);
+           PARAM ('iID', integer, 1);
+     ),
+     BLOCK(
+        VAR('iActCounter', integer, 1);
+        //Смотрим старые акты, и получаем текущий counter
+        OPENQUERY('OLD_ACTS', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KRD_DOP WHERE PLACEID='+ iPlaceid + ' AND ID='+iID);
+        IF(FIELDISNULL ('OLD_ACTS','COUNTER')=0, iActCounter := OLD_ACTS.COUNTER + 1);
+        CLOSEDATASET('OLD_ACTS');
+        iActCounter
+     )
+),
+
+func('createComAct',
+     BLOCK(
+           PARAM ('iReport', integer, 0);
+           PARAM ('iDiscrepancyInfo', integer, 1);
+           PARAM ('iPlaceid', integer, 2);
+           PARAM ('iID', integer, 3);
+     ),
+     BLOCK(
+           VAR ('iActCounter', integer, FindOldActs(iPlaceid, iId));
+           VAR ('sSQL', string, '');
+           VAR ('sCaDate', string, FORMATDATETIME('DD.MM.YYYY',XMLNODEVALUE(XMLNODEFIND(iReport, 'DateCreate'))) + ' ' + XMLNODEVALUE(XMLNODEFIND(iReport, 'TimeCreate')));
+
+           VAR ('sStage', string, XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'Stage')));
+           VAR ('sReasons', string, XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'Reasons')));
+           VAR ('sLeaksDescription', string, XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'LeaksDescription')));
+           VAR ('sLeaksFlag', string, IF(sLeaksDescription<>'', 1, 0));
+           VAR ('sStage', string, XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'Stage')));
+           
+           VAR ('sSDMDate', string,  FORMATDATETIME('DD.MM.YYYY', XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'Date'))) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'Time')));
+           VAR ('sUserName', string, USERINFO('','UserName'));
+           VAR ('sUserPost', string, USERINFO('','UserPost'));
+           //sSDMDate := sCaDate;
+           //showmessage(FormatDateTime('DD.MM.YYYY',StrToDate (XMLNODEVALUE(XMLNODEFIND(iDiscrepancyInfo, 'Date')), 'YYYY-MM-DD', '-')));
+           sSQL := 'INSERT INTO KRD_DOP ';
+           sSQL := sSQL + '(';
+           sSQL := sSQL + 'PLACEID, ID, COUNTER';
+           sSQL := sSQL + ', DOC_NAME, DOC_NO, DOC_DATETIME, DOC_SDM_STAGE';
+           sSQL := sSQL + ', REASONS, LEAKS_DESCRIPTION, WAREHOUSEPERSON_SURNAME, WAREHOUSEPERSON_NAME';
+           sSQL := sSQL + ', LEAKS_FLAG, DOC_SDM_DATETIME, WAREHOUSEPERSON_MDLNAME, WAREHOUSEPERSON_POST';
+           sSQL := sSQL + ') ';
+           sSQL := sSQL + 'VALUES';
+           sSQL := sSQL + '(';
+           sSQL := sSQL + iPlaceid+ ', '+iID+ ', '+iActCounter ;
+           sSQL := sSQL + ', ' +quot('Коммерческий акт') + ', ' + quot(LEFTPAD (iActCounter, 7, '0')) + ', ' + quot(sCaDate)+ ', ' + quot(sStage);
+           sSQL := sSQL + ', ' +quot(sReasons) + ', ' + quot(sLeaksDescription) + ', ' + quot(EXTRACTSTR (sUserName, 1, ' '))+ ', ' + quot(EXTRACTSTR (sUserName, 2, ' '));
+           sSQL := sSQL + ', ' +sLeaksFlag+ ', ' + quot(sSDMDate) + ', ' + quot(EXTRACTSTR (sUserName, 3, ' '))+', '+ quot(sUserPost);
+           sSQL := sSQL + ')';
+           TRYEXCEPT (EXECUTESQL('STS_DB', sSQL),,
+                      BLOCK(
+                            error('Ошибка создания ком.акта. Запрос: ' + sSQL);
+                            iActCounter := 0;
+                      )
+           );
+
+           iActCounter;
+     )
+),
+
+func('readXmlGoodsAddToComAct',,
+     BLOCK(
+           VAR ('iSdmKind', integer);
+           VAR ('sG33', string, '');
+           VAR ('sG312', string,'');
+           VAR ('iG42', integer);
+           VAR ('sG42_CURRENCY', string, '');
+           VAR ('iG311', integer);
+           VAR ('iG35', integer);
+           VAR ('iG32', integer, 0);
+
+           VAR ('i', integer, 0);
+           VAR ('iMissingGoods', integer, XMLNODEFIND (iDiscrepancyInfo, 'MissingGoods') );
+           VAR ('iMissingGoodsCount', integer, XmlNodeChildCount (iMissingGoods) );
+           While (i<iMissingGoodsCount,
+                 BLOCK(
+                       VAR ('dGood', integer, XMLNODECHILD (iMissingGoods, i));
+                       VAR ('iGoodID', integer,0);
+                       iGoodID:= XMLNODEVALUE (XMLNODEFIND (dGood, 'GoodID'));
+                       iG32 := findGoodByGoodID(vID,iGoodID);
+                       iSdmKind := 1;
+                       sG33 := '';
+                       sG312 := '';
+                       iG42 := 'NULL';
+                       sG42_CURRENCY := '';
+                       iG311 := 'NULL';
+                       iG35 := 'NULL';
+                       if(iG32 > 0,
+                         AddGoodToKRD_CSDM(vPlaceID, vId, iG32,ActCounter, iSdmKind,sG33, sG312, iG42, sG42_CURRENCY, iG311, iG35),
+                         error('', 0);
+                       );
+                       i := i+1;
+                 )
+           );
+
+           i:=0;
+           VAR ('iDiscrepantGoods', integer, XMLNODEFIND (iDiscrepancyInfo, 'DiscrepantGoods') );
+           VAR ('iDiscrepantGoodsCount', integer, XmlNodeChildCount (iDiscrepantGoods) );
+           While (i<iDiscrepantGoodsCount,
+                 BLOCK(
+                       VAR ('dGood', integer, XMLNODECHILD (iDiscrepantGoods, i));
+                       VAR ('iGoodID', integer,0);
+                       iGoodID:= XMLNODEVALUE (XMLNODEFIND (dGood, 'GoodID'));
+                       iG32 := findGoodByGoodID(vID,iGoodID);
+                       iSdmKind := 0;
+                       sG33 := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (dGood, 'GoodTNVEDCode'), 'TNVEDCodeByFact'));
+                       sG312 := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (dGood, 'GoodName'), 'GoodNameByFact'));
+                       iG42 := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (dGood, 'GoodInvoiceCost'), 'InvoiceCostByFact'), 'CostAmount'));
+                       sG42_CURRENCY := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (dGood, 'GoodInvoiceCost'), 'InvoiceCostByFact'), 'CostCurrencyCode'));
+                       iG311 := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (dGood, 'GoodPlacesCount'), 'PlacesCountByFact'));
+                       iG35 := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (dGood, 'GoodBrutto'), 'BruttoByFact'));
+                       if(iG32 > 0,
+                         AddGoodToKRD_CSDM(vPlaceID, vId, iG32,ActCounter, iSdmKind,sG33, sG312, iG42, sG42_CURRENCY, iG311, iG35),
+                         error('', 0)
+                       );
+                       
+                       i := i+1;
+                 )
+           );
+
+           i:=0;
+           VAR ('iExtraGoods', integer, XMLNODEFIND (iDiscrepancyInfo, 'ExtraGoods') );
+           VAR ('iExtraGoodsCount', integer, XmlNodeChildCount (iExtraGoods) );
+           While (i<iExtraGoodsCount,
+                 BLOCK(
+                       VAR ('dGood', integer, XMLNODECHILD (iExtraGoods, i));
+                       VAR ('iGoodID', integer,0);
+                       VAR ('iContID', integer,0);
+                       iGoodID:= XMLNODEVALUE (XMLNODEFIND (dGood, 'GoodID'));
+                       iContID := XMLNODEVALUE (XMLNODEFIND (dGood, 'ContID'));
+                       iG32 := findGoodByGoodID(vID,iGoodID);;
+                       iSdmKind := 2;
+                       sG33 := '';
+                       sG312 :=XMLNODEVALUE (XMLNODEFIND (dGood, 'GoodName'));
+                       iG42 := 'NULL';
+                       sG42_CURRENCY := '';
+                       iG311 := XMLNODEVALUE (XMLNODEFIND (dGood, 'GoodPlacesCount'));
+                       iG35 := XMLNODEVALUE (XMLNODEFIND (dGood, 'GoodBrutto'));
+                       iG32:= AddGoodToKRDComm(vPlaceID,vID,iContID,iGoodID);
+                       if(iG32 > 0,
+                         AddGoodToKRD_CSDM(vPlaceID, vId, iG32,ActCounter, iSdmKind,sG33, sG312, iG42, sG42_CURRENCY, iG311, iG35),
+                         error('', 0)
+                       );
+                       i := i+1;
+                 )
+           );
+           UpdateGoodsInKRD_COMM(vPlaceID, vId, ActCounter);
+     )
+),
+
+func ('findGoodByGoodID',
+     BLOCK(
+           PARAM ('pID', integer, 0);
+           PARAM ('pGoodID', integer, 1);
+     ),
+     BLOCK(
+           OPENQUERY('FIND_GOOD','STS_DB', 'SELECT G32 FROM KRD_SOLVOID WHERE ID='+pID+ ' AND GOODID='+pGoodID);
+           VAR ('sResult', string, FIND_GOOD.G32);
+           CLOSEDATASET('FIND_GOOD');
+           sResult;
+     )
+),
+
+func('AddGoodToKRDComm',
+     BLOCK(
+           PARAM ('pPlaceid', integer, 0);
+           PARAM ('pID', integer, 1);
+           PARAM ('pContid', integer, 2);
+           PARAM ('pGoodID', integer, 3);
+     ),
+     BLOCK(
+           VAR ('sSQL', string, '');
+
+           
+           sSQL := sSQL + 'CREATE PROCEDURE CreateNewGoodAndReturn(';
+           sSQL := sSQL + '@PlaceID int,';
+           sSQL := sSQL + '@ID int, ';
+           sSQL := sSQL + '@GOODID int,';
+           sSQL := sSQL + '@CONTID int ';
+           sSQL := sSQL + ') AS ';
+           sSQL := sSQL + '';
+           sSQL := sSQL + ' DECLARE @G32 int;';
+           sSQL := sSQL + ' DECLARE @CONTCOUNTER int;';
+           sSQL := sSQL + ' SET @G32=(Select MAX(G32) from KRD_COMM WHERE PLACEID=@PlaceID AND ID=@ID)+1;';
+           sSQL := sSQL + ' SET @CONTCOUNTER=(Select MAX(DOC_COUNTER) from KR_C_P KP RIGHT JOIN KRD_SOLVOID KS ON (KS.PLACEID=KP.PLACEID AND KS.ID=KP.ID) WHERE KS.PLACEID=@PlaceID AND KS.ID=@ID AND KS.CONTID=@CONTID);';
+           sSQL := sSQL + '';
+           sSQL := sSQL + ' INSERT INTO KRD_COMM ';
+           sSQL := sSQL + ' (';
+           sSQL := sSQL + ' PLACEID,ID,G32';
+           sSQL := sSQL + ' ,STORAGE_TYPE,LEG_PERIOD, STORE_PERIOD';
+           sSQL := sSQL + ' ,BOXNO,N_CONT,N_TTN,N_TTN_G32,GN';
+           sSQL := sSQL + ' ,STORAGE_DATE,ACCEPTDATE';
+           sSQL := sSQL + ' ) ';
+           sSQL := sSQL + ' SELECT ';
+           sSQL := sSQL + ' PLACEID,ID,@G32 ';
+           sSQL := sSQL + ' ,STORAGE_TYPE,LEG_PERIOD,STORE_PERIOD';
+           sSQL := sSQL + ' ,BOXNO,@CONTCOUNTER,N_TTN,@G32,@G32';
+           sSQL := sSQL + ' ,STORAGE_DATE,ACCEPTDATE ';
+           sSQL := sSQL + ' FROM KRD_COMM ';
+           sSQL := sSQL + ' WHERE ';
+           sSQL := sSQL + ' PLACEID=@PlaceID AND ID=@ID AND G32=1;';
+           sSQL := sSQL + ' ';
+           sSQL := sSQL + ' INSERT INTO KRD_SOLVOID ';
+           sSQL := sSQL + ' (';
+           sSQL := sSQL + ' PLACEID, ID, CUSTREPID, G32, GOODID, CONTCOUNTER, TOVINTTN, TTNCOUNTER, CONTID, VESID, BILLID, EXPDO1, XMLNAME, SENDER ';
+           sSQL := sSQL + ' ) ';
+           sSQL := sSQL + ' SELECT ';
+           sSQL := sSQL + ' PLACEID, ID, CUSTREPID, @G32, @GOODID, @CONTCOUNTER, @G32, TTNCOUNTER, @CONTID, VESID, BILLID, EXPDO1, XMLNAME, SENDER ';
+           sSQL := sSQL + ' FROM KRD_SOLVOID ';
+           sSQL := sSQL + ' WHERE ';
+           sSQL := sSQL + ' PLACEID=@PlaceID AND ID=@ID AND G32=1;';
+           sSQL := sSQL + ' ';
+           sSQL := sSQL + ' INSERT INTO KR_C_P (PLACEID,ID,G32,DOC_COUNTER,DOC_TYPE) VALUES (@PLACEID,@ID,@G32,1,13);';
+           sSQL := sSQL + ' SELECT @G32 as G32 ';
+
+           sSQL := 'IF OBJECT_ID ('+quot('CreateNewGoodAndReturn')+ ', '+quot('P')+') IS NULL EXEC('+quot(sSQL)+');';
+           //showmessage(sSQL);
+           // Так почему то при вызове OPENQUERY процедура выполняется 2 раза, придется выполнить по другому. Этот вариант оставить для разбора
+           {EXECUTESQL ('STS_DB',sSQL);
+           OPENQUERY ('UPDATEANDGET','STS_DB','EXECUTE CreateNewGoodAndReturn @PLACEID='+pPlaceID+ ', @ID='+pID+ ', @GOODID='+pGOODID+ ', @CONTID='+pCONTID,1);
+           }
+           //Второй вариант
+           sSQL := sSQL + 'EXECUTE CreateNewGoodAndReturn @PLACEID='+pPlaceID+ ', @ID='+pID+ ', @GOODID='+pGOODID+ ', @CONTID='+pCONTID;
+           EXECUTESQL ('STS_DB',sSQL);
+           OPENQUERY ('UPDATEANDGET','STS_DB','SELECT MAX(G32) as G32 FROM KRD_COMM WHERE PLACEID='+pPlaceID+ ' AND ID='+pID);
+           //Второй вариант End
+           VAR ('sResult', string, UPDATEANDGET.G32);
+           CLOSEDATASET ('UPDATEANDGET');
+           sResult
+
+
+     )
+),
+
+func ('UpdateGoodsInKRD_COMM',
+     BLOCK(
+           PARAM ('pPlaceid', integer, 0);
+           PARAM ('pID', integer, 1);
+           PARAM ('pActCounter', integer, 2);
+     ),
+     BLOCK(
+           VAR ('sSQL', string, '');
+           sSQL := sSQL + ' MERGE KRD_COMM DO';
+           sSQL := sSQL + ' USING (SELECT * FROM KRD_CSDM WHERE PLACEID='+ pPlaceID + ' AND ID='+pID+ ' AND COUNTER='+ pActCounter+ ' ) CA ';
+           sSQL := sSQL + ' ON DO.PLACEID=CA.PLACEID AND DO.ID=CA.ID AND DO.G32=CA.G32 ';
+           sSQL := sSQL + ' WHEN MATCHED THEN';
+           sSQL := sSQL + '  UPDATE SET';
+           sSQL := sSQL + '   DO.G33=CA.FACT_G33, DO.G312=CA.FACT_G312, DO.G42=CA.FACT_G42';
+           sSQL := sSQL + '   ,DO.G42_CURRENCY=CA.FACT_G42_CURRENCY, DO.G313=CA.FACT_G313';
+           sSQL := sSQL + '   ,DO.G311=CA.FACT_G311, DO.G35=CA.FACT_G35';
+           sSQL := sSQL + char(10) + char(13);
+           sSQL := sSQL + ' WHEN NOT MATCHED THEN ';
+           sSQL := sSQL + ' INSERT (PLACEID,ID,G32,G33';
+           sSQL := sSQL + '        ,G312,G42,G42_CURRENCY';
+           sSQL := sSQL + '        ,G313,G311,G35,BOXNO';
+           sSQL := sSQL + ' )';
+           sSQL := sSQL + ' VALUES (CA.PLACEID, CA.ID, CA.G32, CA.FACT_G33';
+           sSQL := sSQL + '        ,CA.FACT_G312,CA.FACT_G42,CA.FACT_G42_CURRENCY';
+           sSQL := sSQL + '        ,CA.FACT_G313,CA.FACT_G311,CA.FACT_G35,'+quot('ToLoad');
+           sSQL := sSQL + ' );';
+           sSQL := sSQL + ' ';
+           sSQL := sSQL + ' UPDATE KRD_COMM SET G32=1 ';
+           sSQL := sSQL + ' WHERE';
+           sSQL := sSQL + ' PLACEID='+ pPlaceID + ' AND ID='+pID+ ' AND BOXNO='+ quot('ToLoad');
+           //showmessage(sSQL);
+           ExecuteSQL('STS_DB', sSQL);
+
+     )
+),
+
+{
+func ('UpdateGoodInKRD_COMM',
+     BLOCK(
+           PARAM ('pPlaceid', integer, 0);
+           PARAM ('pID', integer, 1);
+           PARAM ('pG32', integer, 2);
+           PARAM ('pActCounter', integer, 3);
+     ),
+     BLOCK(
+           VAR ('sSQL', string, '');
+           sSQL := sSQL + '  UPDATE DO SET';
+           sSQL := sSQL + '   DO.G33=CA.FACT_G33, DO.G312=CA.FACT_G312, DO.G42=CA.FACT_G42';
+           sSQL := sSQL + '   ,DO.G42_CURRENCY=CA.FACT_G42_CURRENCY, DO.G313=CA.FACT_G313';
+           sSQL := sSQL + '   ,DO.G311=CA.FACT_G311, DO.G35=CA.FACT_G35';
+           sSQL := sSQL + ' FROM KRD_COMM DO INNER JOIN KRD_CSDM CA ';
+           sSQL := sSQL + ' ON DO.PLACEID=CA.PLACEID AND DO.ID=CA.ID AND DO.G32=CA.G32 ';
+           sSQL := sSQL + ' WHERE CA.PLACEID='+ pPlaceID + ' AND CA.ID='+pID+ ' AND CA.G32='+pG32+ ' AND CA.COUNTER='+ pActCounter;
+           showmessage(sSQL);
+           ExecuteSQL('STS_DB', sSQL);
+
+     )
+),
+}
+func('AddGoodToKRD_CSDM',
+     BLOCK(
+           PARAM ('pPlaceid', integer, 0);
+           PARAM ('pID', integer, 1);
+           PARAM ('pG32', integer, 2);
+           PARAM ('pActCounter', integer, 3);
+           PARAM ('pSdmKind', integer, 4);
+           PARAM ('pG33', string, 5);
+           PARAM ('pG312', string, 6);
+           PARAM ('pG42', integer, 7);
+           PARAM ('pG42_CURRENCY', string, 8);
+           PARAM ('pG311', integer, 9);
+           PARAM ('pG35', integer, 10);
+     ),
+     BLOCK(
+           VAR ('sSQL', string, '');
+           VAR ('iGoodWasInOldActs', integer, 0);
+           //if (pActCounter > 1, iGoodWasInOldActs := findGoodInOldActs);
+
+           //Добавляем товар из ДО1/предыдущих ком.актов
+           sSQL := sSQL + 'INSERT INTO KRD_CSDM ';
+           sSQL := sSQL + '(';
+           sSQL := sSQL + '  PLACEID, ID, COUNTER, G32';
+          // sSQL := sSQL + ', SDM_KIND';
+           sSQL := sSQL + ', DOC_G312, DOC_G42, DOC_G42_CURRENCY, DOC_G311';
+           sSQL := sSQL + ', DOC_G33, DOC_G35, DOC_G313, FACT_G313';
+           sSQL := sSQL + ', FACT_G33,FACT_G312, FACT_G42';
+           sSQL := sSQL + ', FACT_G42_CURRENCY, FACT_G311';
+           sSQL := sSQL + ', FACT_G35';
+           sSQL := sSQL + ')';
+           sSQL := sSQL + ' SELECT ';
+           sSQL := sSQL + ' PLACEID, ID, '+pActCounter+ ', G32';
+          // sSQL := sSQL + ', '+pSdmKind;
+           if (iGoodWasInOldActs,
+              BLOCK(
+                   sSQL := sSQL + ', DOC_G312, DOC_G42, DOC_G42_CURRENCY, DOC_G311';
+                   sSQL := sSQL + ', DOC_G33, DOC_G35, DOC_G313, FACT_G313';
+                   sSQL := sSQL + ', FACT_G33, FACT_G312, FACT_G42';
+                   sSQL := sSQL + ', FACT_G42_CURRENCY, FACT_G311, FACT_G35';
+              ),
+              BLOCK(
+                   sSQL := sSQL + ', G312, G42, G42_CURRENCY, G311';
+                   sSQL := sSQL + ', G33, G35, G313, G313 as FACT_G313';
+                   sSQL := sSQL + ', G33 as FACT_G33,G312 as FACT_G312,G42 as FACT_G42';
+                   sSQL := sSQL + ', G42_CURRENCY as FACT_G42_CURRENCY, G311 as FACT_G311,G35 as FACT_G35'
+              )
+           );
+
+           sSQL := sSQL + '  FROM ';
+           sSQL := sSQL + if (iGoodWasInOldActs, ' KRD_CSDM ',' KRD_COMM ');
+           sSQL := sSQL + ' WHERE PLACEID=' + pPlaceid;
+           sSQL := sSQL + ' AND ID=' + pID;
+           sSQL := sSQL + ' AND G32=' + pG32;
+           if(iGoodWasInOldActs, sSQL := sSQL + ' AND COUNTER='+iGoodWasInOldActs);
+          // showmessage(sSQL);
+           ExecuteSQL('STS_DB', sSQL);
+
+           //Прописываем в товар данные из XML, c проверкой параметров на заполненность, чтобы не трогать того чего нет в XML.
+           //Если товар отсутствующий, то заполненность параметров игнорируется
+           sSQL := '';
+           sSQL := sSQL + 'UPDATE KRD_CSDM ';
+           sSQL := sSQL + 'SET SDM_KIND='+pSdmKind;
+           IF((pG33 <> '')|(pSdmKind=1), sSQL := sSQL + ', FACT_G33=' + quot(pG33));
+           IF((pG312 <> '')|(pSdmKind=1), sSQL := sSQL + ',FACT_G312='+ quot(pG312));
+           IF((pG42 <> 'NULL')|(pSdmKind=1), sSQL := sSQL + ',FACT_G42=' + pG42);
+           IF((pG33 <> '')|(pSdmKind=1), sSQL := sSQL + ',FACT_G42_CURRENCY=' + quot(pG42_CURRENCY));
+           IF((pG311 <> 'NULL')|(pSdmKind=1), sSQL := sSQL + ',FACT_G311=' + pG311);
+           IF((pG35 <> 'NULL')|(pSdmKind=1), sSQL := sSQL + ',FACT_G35='+ pG35);
+
+           sSQL := sSQL + ' WHERE PLACEID=' + pPlaceid;
+           sSQL := sSQL + ' AND ID=' + pID;
+           sSQL := sSQL + ' AND G32=' + pG32;
+           sSQL := sSQL + ' AND COUNTER=' + pActCounter;
+           //showmessage(sSQL);
+           ExecuteSQL('STS_DB', sSQL);
+
+
+     )
+),
+
+func('error',
+     BLOCK(
+           PARAM ('sErrorText', string, 0);
+           PARAM ('1ReadFileWillBeEndingSaveError', integer, 1);
+     ),
+     BLOCK(
+           VAR ('sErroFileName', string, '');
+           sErroFileName := REPLACESTR (sConnString, 'BACKUP', 'ERRORS');
+           CopyFile (sFileName, sErroFileName);
+
+     )
+),
+//------------------------------------------------------------------------------Старт--------------------------------------------------------------------------------------------------------------------------------------------------
+IF(BOOKOPENED (),,RAISEEXCEPTION ('Не открыта книга учёта'));
+
+Var('sScriptsPath', string, PROGRAMPATH() + 'ProcDocs\');
+
+EXECUTESCRIPT (PROGRAMPATH() + 'ProcDocs\GetDocNextNumber.prd');
+//EXECUTESCRIPT (PROGRAMPATH () + 'PROCDOCS\sqldate.prd');
+EXECUTESCRIPT(sScriptsPath +'date.prd'); // функции работы с датами
+
+VAR ('sDirPath', string, '');
+
+//Функция проверки наличия и создания каталогов обмена
+sDirPath:=checkCatalogs('Z:\STMXml\IMPCA\');
+IF (sDirPath = 'error', RAISEEXCEPTION ('Не удается создать каталоги обмена. Обратитесь к системному админестратору'));
+
+//VAR('sLogFileName', string, sDirPathLogs+FDT('ddmmyyhhmmss',NOW())+'.txt');
+//CREATELOGFILE (sLogFileName);
+
+VAR('mFileList', Memo, GETFILELIST(sDirPath, '*.xml', '|'));
+VAR('iTotalFile', integer, 0);
+VAR('iCount', integer, 0);
+VAR('sDOFileName', string, '');
+VAR('sFileName', string, '');
+VAR('sTemp', string,'');
+// кол-во файлов в папке
+iTotalFile := SPLITSTR (mFileList, '|', sTemp);
+// счетчик
+iCount := 1;
+SHOWPROGRESS ('Загрузка ком. акта. Дождитесь окончания');
+//ShowMessage(1);
+While ( iCount <= iTotalFile,
+      Block(
+            //Перемещаем файл в резервный каталог
+            sFileName := EXTRACTSTR (mFileList, iCount, '|');
+            CopyFile (sDirPath+sFileName, sDirPathBackup+sFileName);
+            DELETEFILE(sDirPath+sFileName);
+            sFileName := sDirPathBackup+sFileName;
+
+            VAR('Report',integer, 0);
+            TRYEXCEPT (Report := getDataBrunch(sFileName),,error('ошибка открытия xml'));
+            //Блок обработки XML с ком.актом
+
+            VAR ('vPlaceid', integer, 0);
+            VAR ('vID', integer, 0);
+
+            VAR ('iCustRepID', integer, XMLNODEVALUE(XmlNodeFind (Report, 'CustRepId')));
+            VAR('iDiscrepancyInfo', integer, XmlNodeFind (Report, 'DiscrepancyInfo'));
+            //Функция поиска ДО1
+            if (Report=0, error('', 0), findDO1byCustRepID(iCustRepID));
+
+            VAR('ActCounter', integer, 0);
+            if (vID=0,error('', 0),ActCounter := createComAct(Report, iDiscrepancyInfo,  vPlaceID, vID));
+            //Обрабатываем товары
+            if (ActCounter=0, error('', 0), readXmlGoodsAddToComAct() );
+
+            iCount := iCount + 1;
+            SETPROGRESS (iCount, 100, iTotalFile);
+
+
+      )
+);
+HIDEPROGRESS ();
+
+EXECUTESCRIPT(PROGRAMPATH() + 'PROCDOCS\ExportRegInfo.prd');
+
+//ExecuteScript (sScriptsPath + 'writeXmlForSolvo.prd');
+//WriteDO1EXPXML();
+//WriteCAEXPXML();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,91 @@
+// *****************************************************************************
+// Название: Заполнение фактических сведений
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// *****************************************************************************
+//
+VAR('selType', Integer);  
+OPENDATABASE('KRD_DB', 'STANDARD', 'PATH=C:\');
+LET('selType', ChoiceVariant ('Выбор обрабатываемых документов', 3, 0, 
+           'Текущий документ', 'Выделенные документы', 'Все документы'));  
+if( selType = 0,
+    block(
+              first ('KRD_COMM');  
+              while(   EOF ('KRD_COMM') <> 1,   
+                     BLOCK(
+                                 EDITRECORD ('KRD_COMM');  
+                                 SETFIELDVALUE ('KRD_COMM','FACT_G311', FIELDVALUE ('KRD_COMM.G311'));
+                                 SETFIELDVALUE ('KRD_COMM','FACT_G35', FIELDVALUE ('KRD_COMM.G35'));
+                                 SETFIELDVALUE ('KRD_COMM','FACT_G42', FIELDVALUE ('KRD_COMM.G42'));
+                                 SETFIELDVALUE ('KRD_COMM','FACT_G315C', FIELDVALUE ('KRD_COMM.G315C'));
+                                 SETFIELDVALUE ('KRD_COMM','FACT_G315A', FIELDVALUE ('KRD_COMM.G315A'));
+                                 POSTRECORD ('KRD_COMM');  
+                                 NEXT('KRD_COMM');           
+                           )  
+                    );
+
+    ),
+    if(selType = 1, 
+        block(
+             ShowProgress ('Заполнение фактических сведений...');
+             GetSelectedDocs('KRD', 'PLACEID', 'ID');    
+             Const('iRecNo', Integer, 0),
+             Const('iRecCount', Integer, RecordCount('KRD'));    
+             FIRST ('KRD');  
+             WHILE ( EOF ('KRD') <> 1, 
+                   block(  
+
+                        SETRANGE ('KRD_COMM_2', [FIELDVALUE ('KRD.PLACEID'),FIELDVALUE ('KRD.ID')]);  
+                        first ('KRD_COMM_2');
+                        while(   EOF ('KRD_COMM_2') <> 1,   
+                               BLOCK(
+                                           EDITRECORD ('KRD_COMM_2');  
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G311', FIELDVALUE ('KRD_COMM_2.G311'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G35', FIELDVALUE ('KRD_COMM_2.G35'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G42', FIELDVALUE ('KRD_COMM_2.G42'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G315C', FIELDVALUE ('KRD_COMM_2.G315C'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G315A', FIELDVALUE ('KRD_COMM_2.G315A'));
+                                           POSTRECORD ('KRD_COMM_2');  
+                                           NEXT('KRD_COMM_2');           
+                                     )  
+                              );
+                        CANCELRANGE ('KRD_COMM_2');    
+
+                        NEXT ('KRD'); 
+                        Let('iRecNo', iRecNo + 1); 
+                        SetProgress (iRecNo, 100, iRecCount)   
+                    )  
+             );
+             HideProgress();  
+
+        ),
+        if(selType = 2,
+        block(
+
+                        ShowProgress ('Заполнение фактических сведений...');
+                        Const('iRecNo', Integer, 0),
+                        Const('iRecCount', Integer, RecordCount('KRD_COMM_2'));  
+                        first ('KRD_COMM_2');
+                        while(   EOF ('KRD_COMM_2') <> 1,   
+                               BLOCK(
+                                           EDITRECORD ('KRD_COMM_2');  
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G311', FIELDVALUE ('KRD_COMM_2.G311'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G35', FIELDVALUE ('KRD_COMM_2.G35'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G42', FIELDVALUE ('KRD_COMM_2.G42'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G315C', FIELDVALUE ('KRD_COMM_2.G315C'));
+                                           SETFIELDVALUE ('KRD_COMM_2','FACT_G315A', FIELDVALUE ('KRD_COMM_2.G315A'));
+                                           POSTRECORD ('KRD_COMM_2');  
+                                           NEXT('KRD_COMM_2');           
+                                           Let('iRecNo', iRecNo + 1);  
+                                           SetProgress (iRecNo, 100, iRecCount) 
+                                     )  
+                              );
+                        HideProgress ()        
+             )  
+        )  
+       )  
+   );  
+CLOSEDATABASE('KRD_DB');  
+SHOWMESSAGE('Обработка документов завершена.')
+           

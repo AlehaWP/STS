@@ -1,0 +1,29 @@
+// *****************************************************************************
+// Название: Перемещение записей журнала EPS_LOG в архив
+// Описание: Перемещение записей журнала EPS_LOG в архив
+// Кнопка вызова: 0
+// Подпись кнопки: Перемещение записей журнала EPS_LOG в архив
+// Вызов по событию: 
+// *****************************************************************************
+//
+OPENQUERY ('EPS_LOG_OLD', 'SELECT * FROM EPS_LOG WHERE DocDate<=' + char(39) + FormatDateTime('DD.MM.YYYY HH:MM:SS', NOW() - 90) + char(39), 'dbJournals');
+OPENTABLE ('EPS_LOG_ARHIV_2', 'EPS_LOG_ARHIV', 'ID', 'dbJournals', 1);
+//showmessage(RECORDCOUNT('EPS_LOG_OLD'));
+FIRST('EPS_LOG_OLD');
+WHILE(EOF('EPS_LOG_OLD')=0,
+      BLOCK(
+        IF (LOCATE('EPS_LOG_ARHIV_2', 'PLACEID; ID; JOURNAL_MASTER_ID; DocDate', [EPS_LOG_OLD.PLACEID, EPS_LOG_OLD.ID, EPS_LOG_OLD.JOURNAL_MASTER_ID, EPS_LOG_OLD.DocDate])=0,
+            BLOCK(
+                  //SHOWMESSAGE(EPS_LOG_OLD.JOURNAL_MASTER_ID);
+                  COPYRECORD ('EPS_LOG_OLD', 'EPS_LOG_ARHIV_2');
+                  IF (LOCATE('EPS_LOG_ARHIV_2', 'PLACEID; ID; JOURNAL_MASTER_ID; DocDate', [EPS_LOG_OLD.PLACEID, EPS_LOG_OLD.ID, EPS_LOG_OLD.JOURNAL_MASTER_ID, EPS_LOG_OLD.DocDate]),
+                      BLOCK(
+                           //showmessage('Скопировалось');
+                           EXECUTESQL ('dbJournals', 'DELETE FROM EPS_LOG WHERE PLACEID='+EPS_LOG_OLD.PLACEID+' AND ID='+EPS_LOG_OLD.ID+' AND JOURNAL_MASTER_ID='+EPS_LOG_OLD.JOURNAL_MASTER_ID+' AND DocDate='+ char(39) + FormatDateTime('DD.MM.YYYY HH:MM:SS', EPS_LOG_OLD.DocDate) + char(39));
+                      )
+                  );
+            )
+        );
+        NEXT('EPS_LOG_OLD');
+      )
+);

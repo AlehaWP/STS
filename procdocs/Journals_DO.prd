@@ -1,0 +1,198 @@
+// *****************************************************************************
+// Название: Создание ДО1 из Лог.рейса
+// Описание: Создание ДО1 из Лог.рейса
+// Кнопка вызова: 0
+// Подпись кнопки: Создание ДО1 из Лог.рейса
+// Вызов по событию: 
+// *****************************************************************************
+//
+Func('isLeapYear',
+  Param('iYear', Integer, 0),
+Block(
+  (MOD(iYear, 4) = 0) * ((MOD(iYear, 400) = 0) | (MOD(iYear, 100) <> 0))
+));
+
+Func('DaysInMonth', Block(
+  Param('sYear', String, 0),
+  Param('sMonth', String, 1)
+),
+Block(
+  Var('iYear', Integer, CONVERT (sYear, Integer));
+  Var('iMonth', Integer, CONVERT (sMonth, Integer));
+  CASE (iMonth,
+    [1, 31,
+     2, IF(isLeapYear(iYear), 29, 28),
+     3, 31,
+     4, 30,
+     5, 31,
+     6, 30,
+     7, 31,
+     8, 31,
+     9, 30,
+     10, 31,
+     11, 30,
+     12, 31],
+    30)
+));
+
+Func('AddMonths', Block(
+  Param('dtDate', DateTime, 0),
+  Param('fMonths', Float, 1)
+), Block(
+  Var('dtResult', DateTime);
+
+  Var('iYear', Integer, CONVERT(FORMATDATETIME ('YYYY', dtDate), Integer));
+  Var('iMonth', Integer, CONVERT(FORMATDATETIME ('MM', dtDate), Integer));
+  Var('iDay', Integer, CONVERT(FORMATDATETIME ('DD', dtDate), Integer));
+
+  Var('fMonthPart', Float, 0);
+
+  // Прибавляем целое кол-во месяцев без учета годов в общем числе месяцев
+  iMonth := iMonth + MOD(TRUNC(fMonths), 12);
+
+  // Прибавляем кол-во лет
+
+  iYear := iYear + TRUNC(fMonths) / 12;
+  //showmessage(iYear);
+
+  // Прибавим год, если есть переход
+  IF(iMonth > 12,
+    Block(
+      iMonth := iMonth - 12;
+      iYear := iYear + 1
+  ));
+
+  // Проверяем последние числа месяца, если надо - выравниваем
+  IF(iDay > DaysInMonth(Trim(iYear), Trim(iMonth)),
+    iDay := DaysInMonth(Trim(iYear), Trim(iMonth))
+  );
+
+  // Прибавляем кусок месяца, если надо
+  IF(CONVERT(TRUNC(fMonths), Float) < fMonths, Block(
+    // Доля остатка дней до конца месяца в общем числе дней месяца
+    fMonthPart := 1 - CONVERT(iDay, Float) / CONVERT(DaysInMonts(Trim(iYear), Trim(iMonth)), Float);
+
+    // Если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+    // прибавляемую долю уменьшим на остаток дней в предыдущем месяце
+    IF(FRAC(fMonths) > fMonthPart, Block(
+      iMonth := iMonth + 1;
+      IF(iMonth > 12,
+        iYear := iYear + 1
+      );
+      fMonthPart := FRAC(fMonths) - fMonthPart;
+    ),
+      fMonthPart := FRAC(fMonths)
+    );
+//showmessage('iDay='+iDay+CHAR(13)+'fMounthPart='+fMounthPart+CHAR(13)+'DaysinMounth='+DaysinMonth(Trim(iYear), Trim(iMonth)));
+    iDay := iDay + TRUNC(fMonthPart * CONVERT(DaysinMonth(Trim(iYear), Trim(iMonth)), Float));
+    IF(iDay > DaysinMonth(Trim(iYear), Trim(iMonth)),
+      iDay := iDay - DaysinMonth(Trim(iYear), Trim(iMonth))
+    );
+  ));
+if(imonth <= 2 , iYear := iYear + 1);
+  ENCODEDATE(iYear, iMonth, iDay)
+));
+
+
+Var('dataPath', String, INIFILE ('LocalDB', 'Database', 'C:\CTM\STS\DATA', 'Z:\Program Files\CTM\STS\STS.ini'));
+Var('vPlaceID', String, INIFILE ('WorkPlace', 'PlaceNum', '1', 'C:\CTM\STS\STS.ini'));
+//Var('sFillBillDirectory', string, 'Z:\Program Files\CTM\JOURNALS_SEBEZH\FillBill\');
+
+{WRITEINIFILE ('STS_DB', 'DAO VERSION', '3.6');
+WRITEINIFILE ('STS_DB', 'DATABASE TYPE', 'Paradox 7.x');
+WRITEINIFILE ('STS_DB', 'DATABASE NAME', 'Z:\Program Files\CTM\STS\Data');
+WRITEINIFILE ('STS_DB', 'NOEXCELHEADERS', '0');
+WRITEINIFILE ('STS_DB', 'USER NAME', 'Admin');
+WRITEINIFILE ('STS_DB', 'PASSWORDCHECK', '0');
+WRITEINIFILE ('STS_DB', 'Driver Name', 'Data Access Objects (DAO)');
+
+OPENDATABASE ('STS_DB_2', 'STS_DB');}
+
+{OPENDATABASE ('STS_DB', 'STANDARD', 'Path=' + dataPath, 1);
+
+OPENTABLE ('KRD_MAIN_2', 'KRD_MAIN', '','STS_DB');
+OPENTABLE ('KRD_COMM_2', 'KRD_MAIN', '','STS_DB');
+OPENTABLE ('KRD_PAPERS_2', 'KRD_MAIN', '','STS_DB');
+OPENTABLE ('KRD_TRANSP_2', 'KRD_MAIN', '','STS_DB');}
+//Showmessage('1');
+//OPENDATABASE ('dbJournals2', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=OraOLEDB.Oracle.1;Password=jruser;User ID=jruser;Data Source=XE;Persist Security Info=True');
+//OPENDATABASE ('dbJournals2', 'Oracle Direct Access', 'SERVER NAME=XE;USER NAME=jruser;PASSWORD=JRUSER;PASSWORDCHECK=1');
+OPENDATABASE ('dbJournals2', 'Oracle Direct Access', 'SERVER NAME=XE','USER NAME=jruser','PASSWORD=jruser','PASSWORDCHECK=1');
+
+//OPENDATABASE ('dbJournals2', 'Oracle Direct Access', 'SERVER NAME=XE;USER NAME=jruser;PASSWORD=jruser;PASSWORDCHECK=1');
+//OPENDATABASE ('dbJournals2', 'Oracle Direct Access', 'SERVER NAME=XE;USER NAME=jruser;PASSWORD=0x180706161774;PASSWORDCHECK=1');
+//Showmessage('2');
+OPENQUERY ('QueryTTN', 'SELECT * FROM TTN T '+
+                       ' LEFT JOIN LOGRAICE LR ON (LR.JOURNAL_MASTER_ID=T.JOURNAL_MASTER_ID) ' +
+                       ' LEFT JOIN ORGANIZ OZ ON (OZ.JOURNAL_MASTER_ID = T.ORGID) '+
+                       ' WHERE '+
+                       ' (T.NumCMR is not NULL) '+
+                       ' AND ( LR.STATUS = ' + char(39) + 'Зарегистрировано' + char(39) + ') ' +
+                       ' ORDER BY LR.DATESTART DESC', 'dbJournals2');
+///Showmessage('3');
+IF(RECORDCOUNT ('QueryTTN') <> 0,
+  If(SelectRecords('Выбор накладных', 'QueryTTN',
+        [['NumRACE', '№ рейса', 30],
+         ['DATESTART', 'Дата рейса', 15],
+         ['NumCMR', '№ накладной', 30],
+         ['DATECMR', 'Дата накладной',15],
+         ['ID_FILLBILL', 'ID_FILLBILL', 30]
+        ],
+        'TTN', 'NumTTN', 'dbJournals2'),
+      BLOCK(
+        FIRST('TTN');
+        WHILE(EOF('TTN')=0,
+          BLOCK(
+            APPENDRECORD('KRD_MAIN');
+            EDITRECORD('KRD_MAIN');
+            SETFIELDVALUE('KRD_MAIN',
+                          'PLACEID', vPlaceID,
+                          'BD_DATE', NOW(),
+                          'G082', TTN.ORGNAME,
+                          'G251', '30',
+                          'A_MODE', 7,
+                          'G083', TTN.ORGADDRESS
+            );
+            POST('KRD_MAIN');
+
+            APPENDRECORD('KRD_PAPERS_2');
+            EDITRECORD('KRD_PAPERS_2');
+            SETFIELDVALUE('KRD_PAPERS_2',
+                          'PLACEID', vPlaceid,
+                          'ID', KRD_MAIN.ID,
+                          'COUNTER', 1,
+                          'PAPERNO', TTN.NUMCMR,
+                          'PAPERDATE', TTN.DATECMR,
+                          'PAPERNAME', 'CMR',
+                          'PAPERCODE', '02015'
+            );
+            POST('KRD_PAPERS_2');
+
+            APPENDRECORD('KRD_TRANSP_2');
+            EDITRECORD('KRD_TRANSP_2');
+            SETFIELDVALUE('KRD_TRANSP_2',
+                          'PLACEID', vPlaceid,
+                          'ID', KRD_MAIN.ID,
+                          'COUNTER', 1,
+                          'TRANSP_CODE', '30',
+                          'CARNO', TTN.NUMTC,
+                          'NTRAILER', TTN.NUMPRICEP1
+            );
+            POST('KRD_TRANSP_2');
+
+
+
+            NEXT('TTN');
+          )
+        );
+
+
+      ),
+      RaiseException('Накладная не выбрана! Создание ДО1 отменено.')
+  )
+);
+
+
+CLOSEDATASET('QueryTTN');
+CLOSEDATABASE('dbJournals2');
+

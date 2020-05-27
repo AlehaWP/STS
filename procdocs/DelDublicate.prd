@@ -1,0 +1,63 @@
+// *****************************************************************************
+// Название: Удаление дубликатов ДО1
+// Описание: Удаление дубликатов ДО1
+// Кнопка вызова: 0
+// Подпись кнопки: Удаление дубликатов ДО1
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+CREATELOGFILE ('sDelLog');
+SHOWPROGRESS ('Проверка ДО1');
+VAR('iCountDO', integer, RECORDCOUNT('KRD_MAIN_2'));
+VAR('iCounter', integer, 0);
+VAR('iCounterDel', integer, 0);
+
+FIRST('KRD_MAIN_2');
+WHILE(EOF('KRD_MAIN_2')=0,
+      BLOCK(
+        //На всякий проверяем наличие товара
+        OPENQUERY('GET_Dublicate', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE PLACEID='+KRD_MAIN_2.PLACEID+' AND NBD='+char(39)+KRD_MAIN_2.NBD+char(39)+' AND BD_DATE='+char(39)+FORMATDATETIME('DD.MM.YYYY HH:MM:SS',KRD_MAIN_2.BD_DATE)+char(39));
+        VAR('IDwithDO2finded', integer, 0);
+        IF(RECORDCOUNT('GET_Dublicate')>1,
+           BLOCK(
+             FIRST('GET_Dublicate');
+             WHILE(EOF('GET_Dublicate')=0,
+                   BLOCK(
+                      OPENQUERY('FIND_DO2', 'STS_DB', 'SELECT * FROM RELEASE WHERE PLACEID='+GET_Dublicate.PLACEID+' AND ID='+GET_Dublicate.ID);
+                      IF((RECORDCOUNT('FIND_DO2')<>0)*(IDwithDO2finded=0), IDwithDO2finded:=GET_Dublicate.ID);
+                      NEXT('GET_Dublicate');
+                   )
+             );
+           )
+        );
+        IF(IDwithDO2finded=0, IDwithDO2finded:= KRD_MAIN_2.ID);
+        CLOSEDATASET('GET_Dublicate');
+        OPENQUERY('GET_Dublicate', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE PLACEID='+KRD_MAIN_2.PLACEID+' AND NBD='+char(39)+KRD_MAIN_2.NBD+char(39)+' AND BD_DATE='+char(39)+FORMATDATETIME('DD.MM.YYYY HH:MM:SS', KRD_MAIN_2.BD_DATE)+char(39)+ ' AND ID <>'+IDwithDO2finded);
+        IF(RECORDCOUNT('GET_Dublicate')<>0,
+           BLOCK(
+             FIRST('GET_Dublicate');
+             WHILE(EOF('GET_Dublicate')=0,
+                   BLOCK(
+                      EXECUTESQL('STS_DB', 'DELETE FROM KRD_MAIN WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      EXECUTESQL('STS_DB', 'DELETE FROM KRD_COMM WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      EXECUTESQL('STS_DB', 'DELETE FROM KR_PAPER WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      EXECUTESQL('STS_DB', 'DELETE FROM KR_C_P WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      EXECUTESQL('STS_DB', 'DELETE FROM KRD_DCD WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      EXECUTESQL('STS_DB', 'DELETE FROM RELEASE WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      EXECUTESQL('STS_DB', 'DELETE FROM REL_COMM WHERE PLACEID='+KRD_MAIN_2.PLACEID+ ' AND ID='+GET_Dublicate.ID);
+                      APPENDLOGFILE ('sDelLog', 'Удален ID '+GET_Dublicate.ID);
+                      NEXT('GET_Dublicate');
+                      iCounterDel := iCounterDel + 1;
+                   )
+             );
+           )
+        );
+        iCounter:=iCounter+1;
+        SETPROGRESS (iCounter, 100, iCountDO);
+        NEXT('KRD_MAIN_2');
+      )
+);
+HIDEPROGRESS ();
+APPENDLOGFILE ('sDelLog', 'Найдено '+iCountDO+ ' битых ДО, удалено ' + iCounterDel);
+SHOWLOGFILE ('sDelLog', 'Удаленные документы');

@@ -1,0 +1,887 @@
+// *****************************************************************************
+// Название: Обмен ДО_ТЕСТ
+// Описание: Обмен ДО
+// Кнопка вызова: 0
+// Подпись кнопки: Обмен ДО_ТЕСТ
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC ('GetDir',,
+      BLOCK(
+        VAR('sDir', string);
+        SELECTDIRECTORY ('sDir');
+        sDir := INCLUDETRAILINGBACKSLASH(sDir);
+        WRITEINIFILE ('DO1_AUTO', 'DirectoryPath', sDir);
+      )
+),
+
+FUNC('CreateKRD_SOLVOID',,
+     EXECUTESQL('STS_DB',
+                'CREATE TABLE KRD_SOLVOID '+
+                '( '+
+                'PLACEID INT, '+
+                'ID INT, '+
+                'CUSTREPID INT, '+
+                'G32 INT, '+
+                'GOODID INT, '+
+                'TOVINCONT INT, '+
+                'TOVINTTN INT, '+
+                'CONTID INT, '+
+                'CONTCOUNTER INT, '+
+                'CONTINTTN INT, '+
+                'TTNCOUNTER INT, '+
+                'VESID INT, '+
+                'BILLID INT, '+
+                'EXPDO1 INT, '+
+                'XMLNAME CHAR(254) '+
+                ')'
+     )
+),
+
+IF(TABLEEXISTS ('KRD_SOLVOID' , 'STS_DB'),,CreateKRD_SOLVOID());
+//CreateKRD_SOLVOID();
+//RAISEEXCEPTION ('Создали');
+
+FUNC('ReadXML',Param('VidDO',integer,0),
+     BLOCK(
+          //VAR('sDirPath', string, INIFILE ('DO1_AUTO', 'DirectoryPath', ''));
+          //IF (sDirPath='',BLOCK(GetDir();sDirPath:=INIFILE ('DO1_AUTO', 'DirectoryPath', '')));
+          VAR('sDirPath', string, 'Z:\STM_TEST\');
+          sDirPath := sDirPath + IF(VidDO=1,'IMPDO1\','IMPDO2\');
+          
+          VAR('sDirPathBackup', string, sDirPath+'BACKUP\');
+          VAR('sDirPathError', string, sDirPath+'ERRORS\');
+          VAR('sDirPathNotDO', string, sDirPath+'NOT_DO' + VidDO + '\');
+          VAR('sDirPathDuplicate', string, sDirPath+'DUPLICATE\');
+          VAR('sDirPathDuplicateError', string, sDirPath+'DUPLICATE\ERRORS\');
+          VAR('sDirPathDontFindDO1', string,sDirPath+'DONT_FIND_DO1\');
+          VAR('sDirPathLogs', string, sDirPath+'LOGS\');
+          
+          VAR('sReadedLOG', string,'');
+          VAR('sNotDO', string,'');
+          VAR('sDuplicate', string,'');
+          VAR('sDuplicateErrors', string,'');
+          VAR('sErrorsLOG', string,'');
+          VAR('sDontFindDO1', string,'');
+          
+
+
+          IF(DIRECTORYEXISTS(sDirPath)<>1,FORCEDIRECTORIES(sDirPath));
+          IF(DIRECTORYEXISTS(sDirPathBackup)<>1,FORCEDIRECTORIES(sDirPathBackup));
+          IF(DIRECTORYEXISTS(sDirPathError)<>1,FORCEDIRECTORIES(sDirPathError));
+          IF(DIRECTORYEXISTS(sDirPathNotDO)<>1,FORCEDIRECTORIES(sDirPathNotDO));
+          IF(DIRECTORYEXISTS(sDirPathDuplicate)<>1,FORCEDIRECTORIES(sDirPathDuplicate));
+          IF(DIRECTORYEXISTS(sDirPathDuplicateError)<>1,FORCEDIRECTORIES(sDirPathDuplicateError));
+          IF(DIRECTORYEXISTS(sDirPathLogs)<>1,FORCEDIRECTORIES(sDirPathLogs));
+          IF(VidDO=2,
+             IF(DIRECTORYEXISTS(sDirPathDontFindDO1)<>1,FORCEDIRECTORIES(sDirPathDontFindDO1))
+          );
+          
+          VAR('sLogFileName', string, sDirPathLogs+FDT('ddmmyyhhmmss',NOW())+'.txt');
+          CREATELOGFILE (sLogFileName);
+
+          VAR('mFileList', Memo, GETFILELIST(sDirPath, '*.xml', '|'));
+          VAR('iTotalFile', integer, 0);
+          VAR('iCount', integer, 0);
+          VAR('sDOFileName', string, '');
+          VAR('sXMLName', string, '');
+          VAR('sTemp', string,'');
+          // кол-во файлов в папке
+          iTotalFile := SPLITSTR (mFileList, '|', sTemp);
+          // счетчик
+          iCount := 1;
+          SHOWPROGRESS ('Загрузка ДО'+convert(VidDO,string)+' из СОЛВО. Дождитесь окончания');
+          
+          While ( iCount <= iTotalFile,
+                Block(
+                      sDOFileName := EXTRACTSTR (mFileList, iCount, '|');
+                      sXMLName := sDOFileName;
+                      VAR ('XMLDOC', Integer, XMLDOCUMENTCREATE());
+                      XMLDOCUMENTLOAD(XMLDOC, sDirPath+sDOFileName);
+                      VAR ('iRoot', Integer, XMLDOCUMENTROOT (XMLDOC));
+
+                      VAR('Report',integer, XMLNODECHILD(iRoot,0));
+                      VAR('Attachment',integer,XMLNODEFIND(Report,'Attachment') );
+                      VAR('sReportType',integer,XMLNODEVALUE(XMLNODEFIND(Attachment, 'ReportType')) );
+                      IF(VidDO=1,//(sReportType='DO1')*(VidDO=1),
+                         {TRYEXCEPT (ReadDO1(),,
+                                    BLOCK(
+                                          COPYFILE(sDirPath+sDOFileName, sDirPathError+sDOFileName);
+                                          DELETEFILE(sDirPath+sDOFileName);
+                                          sErrorsLOG:=sErrorsLOG + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Ошибка чтения файла ' + sDOFileName + '. Файл перемещен в папку '+ sDirPathError;
+                                    )
+                         ),//}ReadDO1(),
+                         //TRYEXCEPT (
+                                    ReadDO2()//,,
+                                    {BLOCK(
+                                          COPYFILE(sDirPath+sDOFileName, sDirPathError+sDOFileName);
+                                          DELETEFILE(sDirPath+sDOFileName);
+                                          sErrorsLOG:=sErrorsLOG + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Ошибка чтения файла ' + sDOFileName + '. Файл перемещен в папку '+ sDirPathError;
+                                    )
+                         )}//ReadDO2(),
+                         //IF((sReportType='DO2')*(VidDO=2),
+                              //TRYEXCEPT (ReadDO2(),,
+                                    //      BLOCK(
+                                     //           COPYFILE(sDirPath+sDOFileName, sDirPathError+sDOFileName);
+                                      //          DELETEFILE(sDirPath+sDOFileName);
+                                        //        sErrorsLOG:=sErrorsLOG + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Ошибка чтения файла ' + sDOFileName + '. Файл перемещен в папку '+ sDirPathError;
+                                          //)
+                              //),
+                              //BLOCK(
+                                      //COPYFILE(sDirPath+sDOFileName, sDirPathNotDO+sDOFileName);
+                                      //DELETEFILE(sDirPath+sDOFileName);
+                                      //sNotDO:=sNotDO+char(13)+char(10))+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Файл ' + sDOFileName + ' не является ДО. Файл перемещен в папку '+ sDirPathNotDO
+                              //)
+                           //)
+                      );
+                      iCount := iCount + 1;
+                      SETPROGRESS (iCount, 100, iTotalFile);
+                )
+          );
+          HIDEPROGRESS ();
+          iTotalFile
+     )//FUNC READXML BLOCK
+),
+
+FUNC('ReadDO1',,
+     BLOCK(
+            VAR('Vessel',integer,XMLNODEFIND(Attachment, 'Vessel') );
+            VAR('Carrier',integer,XMLNODEFIND(Attachment, 'Carrier') );
+            VAR('Shipper',integer,XMLNODEFIND(Attachment, 'Shipper') );
+            VAR('Consignee',integer,XMLNODEFIND(Attachment, 'Consignee') );
+
+            VAR ('vID', Integer);
+            VAR ('sSQL', String, '');
+            VAR ('vMainID', Integer);
+            //ID системы солво
+            VAR ('vCustRepID', Integer,XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'CustRepId')));
+            VAR ('vBillID', Integer, XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'BillID')));
+            VAR ('vVesID', Integer,XMLNODEVALUE(XMLNODEFIND(Vessel, 'VesID')));
+            VAR ('vContID', Integer);
+            VAR ('vGoodID', Integer);
+            VAR ('dDODate', datetime, XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'DateDischarge')));
+            VAR ('dtStoreDate', datetime);
+            VAR ('vStorePeriod', Integer);
+            VAR ('vCreateDO1',integer, 1);
+            VAR ('vSHOWNBD', string,'');
+            VAR ('vNBD', String,'');
+
+            OPENQUERY('FIND_STS_ID', 'STS_DB', 'SELECT PLACEID, ID FROM  KRD_SOLVOID WHERE CUSTREPID='+vCustRepID);
+            IF(RECORDCOUNT('FIND_STS_ID')>0,
+               BLOCK(
+                     OPENQUERY('KM2', 'STS_DB', 'SELECT PLACEID, ID, NBD, SHOW_NBD, BD_DATE, MC_STATUS_BD FROM KRD_MAIN WHERE '+
+                                                'PLACEID='+FIND_STS_ID.PlaceID+' AND ID='+FIND_STS_ID.ID
+                     );
+                     IF(RECORDCOUNT('KM2')>0,
+                        IF((KM2.MC_STATUS_BD<>'3')*(KM2.MC_STATUS_BD<>'И'),
+                            BLOCK(
+                                  dDODate:=KM2.BD_DATE;
+                                  vNBD:=KM2.NBD;
+                                  vSHOWNBD:=KM2.SHOW_NBD;
+
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KRD_DCD WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KRD_CONT WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KR_C_P WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KR_PAPER WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KR_TRANS WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KRD_COMM WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  EXECUTESQL ('STS_DB', 'DELETE FROM KRD_MAIN WHERE PLACEID='+ FIND_STS_ID.PlaceID + ' AND ID='+FIND_STS_ID.ID);
+                                  
+                                  vCreateDO1:=1;
+                                  sReadedLOG := sReadedLOG + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО1 уже есть в программе. Будет произведена замена ';
+                                  EXECUTESQL('STS_DB','DELETE FROM KRD_SOLVOID WHERE PLACEID='+FIND_STS_ID.PlaceID+' AND ID='+FIND_STS_ID.ID);
+                                  
+
+                                  {IF(DELETEDOCUMENT (FIND_STS_ID.PlaceID, FIND_STS_ID.ID)=1,
+                                     BLOCK( showmessage(1);
+                                           vCreateDO1:=1;
+                                           sReadedLOG := sReadedLOG + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО1 уже есть в программе. Будет произведена замена ';
+                                           EXECUTESQL('STS_DB','DELETE FROM KRD_SOLVOID WHERE PLACEID='+FIND_STS_ID.PlaceID+' AND ID='+FIND_STS_ID.ID);
+                                           GLOBALREFRESH ();
+
+                                     ),
+                                     BLOCK( showmessage(2);
+                                            vCreateDO1 := 0;
+                                            COPYFILE(sDirPath+sDOFileName, sDirPathDuplicateError+sDOFileName);
+                                            DELETEFILE(sDirPath+sDOFileName);
+                                            sDuplicateErrors := sDuplicateErrors + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО1 уже есть в программе. При замене произошла ошибка. Файл перемещен в папку '+ sDirPathDuplicateError;
+                                      )
+                                   );}
+                            ),
+                            BLOCK(
+                                   vCreateDO1 := 0;
+                                   COPYFILE(sDirPath+sDOFileName, sDirPathDuplicate+sDOFileName);
+                                   DELETEFILE(sDirPath+sDOFileName);
+                                   sDuplicate := sDuplicate + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО1 есть в программе и уже передан в таможню. Файл перемещен в папку '+ sDirPathDuplicate;
+                            )
+                            
+                        ),
+                        EXECUTESQL('STS_DB','DELETE FROM KRD_SOLVOID WHERE PLACEID='+FIND_STS_ID.PlaceID+' AND ID='+FIND_STS_ID.ID)
+                     );
+               )
+
+            );
+            IF (vCreateDO1=1,
+                BLOCK(
+                      dtStoreDate := AddMonths(dDODate + 1, 2);
+                      //showmessage(dtStoreDate);
+                      vStorePeriod := dtStoreDate - (dDODate+1);
+
+
+                      VAR ('vSTOREDOCNO', string,'');
+
+                      IF(vNBD='',vNBD := SOLVE(INIFILE('Docs','MakeBD_No', 'LEFTPAD(GENNO("NBD_KPS", "№ ДО1(мв)/ДУ ЗТК"), 7, "0")')));
+                      IF(vSHOWNBD='',vSHOWNBD:= FDT('YYYYMMDD', DATE())+LEFTPAD(RIGHT(vNBD, 5), 5, '0'));
+                      OPENQUERY('GET_STOR_NO', 'STS_DB', 'SELECT MAX(STORE_DOC_NO) AS SDN FROM KRD_MAIN');
+                      vSTOREDOCNO := convert(convert(GET_STOR_NO.SDN,integer) + 1,string);
+                      CLOSEDATASET('GET_STOR_NO');
+
+
+                      // showmessage(vPlaceID);
+                      APPENDRECORD ('KRD_MAIN');
+                      EDIT ('KRD_MAIN');
+                      SETFIELDVALUE ('KRD_MAIN',
+                                     'PLACEID', vPLACEID,
+                                     'STORE_DOC_NO',vSTOREDOCNO,
+                                     'A_MODE',      '7',
+                                     'NBD',         vNBD,
+                                     'SHOW_NBD',    vSHOWNBD,
+                                     'BD_DATE',     now(), //dDODate,//StrToDate (XMLNODEVALUE(XMLNODEFIND (Report, 'ReportDate')), 'YYYY-MM-DD', '-') + IF (TRIM (XMLNODEVALUE(XMLNODEFIND (Report, 'ReportTime'))) <> '', ' ' + XMLNODEVALUE(XMLNODEFIND (Report, 'ReportTime')), FRAC (KRD_MAIN.BD_DATE)),
+                                     'BEG_KEEP',    dDODate + 1,
+                                     'G261',        10,
+                                     'TRANSP_COUNTRY',XMLNODEVALUE(XMLNODEFIND(Vessel, 'VesCountryCode')),
+                                     'SHIP_NAME',   XMLNODEVALUE(XMLNODEFIND(Vessel, 'VesName')),
+                                     'G042',        XMLNODEVALUE(XMLNODEFIND(Carrier,'CarName')),
+                                     'G043',        XMLNODEVALUE(XMLNODEFIND(Carrier,'CarAddress')),
+                                     'G04_COUNTRY', XMLNODEVALUE(XMLNODEFIND(Carrier,'CarCountryCode')),
+                                     'G040',        XMLNODEVALUE(XMLNODEFIND(Carrier,'CarFIO')),
+                                     'G022',        XMLNODEVALUE(XMLNODEFIND(Shipper,'ShipName')),
+                                     'G023',        XMLNODEVALUE(XMLNODEFIND(Shipper,'ShipAddress')),
+                                     'G15A',        XMLNODEVALUE(XMLNODEFIND(Shipper,'ShipCountryCode')),
+                                     'G082',        XMLNODEVALUE(XMLNODEFIND(Consignee,'ConsName')),
+                                     'G083',        'РФ' + IF (XMLNODEVALUE(XMLNODEFIND(Consignee,'ConsAddress'))<>'', ', ' + XMLNODEVALUE(XMLNODEFIND(Consignee,'ConsAddress'))),
+                                     'G17A',        643,//XMLNODEVALUE(XMLNODEFIND(Consignee,'ConsCountryCode')),
+                                     'AUTHOR',      USERINFO(,'UserName'),//XMLNODEVALUE(XMLNODEFIND(Report,'UserCreate')),
+                                     'AUTHOR_POST',      USERINFO(,'UserPost'),//XMLNODEVALUE(XMLNODEFIND(Report,'UserCreate')),
+                                     'REMARK',      XMLNODEVALUE(XMLNODEFIND(Attachment, 'Prim'))
+                                	   //'AUTHOR_POST', ,
+                      );
+                      POST('KRD_MAIN');
+                      vID := KRD_MAIN.ID;
+                      VAR('Bill',integer,XMLNODEFIND(Attachment, 'Bill') );
+                      VAR('nTTN',integer,1);
+                      APPENDRECORD ('KRD_PAPERS');
+                      EDIT ('KRD_PAPERS');
+                      SETFIELDVALUE ('KRD_PAPERS',
+                                     'PLACEID',      vPLACEID,
+                                     'ID',           vID,
+                                     'COUNTER',      nTTN,
+                                     'PAPERCODE',    '02011',
+                                     'PAPERNAME',    'КОН',
+                                     'PAPERDATE',    convert(XMLNODEVALUE(XMLNODEFIND(Bill,'BillDate')),datetime),
+                                     'PAPERNO',      XMLNODEVALUE(XMLNODEFIND(Bill,'BillNumber'))
+
+                      );
+                      POST ('KRD_PAPERS');
+
+
+
+                      APPENDRECORD ('KR_TRANS');
+                      EDIT ('KR_TRANS');
+                      SETFIELDVALUE ('KR_TRANS',
+                                     'PLACEID',        vPLACEID,
+                                     'ID',             vID,
+                                     'COUNTER',        1,
+                                     'TRANSP_CODE',    10,
+                                     'CARNO',          XMLNODEVALUE(XMLNODEFIND(Vessel, 'VesName'))
+                                    // 'TRANSP_COUNTRY', XMLNODEVALUE(XMLNODEFIND(Vessel, 'VesCountryCode'))
+
+                      ); // SETFIELDVALUE //
+                      POST ('KR_TRANS');
+                      VAR('Containers', integer, XMLNODEFIND(Attachment, 'Containers'));
+                      VAR('vContCount', integer, XMLNODECHILDCOUNT (Containers));
+                      VAR('vContCounter', integer, 0);
+                      VAR('vG32', integer, 0);
+                      VAR('nCont', integer, 0);
+                      VAR('nTTN_G32', integer, 0);
+                      VAR('vG32', integer, 0);
+                      WHILE(vContCounter<vContCount,
+                            BLOCK(
+                                  VAR('AcceptanceContainer', integer,XMLNODECHILD(Containers, vContCounter));
+                                  VAR ('sContNumber', string, XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContNumber')));
+                                  vContID := XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContID'));
+                                  nCont := vContCounter + 1; //Элементы считаются с нуля а контейнеры с единицы
+                                  nTTN_G32 := nTTN_G32 + 1;
+                                  vG32 := vG32 + 1;
+                                  VAR('nCont_TTN',integer,XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContNumberBill')));
+                                  APPENDRECORD ('KRD_CONT');
+                                  EDIT ('KRD_CONT');
+                                  SetFieldValue ('KRD_CONT',
+                                                 'PLACEID',     vPLACEID,
+                                                 'ID',          vID,
+                                                 'COUNTER',     nCont,
+                                                 'CONTNO',      sContNumber,
+                                                 'G35',         XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContNetto')),
+                                                 //'G38',         XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContNetto')),
+                                                 'SVHCOMMENT',  XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContPrim')),
+                                                 'CONTTYPE',    XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContType')),
+                                                 'PLOMB',       XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContPlomb')),
+                                                 'N_TTN',       nTTN,
+                                                 'N_CONT',      nCont_TTN
+                                  ); // SETFIELDVALUE - //
+                                  POST ('KRD_CONT');
+
+                                  VAR('Goods', integer, XMLNODEFIND(AcceptanceContainer, 'Goods'));
+                                  VAR('vGoodsCount', integer, XMLNODECHILDCOUNT (Goods));
+                                  VAR('vGoodsCounter', integer, 0);
+                                  VAR('FullGoodName', string,'');
+                                  VAR('FullGoodBrutto', float, 0);
+                                  VAR('FullGoodNetto', float, 0);
+                                  vGoodID := 0;
+                                  WHILE(vGoodsCounter<vGoodsCount,
+                                        BLOCK(
+                                              VAR('AcceptanceGood', integer,XMLNODECHILD(Goods, vGoodsCounter));
+                                              IF(vGoodID = 0, vGoodID := XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodID')));
+                                              
+                                              FullGoodName := FullGoodName + XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodName'))+', ';
+                                              FullGoodBrutto := FullGoodBrutto + XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodBrutto'));
+                                              FullGoodNetto := FullGoodNetto + XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodNetto'));
+                                              vGoodsCounter := vGoodsCounter + 1;
+                                        )
+                                  );
+                                  VAR('FullGoodName2', string, COPY(FullGoodName, 1, LENGTH(FullGoodName)-2));
+                                  APPENDRECORD ('KRD_COMM');
+                                  EDIT ('KRD_COMM');
+                                  SETFIELDVALUE ('KRD_COMM',
+                                                 'PLACEID',      vPlaceID,
+                                                 'ID',           vID,
+                                                 //'G32',          vG32,
+                                                // 'GN',           vG32,
+                                                 'N_TTN',        nTTN,
+                                                 'N_TTN_G32',    nTTN_G32, //vG32,
+                                                 'N_CONT',       nCont,
+                                                 'REMARK',       XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodPrim')),
+                                                 'ACCEPTDATE',   dDODate,
+                                                 'STORAGE_DATE', dtStoreDate,
+                                                 'STORAGE_TYPE', 'НОР',
+                                                 'STORE_PERIOD', vStorePeriod,
+                                                 'LEG_PERIOD',   vStorePeriod,
+                                                 'G312',         FullGoodName2,//XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodName')),
+                                                 'G35',          FullGoodBrutto,//XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodBrutto')),
+                                                 'G38',          FullGoodNetto,//XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodNetto')),
+                                                 'BOXNO',        sContNumber,
+                                                 'G313',         'Контейнер',
+                                                 'G311',         1,//XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodPlacesCount')),
+                                                 'STORAGE_DATE', FDT('DD.MM.YYYY', dtStoreDate),
+                                                 'STORAGE_PERIOD', vStorePeriod,
+                                                 'LEG_PERIOD', vStorePeriod
+                                  );
+                                  POST ('KRD_COMM');
+
+                                  //EXECUTESQL('STS_DB','UPDATE KRD_COMM SET STORAGE_DATE='+char(39)+FDT('DD.MM.YYYY', dtStoreDate)+char(39)+',STORE_PERIOD='+vStorePeriod+',LEG_PERIOD='+vStorePeriod+' WHERE PLACEID='+vPlaceid+' AND ID='+vID+' AND G32='+vG32);
+                                  EXECUTESQL('STS_DB',
+                                             'INSERT INTO KRD_SOLVOID '+
+                                             '( '+
+                                             'PLACEID, '+//1
+                                             'ID, '+//2
+                                             'CUSTREPID, '+//3
+                                             'G32, '+//4
+                                             'GOODID, '+//5
+                                             'TOVINCONT, '+//6
+                                             'TOVINTTN, '+//7
+                                             'CONTID, '+//8
+                                             'CONTCOUNTER, '+//9
+                                             'CONTINTTN, '+//10
+                                             'TTNCOUNTER, '+//11
+                                             'VESID, '+//12
+                                             'BILLID, '+//13
+                                             'EXPDO1, '+//14
+                                             'XMLNAME '+//15
+                                             ') '+
+                                             'VALUES '+
+                                             '('+
+                                             vPLACEID+','+//1
+                                             vID+','+//2
+                                             vCustRepID+','+//3
+                                             KRD_COMM.G32 +','+//4
+                                             vGoodID+','+//5
+                                             nCont+','+//6
+                                             nTTN_G32+','+//7
+                                             vContID+','+//8
+                                             nCont+','+//9
+                                             nCont_TTN+','+//10
+                                             nTTN+','+//11
+                                             vVesID+','+//12
+                                             vBillID+','+
+                                             '0,'+
+                                             char(39)+sXMLName+char(39)+
+                                             ')');
+
+                                  vContCounter := vContCounter + 1;
+
+                           ) //BLOCK(//WHILE(vContCounter<vContCount,
+                      ); //WHILE(vContCounter<vContCount,
+                      
+                      XMLDOCUMENTSAVE(XMLDOC, sDirPathBackup+sDOFileName);
+                      DELETEFILE(sDirPath+sDOFileName);
+                      sReadedLOG := sReadedLOG + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Чтение ' + sDOFileName + ' завершено. Создано ДО1№'+ vNBD;
+                )
+            );//IF vCreateDO1=1
+
+     )
+),//FUNC('ReadDO1',,
+
+
+FUNC('ReadDO2',,
+     BLOCK(
+            VAR('Carrier',integer,XMLNODEFIND(Attachment, 'Carrier') );
+            VAR('Consignee',integer,XMLNODEFIND(Attachment, 'Consignee') );
+            
+            VAR('CustomDocs',integer,XMLNODEFIND(Attachment, 'CustomDocs') );
+            
+            VAR('sCarrier',string,XMLNODEVALUE(XMLNODEFIND(Carrier, 'CarName')) );
+            VAR('sConsignee',string,XMLNODEVALUE(XMLNODEFIND(Consignee, 'ConsName')) );
+            
+            VAR ('vID', Integer);
+            VAR ('vG32', Integer);
+            VAR ('sSQL', String, '');
+            VAR ('vMainID', Integer);
+            //ID системы солво
+            VAR ('vCustRepID', Integer,XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'CustRepId')));
+            VAR ('vBillID', Integer, XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'BillID')));
+            VAR ('vContID', Integer);
+            VAR ('vGoodID', Integer);
+            
+            VAR('Containers', integer, XMLNODEFIND(Attachment, 'Containers'));
+            VAR('vContCount', integer, XMLNODECHILDCOUNT (Containers));
+            VAR('vContCounter', integer, 0);
+            VAR('vDO2Counter', integer, 0);
+            VAR('CreateDO2', integer, 1);
+            
+            VAR('vG35_OUT', float,0);
+            VAR('vG38_OUT', float,0);
+            VAR('vG311_OUT', float,0);
+            VAR('vG42_OUT', float,0);
+            VAR('sRelNO', string,'');
+  //          VAR ('dDOUT_DATE', datetime, XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'DateDischarge')));
+            VAR('dOUT_DATE',datetime);
+            VAR('dRELEASE_DATE',datetime);
+            VAR('iCarrierFromDO1',integer,1);
+            VAR('iConsigneeFromDO1',integer,1);
+            
+            VAR('sDT_NUM',string,XMLNODEVALUE(XMLNODEFIND(CustomDocs, 'PrDocumentNumber')) );
+            VAR('sRelease_DATE',string,EXTRACTSTR (sDT_NUM, 2, '/'));
+            
+
+            IF(sRelease_DATE='',
+               dRELEASE_DATE:=DATE(),
+               BLOCK(
+                     sRelease_DATE := COPY(sRelease_DATE,1,2) + '.'+COPY(sRelease_DATE,3,2) + '.20'+COPY(sRelease_DATE,5,2);
+                     dRelease_DATE := STRTODATE(sRelease_DATE,'dd.mm.yyyy','.');
+               )
+            );
+            
+
+            OPENQUERY('FIND_STS_ID', 'STS_DB', 'SELECT PLACEID, ID FROM  KRD_SOLVOID WHERE CUSTREPID='+vCustRepID);
+            vPlaceID:=FIND_STS_ID.PLACEID;
+            vID := FIND_STS_ID.ID;
+            IF(RECORDCOUNT('FIND_STS_ID')>0,
+               BLOCK(
+                     OPENQUERY('KM2', 'STS_DB', 'SELECT G082, G083, G084C, G08_KPP, G08_OGRN, G17A, G022, G023, G15A, G042, G043, G04_COUNTRY, G040, G142,G143,G1440,G144,G145,ID FROM KRD_MAIN WHERE '+
+                                                'PLACEID='+vPlaceID+' AND ID='+vID
+                     );
+                     
+                     IF(RECORDCOUNT('KM2')>0,
+                        BLOCK(
+                            { OPENQUERY('FIND_DUBL_DO2', 'STS_DB', 'SELECT PLACEID, ID,RELEASE_NO, OUT_DATE,RELEASE_DATE, COUNTER, MC_STATUS FROM RELEASE_ WHERE PLACEID='+vPLACEID+' AND ID='+vID+' AND DOC_NO='+char(39)+sDT_NUM+char(39));
+                             IF(RECORDCOUNT('FIND_DUBL_DO2')>0,
+                                IF((FIND_DUBL_DO2.MC_STATUS<>'3')*(FIND_DUBL_DO2.MC_STATUS<>'И'),
+                                    BLOCK(
+                                          sRELNO:=FIND_DUBL_DO2.RELEASE_NO;
+                                          dOUT_DATE:=FIND_DUBL_DO2.OUT_DATE;
+                                          dRELEASE_DATE:=FIND_DUBL_DO2.RELEASE_DATE;
+                                          TRYEXCEPT(
+                                                    BLOCK(
+                                                          EXECUTESQL('STS_DB','DELETE FROM REL_COMM WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND COUNTER='+FIND_DUBL_DO2.COUNTER);
+                                                          EXECUTESQL('STS_DB','DELETE FROM RELEASE_ WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND COUNTER='+FIND_DUBL_DO2.COUNTER);
+                										                      sReadedLOG := sReadedLOG + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО2 уже есть в программе. Будет произведена замена ';
+                                                          
+                                                    ),,
+                                                    BLOCK(
+              		                                        COPYFILE(sDirPath+sDOFileName, sDirPathDuplicateError+sDOFileName);
+                                                          DELETEFILE(sDirPath+sDOFileName);
+                                                          sDuplicateErrors := sDuplicateErrors + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО2 уже есть в программе. При замене произошла ошибка. Файл перемещен в папку '+ sDirPathDuplicateError;
+                                                    )
+                                          );
+                             
+                                          
+                                    )
+                                    ,
+                                    BLOCK(
+                                          CreateDO2 := 0;
+                                          COPYFILE(sDirPath+sDOFileName, sDirPathDuplicate+sDOFileName);
+                                          DELETEFILE(sDirPath+sDOFileName);
+                                          sDuplicate := sDuplicate + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО2 есть в программе и уже передан в таможню. Файл перемещен в папку '+ sDirPathDuplicate;
+                                    )
+                                )
+                             );
+                             CLOSEDATASET('FIND_DUBL_DO2');
+                             }
+                        ),
+                        BLOCK(
+                              EXECUTESQL('STS_DB','DELETE FROM KRD_SOLVOID WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                              CreateDO2 := 0;
+                              COPYFILE(sDirPath+sDOFileName, sDirPathDontFindDO1+sDOFileName);
+                              DELETEFILE(sDirPath+sDOFileName);
+                              sDontFindDO1 := sDontFindDO1 + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО2 не может быть прочитан. ДО1 не найден. Файл перемещен в папку '+ sDirPathDuplicate;
+                        )
+                        
+                     );
+
+               ),
+               BLOCK(
+                     CreateDO2 := 0;
+                     COPYFILE(sDirPath+sDOFileName, sDirPathDontFindDO1+sDOFileName);
+                     DELETEFILE(sDirPath+sDOFileName);
+                     sDontFindDO1 := sDontFindDO1 + char(13)+char(10)+FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Указанный в файле ' + sDOFileName + ' ДО2 не может быть прочитан. ДО1 не найден. Файл перемещен в папку '+ sDirPathDuplicate;
+               )
+            );
+            CLOSEDATASET('FIND_STS_ID');
+            WHILE((CreateDO2=1)*(vContCounter<vContCount),
+                  BLOCK(
+                        VAR('OutputContainer', integer,XMLNODECHILD(Containers, vContCounter));
+                        vContID := XMLNODEVALUE(XMLNODEFIND(OutputContainer,'ContID'));
+                        dOUT_DATE :=  XMLNODEVALUE(XMLNODEFIND(OutputContainer,'DateShipped'));
+//                        showmessage(dOUTDATE);
+                        VAR('Goods', integer, XMLNODEFIND(OutputContainer, 'Goods'));
+                        VAR('vGoodsCount', integer, XMLNODECHILDCOUNT (Goods));
+                        VAR('vGoodsCounter', integer, 0);
+
+                        VAR ('vDO2MainCounter', integer, 0);
+                        
+                        OPENQUERY('FIND_CONT_GOODS','STS_DB', 'SELECT PLACEID, ID, G32 FROM KRD_SOLVOID WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND CONTID='+vContID );
+                        FIRST ('FIND_CONT_GOODS');
+                        IF (RECORDCOUNT ('FIND_CONT_GOODS') <> 0,
+                            WHILE (EOF('FIND_CONT_GOODS')=0,
+                                   BLOCK(
+                                         vG32:=FIND_CONT_GOODS.G32;
+                                         vG35_OUT:=0;
+                                         vG311_OUT:=0;
+
+                                         OPENQUERY('PRIHOD','STS_DB','SELECT G35, G311, G42 FROM KRD_COMM WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND G32='+vG32);
+
+                                         vG35_OUT:=PRIHOD.G35;
+                                         vG311_OUT:=PRIHOD.G311;
+                                         
+                                         OPENQUERY('RASHOD','STS_DB','SELECT MAX(ID) as ID, SUM(RELEASE_G35) as G35, SUM(RELEASE_G311) as G311, SUM(RELEASE_G42) as G42 FROM REL_COMM WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND G32='+vG32);
+                                         IF (RASHOD.ID <> 'NULL',
+                                             BLOCK(showmessage(1);
+                                                   vG35_OUT:=vG35_OUT-RASHOD.G35;
+                                                   vG311_OUT:=vG311_OUT-RASHOD.G311;
+                                             )
+                                         );
+
+                                         //Создаем ДО2 если еще не создали
+                                         IF(vDO2MainCounter=0,
+                                            BLOCK(
+                                                  //получаем накладные
+                                                  OPENQUERY('PAPER', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID='+vPLACEID+' AND ID='+vID+' ORDER BY PAPERCODE' );
+                                                  FIRST('PAPER');
+                                                  VAR('sPaper', string, '');
+                                                  WHILE(EOF('PAPER') = 0,
+                                                    BLOCK(
+                                                       IF(sPaper <> '', sPaper := sPaper + ', ');
+                                                       sPaper := sPaper +  PAPER.PAPERNAME + ' ' + PAPER.PAPERNO + ' от ' + FDT('DD.MM.YYYY', PAPER.PAPERDATE);
+                                                       NEXT('PAPER');
+                                                    )
+                                                  );
+                                                  CLOSEDATASET('PAPER');
+                                                  
+                                                  VAR ('vDO2MainNo', integer, 1);
+                                                  OPENQUERY('GET_MAX','STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM RELEASE_ WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                                                  vDO2MainCounter := GET_MAX.COUNTER+1;
+                                                  vDO2MainNo := 0;
+                                                  CLOSEDATASET ('GET_MAX');
+
+
+                                                  IF(sRELNO='',
+                                                     BLOCK(
+                                                            //showmessage(FormatDateTime('01.01.YYYY 00:00:00', DATE ()));
+                                                            OPENQUERY('GET_MAXRELEASE','STS_DB', 'SELECT MAX(RELEASE_NO) as REL_NO  FROM RELEASE_ WHERE  OUT_DATE>='+char(39)+FormatDateTime('01.01.YYYY 00:00:00', DATE ())+char(39));
+                                                            sRELNO := LEFTPAD (convert( GET_MAXRELEASE.REL_NO, integer) + 1, 7, '0');
+                                                            CLOSEDATASET ('GET_MAXRELEASE');
+                                                     )
+                                                     //sRELNO:=SOLVE(INIFILE('Docs','MakeRelease_No', 'LEFTPAD(GENNO("RELEASE_KPS", "№ ДО2(мв)/Выпуска с ЗТК"), 7, "0")')));
+                                                  );
+                                                  VAR ('iCustomDocsCount', integer, XMLNODECHILDCOUNT (CustomDocs));
+                                                  VAR ('iCustomDocsCounter', integer, 0);
+                                                  WHILE ( iCustomDocsCounter < iCustomDocsCount,
+                                                         BLOCK(
+                                                                   //showmessage (XMLNODENAME ( XMLNODECHILD (CustomDocs, iCustomDocsCounter) ));
+                                                                   IF (XMLNODENAME ( XMLNODECHILD (CustomDocs, iCustomDocsCounter) ) = 'PrDocumentNumber',
+                                                                       BLOCK (
+                                                                              VAR('sDT_NUM',string, XMLNODEVALUE(XMLNODECHILD (CustomDocs, iCustomDocsCounter)) );
+                                                                              OPENQUERY('GET_DT_IN_DO','STS_DB', 'SELECT ID FROM RELEASE_ WHERE PLACEID='+vPlaceID+' AND ID='+vID + ' AND MAIN_COUNTER='+vDO2MainCounter + ' AND DOC_NO = ' + char(39) + sDT_NUM + char(39));
+                                                                              IF ( RECORDCOUNT ('GET_DT_IN_DO') = 0,
+                                                                                   BLOCK(
+
+                                                                                          VAR('sRel_DATE', string , EXTRACTSTR (sDT_NUM, 2, '/'));
+                                                                                          VAR('dRELEASE_DATE',datetime);
+
+
+                                                                                          IF(sRel_DATE='',
+                                                                                             dRELEASE_DATE:=DATE(),
+                                                                                             BLOCK(
+                                                                                                   sRel_DATE := COPY(sRel_DATE,1,2) + '.'+COPY(sRel_DATE,3,2) + '.20'+COPY(sRel_DATE,5,2);
+                                                                                                   dRelease_DATE := STRTODATE(sRelease_DATE,'dd.mm.yyyy','.');
+                                                                                             )
+                                                                                          );
+                                                                                          OPENQUERY('GET_MAX','STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM RELEASE_ WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+
+                                                                                          vDO2Counter:=GET_MAX.COUNTER+1;
+                                                                                          CLOSEDATASET ('GET_MAX');
+
+                                                                                          //OPENQUERY('GET_MAX_MAIN_NO','STS_DB', 'SELECT MAX(MAIN_NO) as MAIN_NO FROM RELEASE_ WHERE PLACEID='+vPlaceID+' AND ID='+vID + ' AND MAIN_COUNTER='+vDO2MainCounter);
+                                                                                          //vDO2MainNo := GET_MAX_MAIN_NO.MAIN_NO+1;
+                                                                                          //CLOSEDATASET ('GET_MAX_MAIN_NO');
+                                                                                          vDO2MainNo := vDO2MainNo + 1;
+
+                                                                                          VAR ('sDocType', string, 'ДТ');
+
+                                                                                          APPENDRECORD('RELEASE');
+                                                                                          EDIT('RELEASE');
+                                                                                          SETFIELDVALUE('RELEASE',
+                                                                                                        'PLACEID', vPlaceID,
+                                                                                                        'ID',vID,
+                                                                                                        'COUNTER', vDO2Counter,
+                                                                                                        'MAIN_ID',vID,
+                                                                                                        'MAIN_COUNTER',vDO2MainCounter,
+                                                                                                        'MAIN_NO', vDO2MainNo,
+                                                                                                        'DOC_NO', sDT_NUM,
+                                                                                                        'DOC_TYPE', sDocType,
+                                                                                                        'DOC_CODE', '01',//REFERENCE(Псевдоним справочника, Имя поля, Значение поля, Имя возвращаемого поля[, Поле "Начало действия", Поле "Окончание действия", Дата определения значения]),
+                                                                                                        'RELEASE_NO', sRELNO,
+                                                                                                        'RELEASE_DATE', dRELEASE_DATE,
+                                                                                                        'OUT_DOC_DATE', now(), //dOUT_DATE,
+                                                                                                        'OUT_DATE', dOUT_DATE,
+                                                                                                        'G082', KM2.G082,//IF(iConsigneeFromDO1=1,KM2.G082,sConsignee),
+                                                                                                        'G083', KM2.G083,//IF(iConsigneeFromDO1=1,KM2.G083,XMLNODEVALUE(XMLNODEFIND(Consignee,'ConsAddress'))),
+                                                                                                        'G084C', KM2.G084C,//IF(iConsigneeFromDO1=1,KM2.G084C),
+                                                                                                        'G08_KPP', KM2.G08_KPP,//IF(iConsigneeFromDO1=1,KM2.G08_KPP),
+                                                                                                        'G08_OGRN', KM2.G08_OGRN,//IF(iConsigneeFromDO1=1,KM2.G08_OGRN),
+                                                                                                        'G08_COUNTRY', KM2.G17A,//IF(iConsigneeFromDO1=1,KM2.G17A,XMLNODEVALUE(XMLNODEFIND(Consignee,'ConsCountryCode'))),
+                                                                                                        'G022', KM2.G022,
+                                                                                                        'G023', KM2.G023,
+                                                                                                        'G02_COUNTRY', KM2.G15A,
+                                                                                                        'G040', KM2.G040,
+                                                                                                        'G042', KM2.G042,//IF(iCarrierFromDO1,KM2.G042,sCarrier,XMLNODEVALUE(XMLNODEFIND(Carrier,'CarName'))),
+                                                                                                        'G043', KM2.G043,//IF(iCarrierFromDO1,KM2.G043,XMLNODEVALUE(XMLNODEFIND(Carrier,'CarAddress'))),
+                                                                                                        'G04_COUNTRY', KM2.G04_COUNTRY,//IF(iCarrierFromDO1,KM2.G04_COUNTRY,XMLNODEVALUE(XMLNODEFIND(Carrier,'CarCountryCode'))),
+                                                                                                        'TRANSPDOCS', sPaper,
+                                                              										                      'TRANSPTYPE', '30',
+                                                                                                        'RELEASE_GOODS_DATE', dRELEASE_DATE,
+                                                                                                        'G142',KM2.G142,
+                                                                                                        'G143',KM2.G143,
+                                                                                                        'G1440',KM2.G1440,
+                                                                                                        'G144',KM2.G144,
+                                                                                                        'G145',KM2.G145
+                                                                                          );
+                                                                                          POST('RELEASE');
+                                                                                   )
+                                                                              );//IF ( RECORDCOUNT ('GET_DT_IN_DO') = 0,
+                                                                              CLOSEDATASET ('GET_DT_IN_DO');
+
+                                                                        )
+                                                                   ); // IF NAME = PrDocumentNumber
+                                                                   iCustomDocsCounter := iCustomDocsCounter + 1;
+
+                                                       )//BLOCK(
+                                                  );  //WHILE(
+
+                                                //  IF(sConsignee = '',iConsigneeFromDO1:=1,iConsigneeFromDO1:=0);
+                                                //  IF(sCarrier = '',iCarrierFromDO1:=1,iCarrierFromDO1:=0);
+
+
+
+                                            )
+                                         );//IF(vDO2MainCounter:=0,
+                                         
+                                         //Закончили создание ДО2
+
+                                        //Добавляем товар в ДО2
+                                        APPENDRECORD('REL_COMM');
+                                        EDIT('REL_COMM');
+                                        SETFIELDVALUE('REL_COMM',
+                                                      'PLACEID', vPlaceID,
+                                                      'ID',vID,
+                                                      'COUNTER',vDO2MainCounter,
+                                                      'G32',vG32,
+                                                      'RELEASE_G311', vG311_OUT,
+                                                      'RELEASE_G313', 'КОНТЕЙНЕР', //IF(vG311_OUT<=0, 'часть мест'),
+                                                      'RELEASE_G35', vG35_OUT,
+                                                      //'RELEASE_G42', vG42_OUT,
+                                                      'RELEASE_OUT_DATE', dOUT_DATE //NOW()
+                                        );
+                                        POST('REL_COMM');
+                                         
+                                         
+                                        NEXT('FIND_CONT_GOODS');
+                                   )
+                            ),
+                            BLOCK (
+                                  showmessage('В ДО1 не найдены товары на выдачу указанные в контейнере');
+                            )
+                        );
+                        CLOSEDATASET ('FIND_CONT_GOODS');
+
+                        vContCounter := vContCounter+1;
+                  )
+            );//WHILE(vContCounter<vContCount,
+            IF(CreateDO2=1,
+               BLOCK(
+                     XMLDOCUMENTSAVE(XMLDOC, sDirPathBackup+sDOFileName);
+                     DELETEFILE(sDirPath+sDOFileName);
+                     sReadedLOG := sReadedLOG + char(13)+char(10)+ FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':       Чтение ' + sDOFileName + ' завершено. Создано ДО2№'+ sRelNO;
+               )
+            );
+     )
+),//FUNC('ReadDO2'
+
+FUNC('WriteDO1EXPXML',,
+     BLOCK(
+           VAR('sDirPath', string, 'G:\STM\EXPDO1\');
+           VAR('sDirPathLogs', string, sDirPath+'LOGS\');
+           VAR('vPlaceID',integer,0);
+           VAR('vID',integer,0);
+           IF(DIRECTORYEXISTS(sDirPath)<>1,FORCEDIRECTORIES(sDirPath));
+           IF(DIRECTORYEXISTS(sDirPathLogs)<>1,FORCEDIRECTORIES(sDirPathLogs));
+           VAR('sLogFileName', string, sDirPathLogs+FDT('ddmmyyhhmmss',NOW())+'.txt');
+           CREATELOGFILE (sLogFileName);
+           APPENDLOGFILE (sLogFileName,'------------------------------------Выгрузка ДО1 в СОЛВО-------------------------------------------------------------------------------------------------------------------------------------------------------');
+           VAR('iShowLog',integer,0);
+           
+           SHOWPROGRESS ('Выгрузка ДО в СОЛВО. Дождитесь окончания');
+           VAR('iCountALL',integer);
+           VAR('iTecProgress', integer,0);
+           
+           OPENQUERY('GET_ID_FOR_EXP', 'STS_DB', 'SELECT DISTINCT CUSTREPID, BILLID, PLACEID, ID, XMLNAME FROM KRD_SOLVOID  WHERE EXPDO1=0 ');
+           iCountALL:=RECORDCOUNT('GET_ID_FOR_EXP');
+
+           FIRST('GET_ID_FOR_EXP');
+           WHILE(EOF('GET_ID_FOR_EXP')=0,
+                 BLOCK(
+                       vPlaceID:=GET_ID_FOR_EXP.PLACEID;
+                       vID:=GET_ID_FOR_EXP.ID;
+                       OPENQUERY('KM2', 'STS_DB', 'SELECT  REG_NBD, GD1, AUTHOR, AUTHOR_POST, NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+
+                       IF(RECORDCOUNT('KM2')>0,
+                          IF(KM2.REG_NBD<>'',
+                             BLOCK(
+                                    VAR('XMLDOC', integer, XMLDOCUMENTCREATE());
+                                    VAR('XMLROOT', integer, XMLDOCUMENTROOT(XMLDOC));
+                                    XMLDOCUMENTENCODING (XMLDOC, 'utf-8');
+                                    VAR('iDO',integer,XMLNODEADDCHILD (XMLRoot,'DO'));
+                                    VAR('iDO1',integer,XMLNODEADDCHILD (iDO,'DO1'));
+                                    XMLNODESETVALUES (iDO1,,
+                                                      'CustRepNum', KM2.REG_NBD,
+                                                      'CustRepDate', FDT('yyyymmddhhmm',KM2.GD1),
+                                                      'CustRepId', GET_ID_FOR_EXP.CUSTREPID,
+                                                      'BillID', GET_ID_FOR_EXP.BILLID,
+                                                      'Number', KM2.NBD,
+                                                      'Date', FDT('yyyymmddhhmm',KM2.BD_DATE),
+                                    );
+                                    XMLNODESETVALUES (iDO1,'Person',
+                                                      'PersonName', KM2.AUTHOR,
+                                                      'PersonName', KM2.AUTHOR_POST
+                                    );
+                                    XMLDOCUMENTSAVE(XMLDOC,sDirPath+GET_ID_FOR_EXP.XMLNAME);
+                                    EXECUTESQL('STS_DB', 'UPDATE KRD_SOLVOID SET EXPDO1=1 WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                                    APPENDLOGFILE (sLogFileName,FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':        ДО1№ '+KM2.NBD+' выгружен в XML '+GET_ID_FOR_EXP.XMLNAME);
+                                    iShowLog:=1;
+
+                             )
+                          ),
+                          EXECUTESQL('STS_DB', 'DELETE FROM KRD_SOLVOID WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                       );
+                       CLOSEDATASET('KM2');
+                       iTecProgress:=iTecProgress+1;
+                       SETPROGRESS (iTecProgress, 100, iCountALL);
+                       NEXT('GET_ID_FOR_EXP');
+                 )
+           );
+           CLOSEDATASET('GET_ID_FOR_EXP');
+           IF(iShowLog=1,SHOWLOGFILE (sLogFileName, 'Результаты выгрузки'));
+           HIDEPROGRESS ();
+           
+     )
+),
+
+FUNC('ShowLOG',PARAM('VidDO',integer,0),
+     BLOCK(
+           APPENDLOGFILE (sLogFileName,'------------------------------------'+IF(VidDO=1,'ДО1','ДО2')+'-------------------------------------------------------------------------------------------------------------------------------------------------------');
+           APPENDLOGFILE (sLogFileName,' ');
+           APPENDLOGFILE (sLogFileName,' ');
+           APPENDLOGFILE (sLogFileName,'------------------------------------ПРОЧИТАНО-------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
+           APPENDLOGFILE (sLogFileName,sReadedLOG);
+           APPENDLOGFILE (sLogFileName,' ');
+           APPENDLOGFILE (sLogFileName,' ');
+           APPENDLOGFILE (sLogFileName,'------------------------------------ОШИБКИ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------');
+           APPENDLOGFILE (sLogFileName,sErrorsLOG);
+           APPENDLOGFILE (sLogFileName,' ');
+           APPENDLOGFILE (sLogFileName,' ');
+           IF(sNotDO<>'',                       
+              BLOCK(
+                    APPENDLOGFILE (sLogFileName,'                                     НЕ СООТВЕТСТВУЕТ СХЕМА XML ФАЙЛА');
+                    APPENDLOGFILE (sLogFileName,sNotDO);
+                    APPENDLOGFILE (sLogFileName,' ');
+                    APPENDLOGFILE (sLogFileName,' ');
+              )
+           );
+           IF(sDuplicate<>'',
+              BLOCK(
+                    APPENDLOGFILE (sLogFileName,'                                     ДУБЛИРОВАНИЕ ДОКУМЕНТА ОТЧЕТА');
+                    APPENDLOGFILE (sLogFileName,sDuplicate);
+                    APPENDLOGFILE (sLogFileName,' ');
+                    APPENDLOGFILE (sLogFileName,' ');
+              )
+           );
+           IF(sDuplicateErrors<>'',
+              BLOCK(
+                    APPENDLOGFILE (sLogFileName,'                                     ОШИБКА ПЕРЕЗАПИСИ ДОКУМЕНТА');
+                    APPENDLOGFILE (sLogFileName,sDuplicateErrors);
+                    APPENDLOGFILE (sLogFileName,' ');
+                    APPENDLOGFILE (sLogFileName,' ');
+              )
+           );
+           IF((sDontFindDO1<>'')*(VidDO=2),
+              BLOCK(
+                    APPENDLOGFILE (sLogFileName,'                                     НЕ НАЙДЕН ДО1');
+                    APPENDLOGFILE (sLogFileName,sDontFindDO1);
+                    APPENDLOGFILE (sLogFileName,' ');
+                    APPENDLOGFILE (sLogFileName,' ');
+              )
+           );
+           
+           SHOWLOGFILE (sLogFileName, 'Результаты обмена');
+     )
+),
+//------------------------------------------------------------------------------Старт--------------------------------------------------------------------------------------------------------------------------------------------------
+IF(BOOKOPENED (),,RAISEEXCEPTION ('Не открыта книга учёта'));
+//EXECUTESCRIPT (PROGRAMPATH () + 'PROCDOCS\sqldate.prd');
+EXECUTESCRIPT(PROGRAMPATH () +'PROCDOCS\date.prd'); // функции работы с датами
+OPENQUERY ('GET_ID_S', 'STS_DB', 'SELECT MAX(PLACEID) as PLACEID FROM STORES WHERE STORE_NO='+char(39) + '931' + char(39));
+IF ( GET_ID_S.PLACEID = 'NULL',
+   OPENQUERY ('GET_ID_S', 'STS_DB', 'SELECT MAX(PLACEID) AS PLACEID FROM STORES')
+);
+VAR ('vPlaceID', Integer, 1);//KRD_MAIN.PLACEID);
+vPlaceID := GET_ID_S.PLACEID;
+//showmessage(vPlaceID);
+CLOSEDATASET('GET_ID_S');
+//Просматрииваем и читаем ДО1 из каталога обмена
+IF(ReadXML(1),ShowLog(1));
+//Просматрииваем и читаем ДО2 из каталога обмена
+IF(ReadXML(2)<>0,ShowLog(2));
+//Выгружаем документы обратно
+WriteDO1EXPXML();
+
+GLOBALREFRESH();

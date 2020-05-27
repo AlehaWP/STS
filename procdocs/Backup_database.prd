@@ -1,0 +1,146 @@
+// *****************************************************************************
+// Название: Backup database
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: Backup database
+// *****************************************************************************
+//
+  
+// Процедура архивирования базы данных
+// BackupBase('путь куда писать архив', 'путь к базе данных', 'прогресс архивирования: 0-показывать, 1-не показывать');
+// Пример вызова:
+// EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'ProcDocs\Backup_database.prd');
+// BackupBase('C:\TEMP\BACKUP', 'C:\CTM\STS\DATA', HOSTMODE());
+
+FUNC ('BackupBase',
+                Block( PARAM ('sPathBackup', String, 0);
+                       PARAM ('sPathDatabase', String, 1);
+                       PARAM ('iHide', Integer, 2);
+                ),// end block
+Block(
+      sPathBackup := INCLUDETRAILINGBACKSLASH( sPathBackup );
+      sPathDatabase :=INCLUDETRAILINGBACKSLASH( sPathDatabase );
+    //  VAR ('sPathBackup', String, 'C:\TEMP\'); // путь куда будет скидываться бекапы
+      VAR ('sFinalPathBackup', String, ''); // конечная папка куда будет скидываться бекапы
+
+      VAR ('sTempPath', String, INCLUDETRAILINGBACKSLASH(TEMPDIRECTORY()) + 'STS_BACKUP' ) ; // конечная папка куда будет скидываться бекапы
+      FORCEDIRECTORIES( sTempPath );
+      sTempPath := INCLUDETRAILINGBACKSLASH( sTempPath );
+      
+      sFinalPathBackup :=  sPathBackup  + FORMATDATETIME ('yyyymmdd', DATE ()) + '\' +  FORMATDATETIME ('HH_MM_SS', DATE () + TIME(1) );
+      FORCEDIRECTORIES( sFinalPathBackup );
+      sFinalPathBackup := INCLUDETRAILINGBACKSLASH( sFinalPathBackup );
+
+
+    //  VAR ('sPathDatabase', String, 'D:\Program Files (x86)\CTM\STS\data\'); // путь к базе данных
+      VAR ('mFileList', Memo ,GETFILELIST(sPathDatabase, '*.*', '|')); // список файлов базы данных
+      VAR ('mNewFileList', Memo ,''); 
+      VAR ('mTemp', Memo ,'');
+      VAR ('sTemp', String, '');
+      VAR ('sFileName', String, '');
+      VAR ('iTotalFiles', Integer, 0); // кол-во файлов в базе
+      VAR ('iCount', Integer, 0); //
+
+      iTotalFiles := SPLITSTR ( mFileList, '|', sTemp);
+      iCount := 1;
+      // удаляем из списка файлы *.NET, *.LCK, *.LDB
+      while ( iCount < iTotalFiles+1,
+            Block(
+                  sFileName := EXTRACTSTR ( mFileList, iCount, '|');
+                  
+                  if ( (STRPOS ('.NET', UPPERSTR (sFileName) ) | STRPOS ('.LCK', UPPERSTR (sFileName) ) | STRPOS ('.LDB', UPPERSTR (sFileName) )),
+                      mTemp := mTemp + sFileName + '|',
+                      mNewFileList := mNewFileList + sFileName + '|'
+                  );//end if
+                  iCount := iCount +1;
+           )//block
+      );//while
+      mFileList := mNewFileList;
+      iTotalFiles := SPLITSTR ( mFileList, '|', sTemp);
+      // копируем базу в TEMP
+      iCount := 1;
+      IF(iHide <> 1, SHOWPROGRESS ( 'Копируем базу в TEMP...' ));
+      while ( iCount < iTotalFiles+1,
+            Block(
+                  sFileName := EXTRACTSTR ( mFileList, iCount, '|');
+                  COPYFILE( sPathDatabase + sFileName, sTempPath + sFileName);
+                  iCount := iCount +1;
+                  IF(iHide <> 1, SETPROGRESS ( ((iCount*100)/ iTotalFiles+1) ));
+             IF(iHide <> 1,
+               if ( CANCELPRESSED (),
+                  Block(
+                        HIDEPROGRESS ();
+                        RAISEEXCEPTION ('Копирование прервано');
+                 ),//block
+               ) //if
+             );
+
+           )//block
+      );//while
+      IF(iHide <> 1, HIDEPROGRESS ());
+
+
+      //зипуем базу
+      iCount := 2;
+      IF(iHide <> 1, SHOWPROGRESS ( 'Архивируем базу ...' ));
+      // зазипуем сперва в локальный подкаталог, а затем скопируем backup.dat в конечную папку
+      // если конечный каталог где-то на сети, то может дольше зиповаться
+//showmessage ('sTempPath + EXTRACTSTR  mFileList, 1 = ' + sTempPath + EXTRACTSTR ( mFileList, 1, '|'));
+      ZIPADDFILE( sTempPath + 'zip\backup.zip', sTempPath + EXTRACTSTR ( mFileList, 1, '|'));
+      while ( iCount < iTotalFiles+1,
+            Block(
+                  sFileName := EXTRACTSTR ( mFileList, iCount, '|');
+//                  showmessage ('sTempPath=' + sTempPath + 'zip\backup.dat' + char(13) +
+//                  'sTempPath + sFileName = ' + sTempPath + sFileName
+//);
+                  ZipMoveFile( sTempPath + 'zip\backup.zip', sTempPath + sFileName );
+                  IF(iHide <> 1, SETPROGRESS ( ((iCount*100)/ iTotalFiles+1) ));
+                  iCount := iCount +1;
+             IF(iHide <> 1,
+               if ( CANCELPRESSED (),
+                 Block(
+                      HIDEPROGRESS ();
+                      RAISEEXCEPTION ('Архивирование прервано');
+                 ),//block
+               ) //if
+             );
+           )//block
+      );//while
+      IF(iHide <> 1, HIDEPROGRESS ());
+      COPYFILE(sTempPath + 'zip\backup.zip', sFinalPathBackup+'backup.dat');
+      DELETEFILE(sTempPath + 'zip\backup.zip');
+      // удаляем из TEMP
+      iCount := 1;
+      IF(iHide <> 1, SHOWPROGRESS ( 'Удаляем из TEMP...' ));
+      while ( iCount < iTotalFiles+1,
+            Block(
+                  sFileName := EXTRACTSTR ( mFileList, iCount, '|');
+                  DELETEFILE( sTempPath + sFileName );
+                  //if(iCount=1, Showmessage('все хорошо'));
+                  //if(iCount=2, Showmessage('все плохо'));
+                  iCount := iCount +1;
+                  IF(iHide <> 1, SETPROGRESS ( ((iCount*100)/ iTotalFiles+1) ));
+             IF(iHide <> 1,
+               if ( CANCELPRESSED (),
+                  Block(
+                      HIDEPROGRESS ();
+                      RAISEEXCEPTION ('Удаление прервано');
+                  ),//block
+               ) //if
+             );
+           )//block
+      );//while
+      IF(iHide <> 1, HIDEPROGRESS ());
+      CREATELOGFILE ( sFinalPathBackup+'Remark.ini', '');
+      APPENDLOGFILE ( sFinalPathBackup+'Remark.ini', '[Remark]');
+      APPENDLOGFILE ( sFinalPathBackup+'Remark.ini', 'Text=База данных: '+ sPathDatabase);
+
+)// end block
+);//end func
+
+
+
+
+
+
+

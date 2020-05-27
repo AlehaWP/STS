@@ -1,0 +1,248 @@
+// *****************************************************************************
+// Название: запрос истории процедуры
+// Описание: Запрос истории процедуры, работает по текущей или выделенным записям
+// Кнопка вызова: 0
+// Подпись кнопки: Запросить историю
+// Вызов по событию: 
+// *****************************************************************************
+//
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+
+VAR ('iH', Integer, 0); // количество запрошенных историй процедур
+VAR ('sSQL', String, '');
+VAR ('iPlaceId', Integer);
+VAR ('iMainId', Integer);
+VAR ('sDocumentId', String);
+VAR ('sNBD', String);
+VAR ('sBDDate', String);
+VAR ('XmlDoc', Integer);
+VAR ('sLogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'HistoryRequest.log');
+CREATELOGFILE (sLogFile, 0);
+
+FUNC ('AddLog',
+  Block(
+    PARAM ('pText', String, 0);
+  ),
+  Block(
+    APPENDLOGFILE (sLogFile, pText);
+  )
+), // FUNC - AddLog() //
+
+CONST ('CSIDL_PROGRAM_FILES_COMMON', Integer, 43);
+VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_PROGRAM_FILES_COMMON)) + 'CTM\ctm.cfg');
+VAR ('sConnString', String, '');
+VAR ('sMonPath', String);
+
+FUNC ('MonitorDBConnect', '',
+  Block(
+    SHOWINFORMATION ('Подключение к базе Монитор ЭД');
+
+    // ПОДКЛЮЧЕНИЕ К БАЗЕ МОНИТОРА ЭД (НАЧАЛО)
+
+    Const('CSIDL_PROGRAM_FILES_COMMON', Integer, 43);
+    VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_PROGRAM_FILES_COMMON)) + 'CTM\ctm.cfg');
+    VAR ('sConnString', String, '');
+
+    IF (REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcType', '0') = 1,
+        BLOCK(
+           sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcDir', '')+'MONITORED.MDB;Persist Security Info=False';
+        ),
+        IF(REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcType', '0') = 2,
+           BLOCK(
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'ServerName', '') + ';Initial Catalog=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'DBName', '') + ';';
+                IF (REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'IntegratedSecurity', '') = '1',
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'Login', '') + ';Password=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'Password', '');
+                  )
+                ); // IF - //
+           )
+        )
+    );
+    VAR ('sMonitorAlbum', String, REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\ExchangeVersions\WH', 'FmtVersion', '5.6.0'));
+
+    //showmessage(sConnString);
+    IF(sConnString='',
+       BLOCK(
+          VAR ('sMonPath', String);
+
+          sMonPath := INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath);
+
+          // смотрим указанный пользователем каталог(запоминаем его в ini склада)
+          IF (sMonPath = '', sMonPath :=INIFILE('MONITOR_ED', 'InstallPath', ''));
+          // если не нашли по CTM.INI - работаем в терминале, спрашиваем пользователя
+          IF(sMonPath = '', Block(
+            SELECTDIRECTORY ('sMonPath');
+            WRITEINIFILE('MONITOR_ED', 'InstallPath', sMonPath);
+          ));
+
+          If(FILEEXISTS(INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI')=0, sMonPath := '');
+          IF(sMonPath = '', RAISEEXCEPTION ('Не найден Монитор ЭД'));
+
+          VAR ('sMonitorIniPath', String, INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI');
+
+            IF (INIFILE ('DB', 'ArcType', '1', sMonitorIniPath) = 1,
+              Block(
+                // База данных Access
+                VAR ('sDBPath', String, INIFILE ('DB', 'ArcDir', '', sMonitorIniPath) + 'MONITORED.MDB');
+                IF (sDBPath = '', RAISEEXCEPTION ('Не найден путь к базе Монитора ЭД'));
+                sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sDBPath +';Persist Security Info=False';
+              ),
+              Block(
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + INIFILE ('DB', 'Arc_SQL_ServerName', '', sMonitorIniPath) + ';Initial Catalog=' + INIFILE ('DB', 'Arc_SQL_DBName', '', sMonitorIniPath) + ';';
+                IF (INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0', sMonitorIniPath) = '1',
+
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + INIFILE ('DB', 'Arc_SQL_Login', '', sMonitorIniPath) + ';Password=' + INIFILE ('DB', 'Arc_SQL_Password', '', sMonitorIniPath);
+                  )
+                ); // IF - //
+              )
+            ); // IF - //
+
+            sMonitorAlbum:=INIFILE ('EXCHANGE_VERSIONS', 'ExchangeFmtVersion_WH', '5.6.0', sMonitorIniPath);
+        )
+    );
+
+    VAR ('sSTSAlbum', String, INIFILE ('XMLFormat', 'Version', '5.6.0'));
+
+    OPENDATABASE ('dbMonitor', 'ActiveX Data Objects (ADO)', sConnString);
+    // ПОДКЛИЧЕНИЕ К БАЗЕ МОНИТОР ЭД (КОНЕЦ)
+
+    HIDEINFORMATION ();
+  )
+), // FUNC - MonitorDBConnect() //
+
+
+FUNC ('StatusUpdate', '',
+  Block(
+    sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Запрошена история процедуры' +char(39)+ ' WHERE PLACEID=' + iPlaceID + ' AND MAIN_ID=' + iMainID;
+    EXECUTESQL ('STS_DB', sSQL);
+  )
+),
+
+FUNC ('GetProcessInfo',
+  Block(
+    PARAM ('pWHId',     Integer, 0);
+    PARAM ('pWHDocId',  String,  1);
+    PARAM ('pWHDocId2', Integer, 2);
+  ),
+  Block(
+    VAR ('sReturn', String, '');
+    SHOWINFORMATION ('Запрос протокола обмена');
+    AddLog ('[Форма ДО-1]');
+    AddLog ('Номер: ' + sNBD);
+    IF ((pWHId > 0) * (LENGTH (TRIM (pWHDocId)) > 0),
+      Block(
+        sSQL := 'SELECT WHPROCESSID FROM LOG_WH WHERE WHID=' + pWHId + ' AND WHDOCID=' +char(39)+ pWHDocId +char(39)+ ' AND WHDOCID2=' + pWHDocId2;
+        OPENQUERY ('qProcessInfo', sSQL, 'dbMonitor');
+        sReturn := qProcessInfo.WHPROCESSID;
+        AddLog ('Запрощена история процедуры: ' + sReturn);
+      ),
+      Block(
+        sReturn := '';
+        AddLog ('Процедура не найдена!');
+      )
+    );
+    AddLog ('');
+    HIDEINFORMATION ();
+    sReturn
+  )
+), // FUNC - GetProcessInfo //
+
+FUNC ('WriteRequest', '',
+  Block(
+    // Формируем и сохраняем xml-документ
+    VAR ('XmlFile', Integer, XMLDOCUMENTCREATE());
+    VAR ('XmlDoc', Integer);
+    Var ('sDir', String);
+    sDir := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\STS-MED\iin\';
+    IF (USERINFO ('', 'USERUUID') <> '', sDir := sDir + USERINFO ('', 'USERUUID') + '\');
+    XmlDoc := XMLDOCUMENTROOT (XmlFile);
+    XMLNODEADDCHILD (XmlDoc, 'DO1HISTORYREQUEST');
+    XMLDOCUMENTSAVE(XmlFile, sDir + 'DO1HISTORY_' + iPlaceID + '_' + sDocumentID + '_' + sProcessId + '.xml');
+
+    WriteEpsLog (iPlaceID,
+            iMainID,
+            0,
+            sDocumentID,
+            'ДО-1',
+            sNBD,
+            sBDDate,
+            'Запрошена история процедуры',
+            FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+            GENERATEUUID(),
+            '',
+            '',
+            '1',
+            FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+            0
+    ); // WriteEpsLog - //
+    
+    iH := iH + 1;
+  )
+), // FUNC - WriteRequest() //
+
+VAR ('iSelCount', Integer, GETSELECTEDCOUNT ());
+VAR ('bUseSelected', Integer, 0);
+VAR ('sProcessId', String, '');
+
+  IF (BOOKOPENED () = 0, RAISEEXCEPTION ('Не открыта книга учёта'));
+  IF (iSelCount > 0,
+    bUseSelected := YESNO ('В книне учёта обнаружено ' + iSelCount + ' выделенный(-ых) документ(-ов).' +char(13)+ 'Выполнить запрос истории процедуры для всех выделенных?');
+  );
+  
+  MonitorDBConnect ();
+  
+  IF (bUseSelected,
+    Block(
+    // ПО ВЫДЕЛЕННЫМ
+      VAR ('i', Integer, 1);
+      SHOWPROGRESS ('Формирование запросов..');
+      GETSELECTEDDOCS ('qSelected', 'PLACEID', 'MAIN_ID', 'DOCUMENTID', 'NBD', 'BD_DATE');
+      FIRST ('qSelected');
+      WHILE (EOF ('qSelected') = 0,
+        Block(
+          iPlaceID := qSelected.PLACEID;
+          iMainID := qSelected.MAIN_ID;
+          sDocumentID := qSelected.DOCUMENTID;
+          sNBD := qSelected.NBD;
+          sBDDate := qSelected.BD_DATE;
+          sProcessId := GetProcessInfo (qSelected.PLACEID, qSelected.DOCUMENTID, 0);
+          IF (LENGTH (TRIM (sProcessId)) > 0,
+            Block(
+              WriteRequest ();
+              StatusUpdate ();
+            )
+          ); // IF - //
+          SETPROGRESS (i, iSelCount, 100);
+          NEXT ('qSelected');
+          i := i + 1;
+        )
+      );
+      HIDEPROGRESS ();
+    ),
+    Block(
+    // ПО ТЕКУЩЕМУ ДОКУМЕНТУ
+      iPlaceID := KRD_MAIN.PLACEID;
+      iMainID := KRD_MAIN.MAIN_ID;
+      sDocumentID := KRD_MAIN.DOCUMENTID;
+      sNBD := KRD_MAIN.NBD;
+      sBDDate := KRD_MAIN.BD_DATE;
+      sProcessId := GetProcessInfo (KRD_MAIN.PLACEID, KRD_MAIN.DOCUMENTID, 0);
+      IF (LENGTH (TRIM (sProcessId)) > 0,
+        Block(
+          WriteRequest ();
+          StatusUpdate ();
+        )
+      ); // IF - //
+    )
+  );
+
+  IF (iH > 0, AddLog ('ВСЕГО отправлено запросов: ' + iH));
+  SHOWLOGFILE (sLogFile, 'Запрос истории процедуры');

@@ -1,0 +1,90 @@
+// *****************************************************************************
+// Название: Загрузка регистраци ДО2 из Excel
+// Описание: Загрузка регистраци ДО2 из Excel
+// Кнопка вызова: 1
+// Подпись кнопки: Загрузка регистраци ДО2 из Excel
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+ExecuteScript(ProgramPath() + 'ProcDocs\sql_insert.prd');
+
+Var ('sFileName', string, '');
+
+If(
+   SELECTFILE ('sFileName', 'Укажите файл для загрузки', '(*.xls)|*.xls'),,
+   RaiseException ('Выполнение отменено')
+);
+
+VAR ('XL', variant);
+VAR ('iSheetsCount', integer);
+VAR ('iRowsCount', integer);
+
+
+XL:= CreateOleObject('Excel.Application');
+XL.Workbooks.Add(sFileName);
+XL.Visible := false;
+iRowsCount := XL.ActiveSheet.UsedRange.Rows.Count;
+
+VAR ('i', integer, 2);
+IF (iRowsCount>0,,
+   BLOCK(
+         XL.ActiveWorkbook.Close;
+         XL.Quit;
+         RAISEEXCEPTION ('Нет данных для чтения');
+   )
+);
+
+
+Var ('iLoadedDO2', integer, 0);
+
+
+SHOWPROGRESS ('Загрузка товаров');
+CREATELOGFILE ('log.txt');
+APPENDLOGFILE('log.txt', 'Загрузка договоров их Excel: ' + sFileName);
+
+while (i <= iRowsCount,
+      BLOCK(
+            //sCellNumPP:= XL.ActiveSheet.Cells(i,1);
+            IF (convert(XL.ActiveSheet.Cells(i,1), string) = 'Зарегистрирован',
+               BLOCK(
+                    {if (i=3, BLOCK(
+                             showmessage('10216120/'+FDT('DDMMYY', XL.ActiveSheet.Cells(i,5))+'/'+ XL.ActiveSheet.Cells(i,3));
+                             showmessage(XL.ActiveSheet.Cells(i,6))
+
+                       )
+                    );}
+                    var('sRegNum', string, '10216120/'+FDT('DDMMYY', XL.ActiveSheet.Cells(i,5))+'/'+ XL.ActiveSheet.Cells(i,3));
+                    var('sDO2Num', string, XL.ActiveSheet.Cells(i,6));
+                    var('sDTNum', string, XL.ActiveSheet.Cells(i,15));
+                    TRYEXCEPT(
+                       BLOCK(
+                            EXECUTESQL('STS_DB', 'UPDATE RELEASE SET REG_RELEASE_NO='+ char(39)+ sRegNum + char(39)+
+                                                 ', MC_STATUS='+char(39)+ '3' +char(39)+
+                                                 ' WHERE RELEASE_NO='+ char(39)+ sDO2Num + char(39)+
+                                                 ' AND DOC_NO='+char(39)+ sDTNum+char(39)+
+                                                 ' AND MC_STATUS<>'+char(39)+ '3' +char(39));
+                            iLoadedDO2 := iLoadedDO2 + 1
+                       ),,
+                       BLOCK(
+                             APPENDLOGFILE('log.txt', 'Ошибка загрузки: '+ sDO2Num);
+                             APPENDLOGFILE('log.txt', EXCEPTIONMESSAGE());
+                       )
+                    );
+               )
+            );
+
+
+            SETPROGRESS(i,100, iRowsCount);
+            i := i + 1;
+      )
+);
+
+HIDEPROGRESS();
+XL.ActiveWorkbook.Close;
+XL.Quit;
+
+APPENDLOGFILE('log.txt', 'Обработано: '+iLoadedDO2 + ' ДО2 ');
+SHOWLOGFILE ('log.txt');

@@ -1,0 +1,311 @@
+// *****************************************************************************
+// Название: 2636 прил 3
+// Описание: 2636 прил 3
+// Кнопка вызова: 0
+// Подпись кнопки: 2636 прил 3
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('SelectedLicNo', string,'');
+VAR('SelectedPlaceid', string,'');
+VAR('dtPeriodEnd', datetime);
+VAR('dtPeriodStart', datetime);
+VAR('RelPeriodStart',datetime);
+VAR('OnDate',string, '');
+VAR('DateStart',string, '');
+VAR('DateEnd',string, '');
+VAR('bTovWithOperations', boolean, 1);
+VAR('bPeriod',boolean, 1);
+VAR('bUseDopFilter',boolean, 1);
+VAR('bNotInclude',boolean, 0);
+VAR('vFilterCrit', memo,'');
+VAR('SaveDirectory', string,'');
+
+FUNC('fDialog',,
+     BLOCK(
+        CASE (FORMSHOWMODAL(frmDialog),
+             [
+               4,BLOCK(
+                  IF(SELECTRECORDS ('Укажите номер лицензии', 'STORES_2',
+                                      [
+                                        ['LICENCENO', '№ лицензии', 15],
+                                        ['NAME', 'Наименование', 30],
+                                        ['LICENCEDATE', 'Дата лицензии', 15],
+                                        ['LICENCEDATEEND', 'Окончание срока действия', 15]
+                                      ], 'SELECTED_STOR', , 'STS_DB'
+                      ),
+                      BLOCK(
+                        SelectedLicNo:=UNIONVALUES ('SELECTED_STOR', ['LICENCENO'], ', ', '');
+                        SelectedPlaceid:=UNIONVALUES ('SELECTED_STOR', ['PLACEID'], ', ', '');
+                        SelectedPlaceid:=TRIM(SelectedPlaceid);
+                        FORMSETPROPERTY (frmDialog, 'txtLicNo.Text', SelectedLicNo);
+                      )
+                   );
+                   fDialog();
+                 ),
+               2,RAISEEXCEPTION ('Выполнение отменено')
+             ],
+        );
+     )
+),
+
+
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\2636pril3.cfm');
+
+SelectedPlaceid := INIFILE('2636pril3prd', 'SelectedPlaceid','');
+SelectedLicNo:=INIFILE('2636pril3prd', 'txtLicNo','');
+FORMSETPROPERTY(frmDialog, 'txtLicNo.Text', SelectedLicNo);
+FORMSETPROPERTY(frmDialog, 'dtOnDate.Text', INIFILE ('2636pril3prd', 'dtOnDate',FORMATDATETIME('DD.MM.YYYY 00:00',NOW())));
+FORMSETPROPERTY(frmDialog, 'rbtnDate.Checked', INIFILE ('2636pril3prd', 'rbtnPeriod', 'True')='False');
+FORMSETPROPERTY(frmDialog, 'rbtnPeriod.Checked', INIFILE ('2636pril3prd', 'rbtnPeriod', 'True')='True');
+FORMSETPROPERTY(frmDialog, 'dtFrom.Text', INIFILE ('2636pril3prd', 'dtFrom',FORMATDATETIME('DD.MM.YYYY 00:00',NOW())));
+FORMSETPROPERTY(frmDialog, 'dtTo.Text', INIFILE ('2636pril3prd', 'dtTo',FORMATDATETIME('DD.MM.YYYY 00:00',NOW()+1)));
+FORMSETPROPERTY(frmDialog, 'cbxUseDopFilter.Checked', INIFILE ('2636pril3prd', 'UseDopFilter', 'True')='True');
+FORMSETPROPERTY(frmDialog, 'TovWithOperations.Checked', INIFILE ('2636pril3prd', 'TovWithOperations', 'True')='True');
+FORMSETPROPERTY(frmDialog, 'NotInclude.Checked', INIFILE ('2636pril3prd', 'TovWithOperations', 'True')='False');
+FORMSETPROPERTY(frmDialog, 'rtDirectoryEdit.Text', INIFILE ('2636pril3prd','DirectoryEdit','C:\TEMP\'));
+
+
+
+fDialog();
+
+
+
+bPeriod:=IF(FORMGETPROPERTY (frmDialog, 'rbtnPeriod.Checked')='True',1,0);
+OnDate:=FORMGETPROPERTY (frmDialog, 'dtOnDate.Text');
+DateStart:=FORMGETPROPERTY (frmDialog, 'dtFrom.Text');
+DateEnd:=FORMGETPROPERTY (frmDialog, 'dtTo.Text');
+bTovWithOperations:=IF(FORMGETPROPERTY (frmDialog, 'TovWithOperations.Checked')='True',1,0);
+bUseDopFilter:=IF(FORMGETPROPERTY (frmDialog, 'cbxUseDopFilter.Checked')='True',1,0);
+if(bPeriod=0,bUseDopFilter:=0);
+if((bTovWithOperations=0)*(bUseDopFilter),bNotInclude:=1);
+SelectedLicNo:=FORMGETPROPERTY (frmDialog, 'txtLicNo.Text');
+SaveDirectory:=INCLUDETRAILINGBACKSLASH(FORMGETPROPERTY (frmDialog, 'rtDirectoryEdit.Text'));
+
+if(SelectedLicNo='',SelectedPlaceid:='');
+
+WRITEINIFILE('2636pril3prd', 'txtLicNo',SelectedLicNo);
+WRITEINIFILE('2636pril3prd', 'SelectedPlaceid',SelectedPlaceid);
+WRITEINIFILE ('2636pril3prd', 'dtOnDate',OnDate);
+WRITEINIFILE ('2636pril3prd', 'rbtnPeriod', if(bPeriod,'True','False'));
+WRITEINIFILE ('2636pril3prd', 'dtFrom',DateStart);
+WRITEINIFILE ('2636pril3prd', 'dtTo',DateEnd);
+WRITEINIFILE ('2636pril3prd', 'TovWithOperations', if(bTovWithOperations,'True','False'));
+WRITEINIFILE ('2636pril3prd', 'UseDopFilter', if(bUseDopFilter,'True','False'));
+WRITEINIFILE ('2636pril3prd','DirectoryEdit',SaveDirectory);
+
+IF(bUseDopFilter=0, bTovWithOperations:=0);
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\sqldate.prd');
+
+//SQLDATE(vDate)  var('vDate', DateTime, ENCODEDATE (2013, 3, 1));
+
+VAR('dtPeriodStart',datetime);
+VAR('dtPeriodEnd',datetime);
+VAR('dtRelPeriodStart',datetime);
+
+IF(bPeriod,
+   BLOCK(
+     IF(bUseDopFilter,dtPeriodStart:=DateStart+':01',dtPeriodStart:='01.01.1990 00:00:01');
+     dtPeriodEnd:=DateEnd+'59';
+     dtRelPeriodStart:=DateStart+':01';
+   ),
+   BLOCK(
+     dtPeriodStart:='01.01.1990 00:00:01';
+     dtPeriodEnd:=OnDate+':59';
+     dtRelPeriodStart:=COPY(OnDate,1,10) + ' 00:00:01';
+   )
+);
+
+IF(bTovWithOperations,
+   BLOCK(
+      vFilterCrit := '      SELECT  DISTINCT M.PLACEID, M.ID, M.GTD_NO, M.BD_DATE, M.NBD, M.G221, M.G082 ';
+      vFilterCrit := vFilterCrit + 'FROM ';
+      vFilterCrit := vFilterCrit + 'KRD_MAIN M LEFT JOIN RELEASE R ' ;
+      vFilterCrit := vFilterCrit + 'ON ((M.PLACEID = R.PLACEID) AND (M.ID = R.ID)) ';
+      vFilterCrit := vFilterCrit + 'WHERE ';
+      vFilterCrit := vFilterCrit + '( ';
+      vFilterCrit := vFilterCrit + '((M.BD_DATE >= '   + SQLDATE(dtPeriodStart,'ORACLE') + ') and ( M.BD_DATE <= '  + SQLDATE(dtPeriodEnd,'ORACLE') + '))';
+      vFilterCrit := vFilterCrit + 'or ((R.RELEASE_DATE >= '  + SQLDATE(dtPeriodStart,'ORACLE') + ') and ( R.RELEASE_DATE <= '  + SQLDATE(dtPeriodEnd,'ORACLE') + '))';
+      vFilterCrit := vFilterCrit + ') ' ;
+      IF(SelectedPlaceid<>'',vFilterCrit := vFilterCrit + ' AND (M.PLACEID IN (' + SelectedPlaceid + '))');
+      vFilterCrit := vFilterCrit + ' ORDER BY M.PLACEID, M.BD_DATE, M.NBD' ;
+   ),
+   BLOCK(
+      vFilterCrit := 'Select * FROM KRD_MAIN WHERE ';
+      vFilterCrit :=vFilterCrit + ' BD_DATE >= ' + SQLDATE(dtPeriodStart,'ORACLE') +
+                                  ' AND BD_DATE <= '  + SQLDATE(dtPeriodEnd,'ORACLE');
+      IF(SelectedPlaceid<>'',vFilterCrit := vFilterCrit + ' AND PLACEID IN (' + SelectedPlaceid + ')');
+      vFilterCrit := vFilterCrit + ' ORDER BY PLACEID, BD_DATE, NBD' ;
+   )
+);
+
+
+VAR ('iCounter', integer, 0);
+VAR ('nGTD', string, '');
+VAR ('vRestG35OnStart',float);
+VAR ('vRestG315AOnStart',float);
+VAR ('vRestG42OnStart',float);
+VAR ('vOutG35',float);
+VAR ('vOutG315A',float);
+VAR ('vOutG42',float);
+
+VAR ('XmlFile', Integer, XMLDOCUMENTCREATE ());
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+XMLDOCUMENTENCODING (XmlFile, 'windows-1251');
+VAR ('Data', Integer, XMLNODEADDCHILD (XmlRoot, 'Data'));
+VAR ('ReportInf', Integer, XMLNODEADDCHILD (Data, 'ReportInformation'));
+XMLNODESETVALUE(XMLNODEADDCHILD (ReportInf, 'ReportDate'), NOW());
+IF(SelectedLicNo='',
+   SelectedLicNo:=UNIONVALUES('STORES_2',['LICENCENO'],', ','')
+);
+XMLNODESETVALUE(XMLNODEADDCHILD (ReportInf, 'SVH'), SelectedLicNo);
+VAR ('GOODS', Integer, XMLNODEADDCHILD (ReportInf, 'GOODS'));
+
+
+OPENQUERY('qryMain', 'STS_DB', vFilterCrit);
+VAR('iCount', integer, RECORDCOUNT('qryMain'));
+VAR('iCounterProgress', integer, 0);
+
+SHOWPROGRESS ('Создание XML');
+TRYEXCEPT (
+    BLOCK(
+          FIRST('qryMain');
+          WHILE(EOF('qryMain')=0,
+                BLOCK(
+                  nGTD := qryMAIN.GTD_NO;
+                  if(nGTD = '',
+                     BLOCK(
+                        LOCATE('KRD_DCD_2', 'PLACEID;ID;PAPERNAME', [qryMain.PLACEID, qryMain.ID, 'ДТ']);
+                        nGTD := KRD_DCD_2.PAPERNO;
+                     )
+                  );
+                  OPENQUERY('GetGoods', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+qryMain.PLACEID+' AND ID='+qryMain.ID+' ORDER BY G32');
+                  FIRST('GETGOODS');
+                  WHILE(EOF('GETGOODS')=0,
+                        BLOCK(
+                          OPENQUERY('OstToPeriod','STS_DB', ' SELECT SUM(RC.RELEASE_G35) as G35, SUM(RC.RELEASE_G315A) as G315A '+
+                                                            //' , SUM(RC.RELEASE_G42) as G42 '+
+                                                            ' FROM REL_COMM RC INNER JOIN RELEASE R ON (RC.PLACEID=RC.PLACEID AND RC.ID=R.ID) '+
+                                                            ' WHERE R.RELEASE_DATE <= '  + SQLDATE(dtRelPeriodStart,'ORACLE') +
+                                                            ' AND RC.PLACEID = '+GETGOODS.PLACEID+' AND RC.ID='+GETGOODS.ID+' AND RC.G32='+GETGOODS.G32
+                          );
+                          vRestG35OnStart := GETGOODS.G35 - OstToPeriod.G35;
+                          vRestG315AOnStart := GETGOODS.G315A - OstToPeriod.G315A;
+                          //vRestG42OnStart := GETGOODS.G42 - OstToPeriod.G42;
+                          IF((vRestG35OnStart > 0)*(vRestG315AOnStart > 0),
+                             BLOCK(
+                                vOutG315A :=0;
+                                vOutG35 :=0;
+                                vOutG42 :=0;
+
+                                iCounter:=iCounter+1;
+                                VAR ('GOOD', Integer, XMLNODEADDCHILD (Goods, 'Good'));
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'SerialNum'), iCounter);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'ACCEPTDATE'), qryMain.BD_DATE);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'StoreNum'), GETGOODS.BOXNO);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'DT70'), nGTD);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'GoodDescription'), GETGOODS.G312);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'TNVED'), GETGOODS.G33);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'ValCode'), IF(GETGOODS.G42_CURRENCY<>'',CURRENCYABBR (GETGOODS.G42_CURRENCY)));
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'STORAGEDATE'), GETGOODS.STORAGE_DATE);
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'G315A'), IF(GETGOODS.G315A<>'NULL',GETGOODS.G315A,0));
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'EdIzm'), IF(GETGOODS.G315<>'NULL',GETGOODS.G315,''));
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'G35'), IF(GETGOODS.G35<>'NULL',GETGOODS.G35,0));
+                                XMLNODESETVALUE (XMLNODEADDCHILD (Good, 'G42'), IF(GETGOODS.G42<>'NULL',GETGOODS.G42,0));
+
+                                OPENQUERY('REL','STS_DB', ' SELECT RC.RELEASE_G35, RC.RELEASE_G315A, RC.RELEASE_G42, R.RELEASE_NO, R.DOC_TYPE, R.DOC_NO, R.OUT_DATE, R.RELEASE_DATE, R.DOC_MODE '+
+                                                            ' FROM REL_COMM RC LEFT JOIN RELEASE R ON(RC.PLACEID=RC.PLACEID AND RC.ID=R.ID) '+
+                                                            ' WHERE '+
+                                                            ' R.RELEASE_DATE <= '  + SQLDATE(dtPeriodEnd,'ORACLE') +
+                                                            ' AND RC.PLACEID = '+GETGOODS.PLACEID+' AND RC.ID='+GETGOODS.ID+' AND RC.G32='+GETGOODS.G32+
+                                                            ' AND R.DOC_MODE <>'+char(39)+'ОТЧУЖДЕНИЕ'+char(39)+
+                                                            ' ORDER BY RC.COUNTER'
+                                );
+                                VAR('OutInfo',integer,XMLNODEADDCHILD (Good, 'OutInfo'));
+                                FIRST('REL');
+                                WHILE(EOF('REL')=0,
+                                      BLOCK(
+                                        VAR('OutDoc',integer,XMLNODEADDCHILD (OutInfo, 'OutDoc'));
+                                        XMLNODESETVALUES (OutDoc, ,
+                                                          'nDT', REL.DOC_TYPE+' '+REL.DOC_NO,
+                                                          'CustProc',REl.DOC_MODE,
+                                                          //'OutDate', IF(REL.OUT_DATE<>'NULL',REL.OUT_DATE,REL.RELEASE_DATE),
+                                                          'Release_G315A',REL.RELEASE_G315A,
+                                                          'Release_G35',REL.RELEASE_G35,
+                                                          'Release_G42',REL.RELEASE_G42
+
+                                        );
+                                        vOutG35 := vOutG35 + REL.RELEASE_G35;
+                                        vOutG315A := vOutG315A + REL.RELEASE_G315A;
+                                        vOutG42 := vOutG42 + REL.RELEASE_G42;
+                                        NEXT('REL');
+                                      )
+                                );
+
+                                CLOSEDATASET('REL');
+
+                                OPENQUERY('Arest','STS_DB', ' SELECT RC.RELEASE_G35, RC.RELEASE_G315A, RC.RELEASE_G42, R.RELEASE_NO, R.DOC_TYPE, R.DOC_NO, R.OUT_DATE, R.RELEASE_DATE, R.DOC_MODE '+
+                                                            ' FROM REL_COMM RC INNER JOIN RELEASE R ON (RC.PLACEID=RC.PLACEID AND RC.ID=R.ID) '+
+                                                            ' WHERE '+
+                                                            ' R.RELEASE_DATE <= '  + SQLDATE(dtPeriodEnd,'ORACLE') +
+                                                            ' AND RC.PLACEID = '+GETGOODS.PLACEID+' AND RC.ID='+GETGOODS.ID+' AND RC.G32='+GETGOODS.G32+
+                                                            ' AND R.DOC_MODE ='+char(39)+'ОТЧУЖДЕНИЕ'+char(39)+
+                                                            ' ORDER BY RC.COUNTER'
+                                );
+                                VAR('ArestInfo',integer,XMLNODEADDCHILD (Good, 'ArestInfo'));
+                                FIRST('Arest');
+                                WHILE(EOF('Arest')=0,
+                                      BLOCK(
+                                        VAR('ArestDoc',integer,XMLNODEADDCHILD (ArestInfo, 'ArestDoc'));
+                                        XMLNODESETVALUES (ArestDoc, ,
+                                                          'nDT', IF(Arest.DOC_TYPE<>'',Arest.DOC_TYPE+' ')+Arest.DOC_NO,
+                                                          'Receiver', qryMain.G082,
+                                                          //'OutDate', IF(Arest.OUT_DATE<>'',Arest.OUT_DATE,Arest.RELEASE_DATE),
+                                                          'Arest_G315A',Arest.RELEASE_G315A,
+                                                          'Arest_G35',Arest.RELEASE_G35,
+                                                          'Arest_G42',Arest.RELEASE_G42
+
+                                        );
+                                        vOutG35 := vOutG35 + Arest.RELEASE_G35;
+                                        vOutG315A := vOutG315A + Arest.RELEASE_G315A;
+                                        vOutG42 := vOutG42 + Arest.RELEASE_G42;
+                                        NEXT('Arest');
+                                      )
+                                );
+                                CLOSEDATASET('Arest');
+
+                                VAR('Ostatok',integer,XMLNODEADDCHILD (Good, 'Ostatok'));
+                                XMLNODESETVALUES (Ostatok, ,
+                                                  'Ost_G315A',GETGOODS.G315A-vOutG315A ,
+                                                  'Ost_G35',GETGOODS.G35-vOutG35,
+                                                  'Ost_G42',GETGOODS.G42-vOutG42
+
+                                );
+
+                             )
+                          );
+
+                          CLOSEDATASET('OstToPeriod');
+                          NEXT('GETGOODS');
+                        )
+                  );
+                  iCounterProgress := iCounterProgress +1;
+                  SETPROGRESS(iCounterProgress, 100, iCount);
+                  CLOSEDATASET('GetGoods');
+                  NEXT('qryMain');
+                )
+          );
+          HIDEPROGRESS()
+    ),,
+    HIDEPROGRESS()
+);
+XMLDOCUMENTSAVE(XmlFile, SaveDirectory+FDT('DDMMYY',dtPeriodStart)+'_'+FDT('DDMMYY',dtPeriodEND)+'.xml');
+
+//showmessage(UNIONVALUES ('qryMain',['PLACEID'],'',''));
+
+
+
+
+
+

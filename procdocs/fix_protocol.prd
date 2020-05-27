@@ -1,0 +1,329 @@
+// *****************************************************************************
+// Название: восстановление DOCUMENTID и загрузку регистрации документа
+// Описание: Восстановление DOCUMENTID и загрузка сообщения о регистрации ДО-1\ДО-2 из Монитор ЭД
+// Кнопка вызова: 0
+// Подпись кнопки: Восстановить протокол
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+IF (VAREXISTS ('sRelease') = 0, VAR ('sRelease', String, CORRECTTABLENAME ('RELEASE')));
+
+VAR ('sDirToSave', String, INCLUDETRAILINGBACKSLASH (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\' + USERINFO ('', 'USERUUID')));
+VAR ('sXmlFileToSave', String, '');
+
+
+FUNC ('SaveObject',
+  Block(
+    PARAM ('pBackupFile', String, 0);
+    // В xml-файле с отказом в регистрации ДО-1/Доб листа к ДО-1/ДО-2 нет признака на какой тип документа это отказ
+    // Поэтому принудительно дописываем в аттрибуты основного элемента признак "DocType" (0: не добавляем аттрибут, 1: ДО-1, 2: Доб лист к ДО-1, 3: ДО-2)
+    PARAM ('pDocType', Integer, 1);
+  ),
+  Block(
+    IF (FILEEXISTS (pBackupFile),
+       Block(
+         VAR ('xFile', Integer, XMLDOCUMENTCREATE ());
+         XMLDOCUMENTLOAD (xFile, pBackupFile);
+         VAR ('xDoc', Integer, XMLNODECHILD (XMLDOCUMENTROOT (xFile), 0));
+         
+         xDoc := xDoc.Body.Signature.Object;
+         IF (XMLNODEFIND (xDoc, 'ED_Container'),
+           Block(
+             xDoc := xDoc.ED_Container.ContainerDoc.DocBody.Signature.Object;
+           )
+         ); // IF
+         xDoc := XMLNODECHILD (xDoc, 0);
+
+         XMLNODESETATTRIBUTE (xDoc, 'dodt', FDT ('DD.MM.YYYY HH:NN:SS', Date() + Time(1)));
+         XMLNODESETATTRIBUTE (xDoc, 'whid',  qPM.WHId);
+         XMLNODESETATTRIBUTE (xDoc, 'do1id', qPM.WHDocID);
+         XMLNODESETATTRIBUTE (xDoc, 'do2id', qPM.WHDocID2);
+         
+         IF (pDocType > 0,
+           Block(
+             XMLNODESETATTRIBUTE (xDoc, 'doctype', pDocType);
+           )
+         ); // IF
+
+         sXmlFileToSave := sDirToSave + EXTRACTSTR (pBackupFile, SPLITSTR (pBackupFile, '\', sSQL), '\');
+         XMLNODESAVE (xDoc, sXmlFileToSave);
+         XMLDESTROY (xFile);
+
+        // получаем пространство имён cat_ru
+        VAR ('sCatRuNamespace', String, '');
+        VAR ('mBackupFileContent', Memo, STRINGFROMFILE (pFpBackupFileile, '65001'));
+        IF (REGEXMATCH (mBackupFileContent, 'xmlns:cat_ru="(\S+)"', 1, 'sCatRuNamespace') = 0,
+          Block(
+            sCatRuNamespace := 'urn:customs.ru:CommonAggregateTypes:5.10.0';
+          )
+        ); // IF
+        // добавляем пространство имён cat_ru
+        xDoc := XMLDOCUMENTCREATE();
+        XMLDOCUMENTLOAD (xDoc, sXmlFileToSave);
+        XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xDoc), 0), 'xmlns:cat_ru', sCatRuNamespace);
+        XMLDOCUMENTSAVE (xDoc, sXmlFileToSave);
+        XMLDESTROY (xDoc);         
+       ),
+    ); // IF
+  )
+), // FUNC
+
+
+VAR ('sDocIDList', String);
+VAR ('iDOType', Integer, 0);
+VAR ('vPlaceID', Integer);
+VAR ('vMainID', Integer);
+VAR ('vCounter', Integer);
+VAR ('vDocumentID', String);
+VAR ('vDO2RegNo', String);
+
+  IF (FIELDISNULL ('REL_MAIN', 'PLACEID') = 0,
+    Block(
+      iDOType := CHOICEVARIANT ('Выберите тип документа', 2, 0, ['ДО-1', 'ДО-2']);
+    )
+  ); // IF
+
+  IF (iDOType = -1, RAISEEXCEPTION ('Отменено пользователем'));
+
+  // подключение функции записи в EPS_LOG
+  EXECUTESCRIPT ('PROCDOCS\write_eps_log.prd');
+
+  CASE (iDoType, 
+    [
+      0,
+      Block(
+        WriteEpsLog (
+          KRD_MAIN.PLACEID,
+          KRD_MAIN.MAIN_ID,
+          0,
+          KRD_MAIN.DOCUMENTID,
+          'ДО-1',
+          KRD_MAIN.NBD,
+          KRD_MAIN.BD_DATE,
+          'Восстановление протокола',
+          FDT ('DD.MM.YYYY HH:NN:SS', (Date()+Time(1))),
+          GENERATEUUID (),
+          'Запустил пользователь ' + gComputerName + ' ' + gUserName,
+          '',
+          '1',
+          FDT ('DD.MM.YYYY HH:NN:SS', (Date()+Time(1))),
+          2
+        ); // WriteEpsLog
+
+        vPlaceID    := KRD_MAIN.PLACEID;
+        vMainID     := KRD_MAIN.MAIN_ID;
+        vCounter    := 0;
+        vDocumentID := KRD_MAIN.DOCUMENTID;
+
+        IF (LENGTH (TRIM (KRD_MAIN.REG_NBD)) > 0, RAISEEXCEPTION ('ДО-1 уже зарегистрирована'));
+      ),
+      1,
+      Block(
+        vPlaceID    := KRD_MAIN.PLACEID;
+        sSQL := 'SELECT' +
+                ' PLACEID, MAIN_ID, MAIN_COUNTER, DOCUMENTID, COUNTER' +
+                ', REG_RELEASE_NO, MC_STATUS' +
+                ', RELEASE_NO, RELEASE_DATE, DOC_TYPE, DOC_NO, OUT_DATE' +
+                ' FROM ' + sRelease +
+                ' WHERE' +
+                ' PLACEID=' + vPlaceId +
+                ' AND ID=' + KRD_MAIN.MAIN_ID +
+                ' AND (MC_STATUS <> ' +char(39)+ '3' +char(39)+ ' OR MC_STATUS IS NULL)';
+        OPENQUERY ('qDO2List', 'STS_DB', sSQL, 1);
+        IF (SELECTVALUES ('Выберите Форму ДО-2', 'qDO2List', [['RELEASE_NO', 'Отчёт №', 30], ['RELEASE_DATE', 'Дата отчёта', 30], ['DOC_TYPE', 'Тип выпускающего документа', 30], ['DOC_NO', 'Номер выпускающего документа', 30]], [['COUNTER', 'vCounter'], ['MAIN_ID', 'vMainID'], ['DOCUMENTID', 'vDocumentID'], ['REG_RELEASE_NO', 'vDO2RegNo']], '', 'STS_DB') = 0,
+          Block(
+            CLOSEDATASET ('qDO2List');
+            RAISEEXCEPTION ('Отменено пользователем');
+          )
+        ); // IF
+
+        WriteEpsLog (
+          qDO2List.PLACEID,
+          qDO2List.MAIN_ID,
+          qDO2List.MAIN_COUNTER,
+          qDO2List.DOCUMENTID,
+          'ДО-2',
+          qDO2List.RELEASE_NO,
+          qDO2List.OUT_DATE,
+          'Восстановление протокола',
+          FDT ('DD.MM.YYYY HH:NN:SS', (Date()+Time(1))),
+          GENERATEUUID (),
+          'Запустил пользователь ' + gComputerName + ' ' + gUserName,
+          '',
+          '1',
+          FDT ('DD.MM.YYYY HH:NN:SS', (Date()+Time(1))),
+          2
+        ); // WriteEpsLog
+
+        CLOSEDATASET ('qDO2List');
+        IF (LENGTH (TRIM (vDO2RegNo)) > 0, RAISEEXCEPTION ('ДО-2 уже зарегистрирована'));
+      )
+    ], RAISEEXCEPTION ('Отменено пользователем');
+  ); // CASE
+  
+  sSQL := 'SELECT' +
+          ' DISTINCT DOCUMENTID' +
+          ' FROM EPS_LOG' +
+          ' WHERE' +
+          ' PLACEID=' + vPlaceID +
+          ' AND ID=' + vMainID +
+          ' AND COUNTER=' + vCounter +
+          ' AND DOCUMENTID <> ' +char(39)+ vDocumentID +char(39);
+
+  OPENQUERY ('qJR_EL', sSQL, 'dbJournals', 1);
+  IF (FIELDISNULL ('qJR_EL', 'DOCUMENTID'),
+    Block(
+      sSQL := 'SELECT' +
+              ' SUBSTATUS' +
+              ' FROM EPS_LOG' +
+              ' WHERE' +
+              ' PLACEID=' + vPlaceID +
+              ' AND ID=' + vMainID +
+              ' AND COUNTER=' + vCounter +
+              ' AND DOCSTATUS=' +char(39)+ 'Присвоен новый DocumentId' +char(39);
+      OPENQUERY ('qJR_ELS', sSQL, 'dbJournals', 1);
+      IF (BOF ('qJR_ELS') = 0, FIRST ('qJR_ELS'));
+      WHILE (EOF ('qJR_ELS') = 0,
+        Block(
+          VAR ('sPrevDocumentId', String, '');
+          RegExMatch (qJR_ELS.SUBSTATUS, '(\S{8}(-\S{4}){3}-\S{12})', 34, 'sPrevDocumentId');
+          IF (LENGTH (sPrevDocumentId) > 0,
+            Block(
+              IF (LENGTH (sDocIDList) > 0,
+                Block(
+                  sDocIDList := sDocIDList + ',' + sPrevDocumentId;
+                ),
+                Block(
+                  sDocIDList := sPrevDocumentId;
+                )
+              ); // IF
+            )
+          ); // IF
+          NEXT ('qJR_ELS');
+        )
+      ); // WHILE
+      CLOSEDATASET ('qJR_ELS');
+
+      IF (LENGTH (sDocIDList) = 0,
+        Block(
+          RAISEEXCEPTION ('Не найдено других значений DOCUMENTID');
+        )
+      ); // IF
+
+    )
+  ); // IF
+
+  IF (LENGTH (sDocIDList) = 0,
+    Block(
+      sDocIDList := JOINVALUES ('qJR_EL', char(39) + ',' + char(39), 'DOCUMENTID')
+    )
+  ); // IF
+
+  VAR ('sMessageText', String, '');
+  IF (LENGTH (TRIM (sDocIDList)) > 0,
+    Block(
+       
+      TRYFINALLY (
+        Block(
+          // подключаемся к базе Монитор ЭД
+          VAR ('dbMonitor', String, EXECUTESCRIPT ('ProcDocs\open_monitor_db.prd'));
+
+          // Проверяем есть ли в базе Монитор ЭД регистрация по указанному\указанным DOCUMENTID
+          sSQL := 'SELECT' +
+                  ' *' +
+                  ' FROM ED_PROCMESSAGES' +
+                  ' WHERE' +
+                  ' WHID=' + vPlaceID + 
+                  ' AND WHDOCID IN (' +char(39)+ sDocIDList +char(39)+ ')' +
+                  ' AND MSGID=' +char(39)+ 'CMN.13010' +char(39)+ 
+                  ' ORDER BY PROCESSEDAT';
+          OPENQUERY ('qPM', sSQL, dbMonitor, 1);
+          IF (FIELDISNULL ('qPM', 'BACKUPFILE') = 0,
+            Block(
+              // подключаем функцию GetBackupFile
+              EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\utils\get_backup_file.prd');
+              VAR ('sBackupFile', String, GetBackupFile (qPM.BackupFile, qPM.INCOMING));
+              IF (FILEEXISTS (sBackupFile),
+                Block(
+                  // загружаем регистрацию ДО-1
+                  SaveObject (qPM.BackupFile, 0);
+
+                  CASE (iDOType,
+                    [
+                      0, 
+                      Block(
+                        sSQL := 'UPDATE KRD_MAIN' +
+                                ' SET' +
+                                ' DOCUMENTID=' +char(39)+ qPM.WHDocID +char(39)+ 
+                                ', PROCESSID=' +char(39)+ qPM.WHProcessID +char(39)+ 
+                                ', ALBUM_VERSION=' +char(39)+ qPM.FmtVersion +char(39)+ 
+                                ' WHERE' +
+                                ' PLACEID=' + vPlaceID + 
+                                ' AND ID=' + vMainID;
+                      ),
+                      1,
+                      Block(
+                        sSQL := 'UPDATE ' + sRelease + 
+                                ' SET' +
+                                ' DOCUMENTID=' +char(39)+ qPM.WHDocID +char(39)+ 
+                                ', PROCESSID=' +char(39)+ qPM.WHProcessID +char(39)+ 
+                                ' WHERE' +
+                                ' PLACEID=' + vPlaceID + 
+                                ' AND ID=' + vMainID + 
+                                ' AND COUNTER=' + vCounter;
+                      )
+                    ], sSQL := ''
+                  ); // CASE
+
+                  IF (LENGTH (sSQL) > 0, EXECUTESQL ('STS_DB', sSQL));                  
+                  EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\eps.imp');
+
+                  sMessageText := 'Восстановление протокола завершено.';
+                  SHOWMESSAGE (
+                    sMessageText,
+                    1,
+                    'ВЭД-Склад: Лог ЭПС'
+                  ); // SHOWMESSAGE
+                ),
+                Block(
+                  sMessageText := 'Не найден файл резервной копии регистрации ДО';
+                  SHOWMESSAGE (
+                    sMessageText,
+                    2, 
+                    'ВЭД-Склад: Лог ЭПС'
+                  ); // SHOWMESSAGE
+                )
+              ); // IF
+            ),
+            Block(
+              sMessageText := 'По DOCUMENTID (' +char(39)+ sDocIDList +char(39)+ ') не найдено сообщений о регистрации (CMN.13010)';
+              SHOWMESSAGE (
+                sMessageText,
+                2,
+                'ВЭД-Склад: Лог ЭПС'
+              ); // SHOWMESSAGE
+              //RAISEEXCEPTION (sMessageText);
+            )
+          ); // IF
+        
+        ),
+        Block(
+          // закрываем подключениек БД Монитор ЭД
+          CLOSEDATABASE (dbMonitor);          
+        )
+      ); // TRYFINALLY
+    ),
+    Block(
+      sMessageText := 'Список DOCUMENTID пуст';
+      SHOWMESSAGE (
+        sMessageText,
+        2,
+        'ВЭД-Склад: Лог ЭПС'
+      ); // SHOWMESSAGE
+      //RAISEEXCEPTION (sMessageText);
+    )
+  ); // IF

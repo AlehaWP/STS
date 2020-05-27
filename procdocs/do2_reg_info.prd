@@ -1,0 +1,40 @@
+// *****************************************************************************
+// Название: Информация о регистрации ДО-2
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: DORegInfo
+// *****************************************************************************
+//
+
+VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+VAR ('vPlaceID', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'WHId')));
+VAR ('vID', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO1Id')));
+VAR ('vCounter', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO2Id')));
+Var ('strStatus', String, '');
+Var ('strSubStatus', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'regnumber')));
+Var ('DoType', String, '');
+Var ('DoNo', String, '');
+VAR ('DocId', String, '');
+Var ('DoDate', DateTime);
+Var ('dRegDate', DateTime);
+
+
+EXECUTESQL('STS_DB', ' UPDATE ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' SET REG_RELEASE_NO = ' + char(39) + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'regnumber')) + char(39) + ', ' +
+                     ' MC_STATUS=' +char(39)+ '3' +char(39)+ ' ' +
+                     ' WHERE PLACEID=' + vPlaceId +
+                     ' AND MAIN_ID=' + vId +
+                     ' AND MAIN_COUNTER=' + vCounter);
+                     
+REFRESH ('KRD_MAIN');
+REFRESH ('REL_MAIN');
+
+OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPLACEID + ' AND MAIN_ID=' + vID + ' AND MAIN_COUNTER=' + vCounter);
+
+DoType   := 'ДО-2';
+DoNo     := REL_MAIN_3.RELEASE_NO;
+DoDate   := REL_MAIN_3.OUT_DATE;
+DocId    := REL_MAIN_3.DOCUMENTID;
+strStatus:= 'ДО-2 зарегистрирована';
+dRegDate := DATE()+TIME(1);
+OPENQUERY ('qryNUM', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+sJourGuid :=qryNUM.JOURGUID; 

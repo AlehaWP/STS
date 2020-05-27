@@ -1,0 +1,162 @@
+// *****************************************************************************
+// Название: EXCEL-->DO
+// Описание: EXCEL-->DO
+// Кнопка вызова: 1
+// Подпись кнопки: EXCEL-->DO
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('sFileName', string, '');
+Var('vPlaceID', String, '');
+
+
+
+Func ('CreateDO1',,
+     BLOCK(
+          OPENQUERY ('STOR','STS_DB', 'SELECT PLACEID, LICENCENO, LICENCEDATE, NAME, ADDRESS, STORE_TYPE FROM STORES');
+          IF (SELECTRECORDS ('Укажите лицензию', 'STOR',
+                           [
+                              ['LICENCENO', '№ лицензии', 20],
+                              ['LICENCEDATE', 'Дата лицензии', 20],
+                           ], 'GET_LIC', 'PLACEID', 'STS_DB'
+             ), vPlaceID := GET_LIC.PLACEID, vPlaceID := 0
+          );
+          CLOSEDATASET ('STOR');
+          IF (vPlaceID > 0,
+             BLOCK(
+                  APPENDRECORD('KRD_MAIN');
+                  SETFIELDVALUE ('KRD_MAIN','PLACEID', vPlaceID,
+                                            'NBD', SOLVE (INIFILE ('Docs', 'MakeBD_No', '1')),
+                                            'SHOWNBD', FDT('YYYY', DATE())+FDT('MM', DATE())+FDT('DD', DATE()),
+                                            'PART_NO', 1,
+                                            'G011', 'ИМ',
+                                            'G012', '40',
+                                            'A_MODE', 7,
+                                            'Z_MODE', 3,
+                                            'BD_DATE', NOW(),
+                                            'G19', '0',
+                                            'BEG_KEEP', NOW() + 1,
+                                            'ARR_DATE', NOW(),
+                                            'DOC_STATE',0,
+                                            'WITH_PLACE',1,
+                                            'NOTICE_RW_ONLY',0,
+                                            'RAD_CONTROL','В НОРМЕ',
+                                            'G210',1,
+                                            //'MC_STATUS_BD', '0',
+                                            'G261', '30',
+                                            'G142', GET_LIC.NAME,
+                                            'G143', GET_LIC.ADDRESS,
+                                            'G144', GET_LIC.LICENCENO,
+                                            'G1440', CASE(TRIM(GET_LIC.STORE_TYPE), ['СВХУТ', '1', 'СВХ', '1', 'ЗТК', '5', 'ПЗТК', '4', 'СП', '3']),
+                                            'G145', GET_LIC.LICENCEDATE,
+                  );
+                  POSTRECORD ('KRD_MAIN');
+                  CLOSEDATASET('GET_LIC');
+                  APPENDRECORD('KRD_PAPERS');
+                  SETFIELDVALUE ('KRD_PAPERS','PLACEID', vPlaceID,
+                                              'PAPERNAME', 'CMR',
+                                             'PAPERCODE', '02015'
+
+                  );
+                  POSTRECORD ('KRD_PAPERS');
+                  CLOSEDATASET ('GET_LIC');
+             )
+          );
+          vPlaceID
+     )
+),
+
+IF (SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel(*.xls,*.xlsx)|*.xls;*.xlsx'),, RAISEEXCEPTION ('Создание отменено'));
+
+VAR ('XL', variant);
+VAR ('iSheetsCount', integer);
+VAR ('iRowsCount', integer);
+VAR ('sCellNumPP', variant);
+VAR ('sCellG33', variant);
+VAR ('sCellG312', variant);
+VAR ('sCellG35', variant);
+VAR ('sCellG42', variant);
+VAR ('sCellG42Cur', variant);
+VAR ('sCostStr', string, '');
+VAR ('sVal', string, '');
+VAR ('sCost', string, 0);
+
+XL:= CreateOleObject('Excel.Application');
+XL.Workbooks.Add(sFileName);
+XL.Visible := false;
+iRowsCount := XL.ActiveSheet.UsedRange.Rows.Count;
+
+VAR ('i', integer, 1);
+IF (iRowsCount>0,
+   if (CreateDO1(),,
+       BLOCK(
+             XL.ActiveWorkbook.Close;
+             XL.Quit;
+             RAISEEXCEPTION ('Не удалось создать ДО1');
+       )
+   ),
+   BLOCK(
+         XL.ActiveWorkbook.Close;
+         XL.Quit;
+         RAISEEXCEPTION ('Нет данных для чтения');
+   )
+);
+SHOWPROGRESS ('Загрузка товаров');
+while (i <= iRowsCount,
+      BLOCK(
+            sCellG33 := XL.ActiveSheet.Cells(i,1);
+            sCellG35 := XL.ActiveSheet.Cells(i,2);
+            sCellG42 := XL.ActiveSheet.Cells(i,3);
+            sCellG42Cur := XL.ActiveSheet.Cells(i,4);
+
+
+
+            IF (sCellG33.Text <> '',
+               BLOCK(
+                    //Файлы Excel могут быть двух типов. В 1ом валюта идет отдельным столбцом. Во 2ом валюта в столбце стоимость через пробел
+                    sCostStr := TRIM(sCellG42.Text);
+                    sCost := sCellG42.Text;
+                    sVal := sCellG42Cur.Text;
+                    IF ((sVal = '')*STRPOS (' ', sCostStr),
+                       BLOCK(
+                            sCost := ExtractStr (sCostStr, 1, ' ');
+                            sVal := TRIM(ExtractStr (sCostStr, 2, ' '));
+                       )
+                    );
+
+                    APPENDRECORD ('KRD_COMM');
+                    SETFIELDVALUE('KRD_COMM',
+                                  'PLACEID', vPlaceID,
+                                  'G33',sCellG33.Text,
+                                  'G312',VIGetCommName (sCellG33.Text),
+                                  'G311', IF(KRD_COMM.G32>1,0),
+                                  'G35',sCellG35.Text,
+                                  'G42',sCost,
+                                  'G42_CURRENCY', CURRENCYCODE (sVal),
+                                  'VALCODE',sVal,
+                                  'N_TTN', 1,
+                                  'N_TTN_G32',KRD_COMM.G32
+                    );
+                    POST('KRD_COMM');
+               )
+            );
+            SETPROGRESS((100/iRowsCount)*i);
+            i := i + 1;
+      )
+);
+
+HIDEPROGRESS();
+XL.ActiveWorkbook.Close;
+XL.Quit;
+
+
+
+
+
+
+
+
+
+
+

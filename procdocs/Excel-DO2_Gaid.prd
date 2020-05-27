@@ -1,0 +1,296 @@
+// *****************************************************************************
+// Название: Экспорт Excel в ДО1 Гайдамакин
+// Описание: Экспорт Excel в ДО1 Гайдамакин
+// Кнопка вызова: 1
+// Подпись кнопки: Экспорт Excel в ДО1 Гайдамакин
+// *****************************************************************************
+//
+
+VAR ('PlaceIsSelected', Integer, 0);
+VAR ('vPlaceId', Integer);
+VAR ('vID', Integer);
+VAR ('vID_EX', string, '');
+VAR ('vG32', Integer);
+VAR ('nTTN', Integer, 0);
+VAR ('nTTN_G32', Integer, 0);
+VAR ('nCont', Integer, 0);
+VAR('sListName', String);
+VAR('sFileName', String);
+VAR('sFilePath', String);
+VAR('sSQL', String);
+VAR('vG144', string);
+VAR('vG142', string);
+VAR('vG143', string);
+VAR('vG1440', string);
+VAR('dG145', DateTime);
+VAR('bFound', boolean, False);
+
+
+FUNC ('ReplaceStr',
+     Block(
+          Param('Str', String, 0);
+          Param('X', String, 1);
+          Param('Y', String, 2);
+          Param('Registr', Integer, 3);
+
+     ),
+{Str - строка, в которой будет производиться замена.
+ X - подстрока, которая должна быть заменена.
+ Y - подстрока, на которую будет произведена заменена
+ Registr - учет ресгистра строк(1-учитывать, 0-не учитывать)
+}
+
+  Block(
+        var('buf1', String, '');
+        var('buf2', String, '');
+        var('buffer', String, '');
+        buf1 := '';
+        buf2 := Str;
+        Buffer := Str;
+
+        if (Registr = 0,
+           Block(
+                  while (STRPOS (UPPERSTR (X), UPPERSTR (buf2)) > 0,
+                  Block(
+                    buf2 := Copy(buf2, STRPOS(UPPERSTR (X), UPPERSTR (buf2))+Length(X), (Length(buf2) - STRPOS(UPPERSTR (X), UPPERSTR (buf2))) + 1);
+                    buf1 := Copy(Buffer, 1, Length(Buffer) - (Length(buf2)+Length(X))) + Y;
+                    Delete(buf2, STRPOS(UPPERSTR (X), UPPERSTR (buf2)), Length(X));
+                    Buffer := buf1 + buf2;
+
+                  );//while
+                 ) //block
+          ) //block
+       ,); //if
+        if (Registr = 1,
+           Block(
+                  while (STRPOS (X, buf2) > 0,
+                  Block(
+                    buf2 := Copy(buf2, STRPOS(X, buf2)+Length(X), (Length(buf2) - STRPOS(X, buf2)) + 1);
+                    buf1 := Copy(Buffer, 1, Length(Buffer) - (Length(buf2)+Length(X))) + Y;
+                    Delete(buf2, STRPOS(X, buf2), Length(X));
+                    Buffer := buf1 + buf2;
+                  );//while
+                 ) //block
+          ) //block
+       ,); //if
+
+        buffer;
+  )
+),
+
+IF(SELECTFILE ('sFilePath', 'Выбор файла', 'Microsoft Excel-файлы (*.xls)|*.xls'),,
+  RAISEEXCEPTION ('Каталог не указан')
+);
+sListName := INPUTTEXT ('', 'Введите название листа:', 'Sheet1');
+sListName := '`.`'+sListName+'$';
+
+
+{OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES');
+PlaceIsSelected := SelectValues ('Выбор склада, на который будет создан документ', 'Stors',
+                                        [
+                                          ['LICENCENO',   'Номер лицензии', 15],
+                                          ['LICENCENO_EXT',   ' ', 1],
+                                          ['STORE_NO',   'Номер склада', 15],
+                                          ['NAME',   'Название склада', 30],
+                                          ['PlaceId',   '', 10]
+                                        ],
+                                        [
+                                          ['PlaceId', 'vPlaceId'],
+                                          ['LICENCENO', 'vG144'],
+                                          ['NAME', 'vG142'],
+                                          ['ADDRESS', 'vG143'],
+                                          ['LICENCEDATE', 'dG145'],
+                                        ], '', 'STS_DB');
+ IF (PlaceIsSelected = 0,
+     RAISEEXCEPTION ('Отменено пользователем')
+ ); }
+
+
+
+//DELETEFILE (PROGRAMPATH() + 'DATA_EXCEL_STS\STS_EXCEL.DBF');
+
+OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ PROGRAMPATH() + 'DATA_TMP\');
+
+OPENTABLE('STS_EXCEL', PROGRAMPATH() + 'DATA_EXCEL_STS\STS_EXCEL.DBF', 'ID_EXCEL', 'TMP_DB', 1);
+
+//Открываем базу
+OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=Excel');
+OPENQUERY('qryExcel', 'SELECT * FROM '+ char(34) + sFilePath + sListName + char(34) +' WHERE ID is not NULL','EXCEL_DB');
+
+
+
+FIRST('qryExcel');
+WHILE(EOF('qryExcel') = 0,
+  BLOCK(
+    if(vID_EX = qryExcel."ID",
+       BLOCK(
+         vG32 := vG32 + 1;
+         nTTN_G32 := nTTN_G32 + 1;
+         IF(qryExcel."Номер контейнера" <> '',
+            BLOCK(
+              IF(LOCATE('KRD_CONT_2', 'CONTNO', [qryExcel."Номер контейнера"]),
+                 nCont := KRD_CONT_2.COUNTER,
+                 BLOCK(
+                   OPENQUERY('CountCONT','STS_DB', 'SELECT MAX(COUNTER) as Counter FROM KRD_CONT WHERE PLACEID=' +vPlaceID+ ' AND ID='+vID);
+                   nCont := CountCONT.Counter + 1;
+                   APPENDRECORD('KRD_CONT_2');
+                   EDIT('KRD_CONT_2');
+                   SETFIELDVALUE('KRD_CONT_2',
+                                 'PLACEID', vPlaceID,
+                                 'ID', vID,
+                                 'COUNTER', nCont,
+                                 'CONTNO', qryExcel."Номер контейнера"
+                   );
+                   POST('KRD_CONT_2');
+                 )
+              );
+            )
+         );
+         APPENDRECORD('KRD_COMM_2');
+         EDIT('KRD_COMM_2');
+         SETFIELDVALUE('KRD_COMM_2',
+                       'PLACEID', vPLACEID,
+                       'ID', vID,
+                       'G32', vG32,
+                       'GN', vG32,
+                       'G313', qryExcel."Виды грузовых мест",
+                       'G33', qryExcel."Код ТНВЭД",
+                       'G312', qryExcel."Наименование груза",
+                       'G311', qryExcel."Мест",
+                       'G35', qryExcel."Вес",
+                       'ACCEPTDATE', qryExcel."Дата приема товара на склад",
+                       'STORAGE_DATE', qryExcel."Дата истечения срока хранения",
+                       'STORAGE_TYPE', qryExcel."Тип хранения",
+                       'N_TTN', 1,
+                       'N_TTN_G32', nTTN_G32,
+                       'N_CONT', nCont
+         );
+         POST('KRD_COMM_2');
+         
+         APPENDRECORD('KRD_COMM_PAPERS_2');
+         EDIT('KRD_COMM_PAPERS_2');
+         SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                       'PLACEID', vPlaceid,
+                       'ID', vID,
+                       'G32', vG32,
+                       'DOC_TYPE', 13,
+                       'DOC_COUNTER', 1
+         );
+         POST('KRD_COMM_PAPERS_2');
+         
+         APPENDRECORD('KRD_COMM_PAPERS_2');
+         EDIT('KRD_COMM_PAPERS_2');
+         SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                       'PLACEID', vPlaceid,
+                       'ID', vID,
+                       'G32', vG32,
+                       'DOC_TYPE', 11,
+                       'DOC_COUNTER', nCont
+         );
+         POST('KRD_COMM_PAPERS_2');
+       ),
+       BLOCK(
+         bFound := False;
+         IF(FINDKEY('STS_EXCEL', [qryExcel."ID"]),
+            BLOCK(
+            )
+         );
+
+         vG32 := 1;
+         nTTN_G32 := 1;
+         nCont := 1;
+         APPENDRECORD('KRD_MAIN');
+         EDIT('KRD_MAIN');
+         SETFIELDVALUE('KRD_MAIN',
+                       'PLACEID', vPlaceID,
+                       'NBD', SOLVE (INIFILE('Docs','MakeBD_No','1')),
+                       'BD_DATE', NOW(),
+                       'G011', 'ИМ',
+                       'G012', '40',
+                       'A_MODE', 7,
+                       'Z_MODE', 3,
+                       'BEG_KEEP', qryExcel."Дата отсчета срока хранения",
+                       'G022', qryExcel."Грузоотправитель",
+                       'G023', qryExcel."Адрес отправителя",
+                       'G15A', REFERENCE('COUNTRY.DB', 'COUNTRYNAME',  qryExcel."Страна отправителя", 'COUNTRYCODE'),
+                       'G042', qryExcel."Перевозчик",
+                       'G043', qryExcel."Адрес перевозчика",
+                       'G04_COUNTRY', REFERENCE('COUNTRY.DB', 'COUNTRYNAME',  qryExcel."Страна перевозчика", 'COUNTRYCODE'),
+                       'G040', qryExcel."ФИО перевозчика",
+                       'G040P', qryExcel."Должность",
+                       'G082', qryExcel."Грузополучатель",
+                       'G083', qryExcel."Адрес получателя",
+                       'G17A', REFERENCE('COUNTRY.DB', 'COUNTRYNAME',  qryExcel."Страна получателя", 'COUNTRYCODE'),
+                       'G261', qryExcel."Вид ТС"
+         );
+         POST('KRD_MAIN');
+         vID := KRD_MAIN.ID;
+         APPENDRECORD('KRD_TRANSP_2');
+         EDIT('KRD_TRANSP_2');
+         SETFIELDVALUE('KRD_TRANSP_2',
+                       'PLACEID', vPlaceID,
+                       'ID', vID,
+                       'CARNO', qryExcel."№ рейса",
+                       'COUNTER', 1,
+                       'TRANSP_CODE', qryExcel."Вид ТС"
+         );
+         POST('KRD_TRANSP_2');
+         
+
+         
+         APPENDRECORD('KRD_COMM_PAPERS_2');
+         EDIT('KRD_COMM_PAPERS_2');
+         SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                       'PLACEID', vPlaceid,
+                       'ID', vID,
+                       'G32', vG32,
+                       'DOC_TYPE', 13,
+                       'DOC_COUNTER', 1
+         );
+         POST('KRD_COMM_PAPERS_2');
+         
+         APPENDRECORD('KRD_CONT_2');
+         EDIT('KRD_CONT_2');
+         SETFIELDVALUE('KRD_CONT_2',
+                       'PLACEID', vPlaceID,
+                       'ID', vID,
+                       'COUNTER', nCont,
+                       'CONTNO', qryExcel."Номер контейнера"
+         );
+         POST('KRD_CONT_2');
+
+         APPENDRECORD('KRD_COMM_PAPERS_2');
+         EDIT('KRD_COMM_PAPERS_2');
+         SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                       'PLACEID', vPlaceid,
+                       'ID', vID,
+                       'G32', vG32,
+                       'DOC_TYPE', 11,
+                       'DOC_COUNTER', 1
+         );
+         POST('KRD_COMM_PAPERS_2');
+         
+         APPENDRECORD('STS_EXCEL');
+         EDIT('STS_EXCEL');
+         SETFIELDVALUE('STS_EXCEL',
+                       'ID_EXCEL', qryExcel."ID",
+                       'PLACEID', vPLACEID,
+                       'ID', KRD_MAIN.ID
+         );
+         POST('STS_EXCEL');
+         
+       )
+    );
+    vID_EX := qryExcel."ID";
+    NEXT('qryExcel');
+  )
+);
+
+{APPENDRECORD('KRD_MAIN');
+EDIT('KRD_MAIN');
+SETFIELDVALUE('KRD_MAIN', 'G082', 'Вася');
+POST('KRD_MAIN');}
+
+
+
+

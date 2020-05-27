@@ -1,0 +1,38 @@
+// *****************************************************************************
+// Название: Удаление битых ДО
+// Описание: Удаление битых ДО
+// Кнопка вызова: 0
+// Подпись кнопки: Удаление битых ДО
+// Вызов по событию: 
+// *****************************************************************************
+//
+OPENQUERY('GET_BAD_DO', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE (SELECT DISTINCT ID FROM KRD_COMM KC WHERE KRD_MAIN.PLACEID=KC.PLACEID AND KRD_MAIN.ID=KC.ID) IS NULL AND BD_DATE<='+char(39)+'01.01.2012 00:00:00'+char(39));
+
+CREATELOGFILE ('sDelLog');
+SHOWPROGRESS ('Проверка ДО1');
+VAR('iCountDO', integer, RECORDCOUNT('GET_BAD_DO'));
+VAR('iCounter', integer, 0);
+
+FIRST('GET_BAD_DO');
+WHILE(EOF('GET_BAD_DO')=0,
+      BLOCK(
+        //На всякий проверяем наличие товара
+        OPENQUERY('GET_COMM', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+GET_BAD_DO.PLACEID+' AND ID='+GET_BAD_DO.ID);
+        IF(RECORDCOUNT('GET_COMM')=0,
+           BLOCK(
+             TRYEXCEPT (
+               EXECUTESQL('STS_DB', 'DELETE FROM KRD_MAIN WHERE PLACEID='+GET_BAD_DO.PLACEID+' AND ID='+GET_BAD_DO.ID),
+               APPENDLOGFILE ('sDelLog', 'ДО1 № '+GET_BAD_DO.NBD+ ' от ' + GET_BAD_DO.BD_DATE+ ' удалено'),
+               APPENDLOGFILE ('sDelLog', 'ДО1 № '+GET_BAD_DO.NBD+ ' от ' + GET_BAD_DO.BD_DATE+ ' удалить не удалось')
+             );
+           ),
+           APPENDLOGFILE ('sDelLog', 'ДО1 № '+GET_BAD_DO.NBD+ ' от ' + GET_BAD_DO.BD_DATE+ ' не удалено, т.к. у него присутствуют товары')
+        );
+        iCounter:=iCounter+1;
+        SETPROGRESS (iCounter, 100, iCountDO);
+        NEXT('GET_BAD_DO');
+      )
+);
+HIDEPROGRESS ();
+APPENDLOGFILE ('sDelLog', 'Найдено '+iCountDO+ ' битых ДО, удалено ' + iCounter);
+SHOWLOGFILE ('sDelLog', 'Удаленные документы');

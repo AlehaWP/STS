@@ -1,0 +1,79 @@
+// *****************************************************************************
+// Название: Отказ в регистрации письма об ошибках
+// Описание: Отказ в регистрации письма об ошибках
+// Кнопка вызова: 0
+// Подпись кнопки: do1letter_reg_error.prd
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+VAR ('sSQL', String, '');
+VAR ('XmlNodeDescript', integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlNodeDescript, 'whid'));
+VAR ('vDO1ID',   String, XMLNODEATTRIBUTE (XmlNodeDescript, 'do1id'));
+VAR ('DoDt',     String, XMLNODEATTRIBUTE (XmlNodeDescript, 'dodt'));
+VAR ('vID',      String, '0');
+VAR ('vCounter', String, '0');
+VAR ('DocId', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('strStatus', String, '');
+VAR ('strSubStatus', String, '');
+VAR ('dRegDate', DateTime, Date() + Time(1));
+
+    IF (LENGTH (vDO1ID) > 0,
+      Block(
+        IF (LENGTH (vDO1ID) > 30,
+          Block( // получили GUID
+            sSQL := 'SELECT ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+            OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+            IF (RECORDCOUNT ('qFindDocID') > 0,
+              Block( // найдена ДО-2
+                vID := qFindDocID.ID;
+              ),
+              Block( // ДО-2 не найдена
+                sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+                OPENQUERY ('qFindID', 'STS_DB', sSQL);
+                vID := qFindID.ID;
+              )
+            ); // IF - //
+          ),
+          Block( // получили ID
+            sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vDO1ID;
+            OPENQUERY ('qFindID', 'STS_DB', sSQL);
+            vID := qFindID.ID;
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+
+    sSQL := ' UPDATE KRD_MAIN SET STATUS_EPS = ' + char(39) + 'В регистрации письма об ошибках отказано' + char(39) + 
+            ' WHERE PLACEID='+ vPlaceID + ' AND MAIN_ID='+ vID;
+    EXECUTESQL('STS_DB', sSQL);
+
+    sSQL := 'UPDATE KRD_LETTER SET LETTER_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND LETTER_REG_STATUS = ' +char(39)+ 'И' +char(39);
+    EXECUTESQL ('STS_DB', sSQL);
+    
+    // запись регистрации ДО-1
+    strStatus := 'В регистрации письма об ошибках отказано';
+    DoType := 'ДО-1';
+    DoNo := '';
+    sSQL := 'SELECT placeid, NBD, BD_DATE, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID +  ' AND ID=' + vID;
+    OPENQUERY ('qDO1', 'STS_DB', sSQL);
+    IF (FIELDISNULL ('qDO1', 'placeid') = 0,
+      Block(
+        DoNo := qDO1.NBD;
+        DoDate := qDO1.BD_DATE;
+        DocId := qDO1.DOCUMENTID;
+        OPENQUERY ('qryNum', 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+        sJourGuid := qryNum.JOURGUID;
+        sSubStatus := XMLNODEVALUE (XMLNODECHILD (XmlNodeDescript, 0));
+      )
+    );
+    CLOSEDATASET ('qDO1');
+    
+

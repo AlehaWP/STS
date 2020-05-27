@@ -1,0 +1,402 @@
+// *****************************************************************************
+// Название: Загрузка данных из ТД в журнал
+// Описание: Загрузка данных из ТД в журнал
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузка данных из ТД в журнал
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC('GetAddress',
+     PARAM ('iDescriptElement', integer, 0),
+     BLOCK(
+       VAR('sAddress', string, '');
+       sAddress:=XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:PostalCode')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:CounryName')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:Region'))+ ' ' +XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:StreetHouse'));
+       sAddress;
+     );
+),
+
+FUNC('GetIdentityCard',
+     PARAM ('iDescriptElement', integer, 0),
+     BLOCK(
+       VAR('sIdentityCard', string, '');
+       sIdentityCard:=XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardName')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardSeries')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardNumber')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:IdentityCardDate')) + ' ' + XMLNODEVALUE(XMLNODEFIND(iDescriptElement,'cat_ru:OrganizationName'));
+       sIdentityCard;
+     );
+),
+
+FUNC('GetDate',
+     BLOCK(
+       PARAM ('iParrentElement', integer, 0),
+       PARAM ('sElementName', string, 1),
+     ),
+     BLOCK(
+       VAR('dDate', datetime);
+       //showmessage(iParrentElement);
+       dDate:=STRTODATE(XMLNODEVALUE(XMLNODEFIND(iParrentElement,sElementName)),'YYYY-MM-DD', '-');
+       dDate;
+     );
+),
+
+
+{
+  VAR ('sPath', String, '');
+  IF (SELECTFILE ('sPath', 'Выбор уведомления о выпуске', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+  VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+  XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+  VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+}
+
+OPENTABLE ('TD_2', 'JRTransitInfo', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+OPENTABLE ('TTN_2', 'JrTdConsigment', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+OPENTABLE ('Transport_2', 'JrTdTransport', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+OPENTABLE ('Seal_2','JrTDSeal','JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+
+OPENTABLE ('GOODINFO_2', 'JrTdGoodsItem', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID;JOURNAL_CHILD_ID_2', 'dbJournals', 1);
+OPENTABLE ('Document_2', 'JrTdProducedDocument', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID;JOURNAL_CHILD_ID_2', 'dbJournals', 1);
+
+VAR ('XmlTransitInfo', Integer, XMLNODECHILD (XmlRoot, 0));
+      VAR ('sDocumentID', string, XMLNODEVALUE (XMLNODEFIND (XmlTransitInfo, 'cat_ru:DocumentID')));
+
+      IF(LOCATE('TD_2', 'DocumentID', sDocumentID),
+         BLOCK(
+           VAR('iJMID', Integer, TD_2.JOURNAL_MASTER_ID);
+           DELETERECORD ('TD_2');
+         ),
+         BLOCK(
+           OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM JRTransitInfo', 'dbJournals');
+           VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+         )
+      );
+      
+      VAR('iCustomsOfficial', integer, XMLNODEFIND (XmlTransitInfo, 'tci:CustomsOfficial'));
+      
+      VAR('iHeader', integer, XMLNODEFIND (XmlTransitInfo, 'tci:Header'));
+          VAR('iCarrier', integer, XMLNODEFIND (iHeader, 'tci:Carrier'));
+              VAR('iCarrierOrgFeat',integer,XMLNODEFIND (iCarrier, 'cat_ru:RFOrganizationFeatures'));
+              VAR('iCarrierAddress',integer,XMLNODEFIND (iCarrier, 'cat_ru:Address'));
+              VAR('iCarrierIdentityCard',integer,XMLNODEFIND (iCarrier, 'cat_ru:IdentityCard'));
+          VAR('iTranspFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (iHeader, 'tci:Transport')));
+          VAR('iTdNumber', integer, XMLNODEFIND (iHeader, 'tci:TDNumber'));
+          VAR('iTirID', integer, XMLNODEFIND (iHeader, 'tci:TirID'));
+
+      VAR('iConsigmentFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (XmlTransitInfo, 'tci:Consigment')));
+
+      VAR('iPrecedingDocument', integer, XMLNODEFIND (XmlTransitInfo, 'tci:PrecedingDocument'));
+      
+      VAR('iDestinationPlace', integer, XMLNODEFIND (XmlTransitInfo, 'tci:DestinationPlace'));
+          VAR('iRegistrationCertificate', integer, XMLNODEFIND (iDestinationPlace, 'tci:RegistrationCertificate'));
+          VAR('iRWstation', integer, XMLNODEFIND (iDestinationPlace, 'tci:RWstation'));
+
+      VAR('iSealFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (XmlTransitInfo, 'tci:Seal')));
+
+      VAR('iGuarantee', integer, XMLNODEFIND (XmlTransitInfo, 'tci:Guarantee'));
+          VAR('iGuaranteeTD', integer, XMLNODEFIND (iGuarantee, 'catESAD_cu:GuaranteeTD'));
+          VAR('iGuaranteeAddress', integer, XMLNODEFIND (iGuarantee, 'catESAD_cu:GuaranteeAddress'));
+          
+VAR('sReason', memo, '');
+VAR('iReasonFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (XmlTransitInfo, 'tci:Reason')));
+
+VAR('iTransitInfoChildCount', integer, XMLNODECHILDCOUNT (XmlTransitInfo));
+VAR('iCounter', integer, iReasonFirstNodeIndex);
+VAR('vEnd', integer, 0);
+
+While((iCounter<iTransitInfoChildCount)*(vEnd=0),
+      BLOCK(
+         IF(XMLNODENAME(XMLNODECHILD(XmlTransitInfo,iCounter))='tci:Reason',
+            sReason:=sReason + XMLNODEVALUE(XMLNODECHILD(XmlTransitInfo,iCounter)),
+            vEnd:=1
+         );
+         iCounter := iCounter + 1;
+      )
+);
+
+
+APPENDRECORD ('TD_2');
+EDIT ('TD_2');
+SETFIELDVALUE('TD_2',
+              'JOURNAL_MASTER_ID', iJMID,
+              'JOURNAL_UUID', GENERATEUUID (),
+              'TDNumber', XMLNODEVALUE(XMLNODEFIND(iTdNumber,'cat_ru:CustomsCode')) + '/' + FDT('ddmmyy', GetDate(iTdNumber,'cat_ru:RegistrationDate')) + '/' + XMLNODEVALUE(XMLNODEFIND(iTdNumber,'cat_ru:GTDNumber')),
+              'TIRID', XMLNODEVALUE(XMLNODEFIND(iTirID,'tci:TIRID')) + '/' + XMLNODEVALUE(XMLNODEFIND(iTirID,'tci:TIRSeries')) + '/' + XMLNODEVALUE(XMLNODEFIND(iTirID,'tci:TIRPageNumber')),
+              'DeclarationKind', XMLNODEVALUE(XMLNODEFIND(iHeader,'DeclarationKind')),
+              //'DocumentDateTime', XMLNODEVALUE(XMLNODEFIND(XmlTransitInfo,'DocumentDateTime')),
+              'TransitDateLimit', GetDate(iHeader,'TransitDateLimit'),
+              'StatusName', XMLNODEVALUE(XMLNODEFIND(XmlTransitInfo,'StatusName')),
+              'Reason', sReason,
+              'ActNumber', XMLNODEVALUE(XMLNODEFIND(XmlTransitInfo,'tci:ActNumber')),
+              'PersonName', XMLNODEVALUE(XMLNODEFIND(iCustomsOfficial,'cat_ru:PersonName')),
+              'LNP', XMLNODEVALUE(XMLNODEFIND(iCustomsOfficial,'cat_ru:LNP')),
+              'TotalNumberOfGoods', XMLNODEVALUE(XMLNODEFIND(iHeader,'tci:TotalNumberOfGoods')),
+              'TotalNumberOfPackages', XMLNODEVALUE(XMLNODEFIND(iHeader,'tci:TotalNumberOfPackages')),
+              'TotalGrossMass', XMLNODEVALUE(XMLNODEFIND(iHeader,'tci:TotalGrossMass')),
+              'Comment', XMLNODEVALUE(XMLNODEFIND(iHeader,'tci:Comment')),
+              'DepartureCountryCode', XMLNODEVALUE(XMLNODEFIND(iHeader,'tci:DepartureCountryCode')),
+              'DestinationCountryCode', XMLNODEVALUE(XMLNODEFIND(iHeader,'tci:DestinationCountryCode')),
+              'CarrierOrganizationName', XMLNODEVALUE(XMLNODEFIND(iCarrier,'cat_ru:OrganizationName')),
+              'CarrierShortName', XMLNODEVALUE(XMLNODEFIND(iCarrier,'cat_ru:ShortName')),
+              'CarrierOrganizationLangua', XMLNODEVALUE(XMLNODEFIND(iCarrier,'cat_ru:OrganizationLanguage')),
+              'CarrierOGRN', XMLNODEVALUE(XMLNODEFIND(iCarrierOrgFeat,'cat_ru:OGRN')),
+              'CarrierINN', XMLNODEVALUE(XMLNODEFIND(iCarrierOrgFeat,'cat_ru:INN')),
+              'CarrierKPP', XMLNODEVALUE(XMLNODEFIND(iCarrierOrgFeat,'cat_ru:KPP')),
+              'CarrierAddress', GetAddress(iCarrierAddress),
+              'CarrierCountryCode', XMLNODEVALUE(XMLNODEFIND(iCarrierAddress,'cat_ru:CountryCode')),
+              'CarrierIdentityCard', GetIdentityCard(iCarrierIdentityCard),
+              'CarrierIdentityCardCode', XMLNODEVALUE(XMLNODEFIND(iCarrierIdentityCard,'cat_ru:IdentityCardCode')),
+              'PrDocumentName', XMLNODEVALUE(XMLNODEFIND(iPrecedingDocument,'cat_ru:PrDocumentName')),
+              'PrDocumentNumber', XMLNODEVALUE(XMLNODEFIND(iPrecedingDocument,'cat_ru:PrDocumentNumber')),
+              'PrDocumentDate', GetDate(iPrecedingDocument,'cat_ru:PrDocumentDate'),
+              'DPCode', XMLNODEVALUE(XMLNODEFIND(iDestinationPlace,'cat_ru:Code')),
+              'DPOfficeName', XMLNODEVALUE(XMLNODEFIND(iDestinationPlace,'cat_ru:OfficeName')),
+              'DPCustomsCountryCode', XMLNODEVALUE(XMLNODEFIND(iDestinationPlace,'cat_ru:CustomsCountryCode')),
+              'PlaceDescription', XMLNODEVALUE(XMLNODEFIND(iDestinationPlace,'tci:PlaceDescription')),
+              'RCPrDocumentName', XMLNODEVALUE(XMLNODEFIND(iRegistrationCertificate,'cat_ru:PrDocumentName')),
+              'RCPrDocumentNumber', XMLNODEVALUE(XMLNODEFIND(iRegistrationCertificate,'cat_ru:PrDocumentNumber')),
+              'RCPrDocumentDate', GetDate(iRegistrationCertificate,'cat_ru:PrDocumentDate'),
+              'DPStationCode', XMLNODEVALUE(XMLNODEFIND(iRWstation,'tci:StationCode')),
+              'DPStationName', XMLNODEVALUE(XMLNODEFIND(iRWstation,'tci:StationName')),
+              'DPRailwayCode', XMLNODEVALUE(XMLNODEFIND(iRWstation,'tci:RailwayCode')),
+              'GuaranteeMeasureCode', XMLNODEVALUE(XMLNODEFIND(iGuarantee,'catESAD_cu:MeasureCode')),
+              'GuaranteeDocNumber', XMLNODEVALUE(XMLNODEFIND(iGuarantee,'catESAD_cu:DocNumber')),
+              'GuaranteeDocDate', GetDate(iGuarantee,'catESAD_cu:DocDate'),
+              'GuaranteeName', XMLNODEVALUE(XMLNODEFIND(iGuarantee,'catESAD_cu:GuaranteeName')),
+              'GuaranteeUNP', XMLNODEVALUE(XMLNODEFIND(iGuarantee,'catESAD_cu:UNP')),
+              'GuaranteeBIC', XMLNODEVALUE(XMLNODEFIND(iGuarantee,'catESAD_cu:BIC')),
+              'GuaranteeAmount', XMLNODEVALUE(XMLNODEFIND(iGuarantee,'catESAD_cu:GuaranteeAmount')),
+              'GuaranteeGeneralNumber', XMLNODEVALUE(XMLNODEFIND(iGuaranteeTD,'catESAD_cu:GeneralNumber')),
+              'GuaranteeGeneralDate', GetDate(iGuaranteeTD,'catESAD_cu:GeneralDate'),
+              'GuaranteeNumber', XMLNODEVALUE(XMLNODEFIND(iGuaranteeTD,'catESAD_cu:GuaranteeNumber')),
+              'GuaranteeDate', GetDate(iGuaranteeTD,'catESAD_cu:GuaranteeDate'),
+              'AddGuaranteeNumber', XMLNODEVALUE(XMLNODEFIND(iGuaranteeTD,'catESAD_cu:AddGuaranteeNumber')),
+              'AddGuaranteeDate', GetDate(iGuaranteeTD,'catESAD_cu:AddGuaranteeDate'),
+              'GuaranteeAddress', GetAddress(iGuaranteeAddress),
+              'GuaranteeCountryCode', XMLNODEVALUE(XMLNODEFIND(iGuaranteeAddress,'cat_ru:CountryCode')),
+              'DocumentID', sDocumentID
+);
+POST('TD_2');
+
+//Заполняем ТС
+VAR('iTranspCounter', integer, 0);
+VAR('iHeaderChildCount', integer, XMLNODECHILDCOUNT (iHeader));
+iCounter := iTranspFirstNodeIndex;
+vEnd :=0;
+While((iCounter<iHeaderChildCount)*(vEnd=0),
+      BLOCK(
+         IF(XMLNODENAME(XMLNODECHILD(iHeader,iCounter))='tci:Transport',
+            BLOCK(
+              VAR('iTransp',integer,XMLNODECHILD (iHeader, iCounter));
+                  VAR('iTranspMeans', integer,XMLNODEFIND (iTransp, 'tci:TransportMeans'));
+
+              iTranspCounter := iTranspCounter + 1;
+              APPENDRECORD ('Transport_2');
+              EDIT ('Transport_2');
+              SETFIELDVALUE('Transport_2',
+                            'JOURNAL_MASTER_ID', iJMID,
+                            'JOURNAL_CHILD_ID', iTranspCounter,
+                            'JOURNAL_UUID', GENERATEUUID (),
+                            'TransportModeCode', XMLNODEVALUE(XMLNODEFIND(iTransp,'cat_ru:TransportModeCode')),
+                            'TransportNationalityCode', XMLNODEVALUE(XMLNODEFIND(iTransp,'cat_ru:TransportNationalityCode')),
+                            'VIN', XMLNODEVALUE(XMLNODEFIND(iTranspMeans,'cat_ru:VIN')),
+                            'TransportKindCode', XMLNODEVALUE(XMLNODEFIND(iTranspMeans,'cat_ru:TransportKindCode')),
+                            'TransportMarkCode', XMLNODEVALUE(XMLNODEFIND(iTranspMeans,'cat_ru:TransportMarkCode')),
+                            'TransportIdentifier', XMLNODEVALUE(XMLNODEFIND(iTranspMeans,'cat_ru:TransportIdentifier')),
+                            'ActiveTransportIdentifier', XMLNODEVALUE(XMLNODEFIND(iTranspMeans,'cat_ru:ActiveTransportIdentifier')),
+                            'TransportRegNumber', XMLNODEVALUE(XMLNODEFIND(iTranspMeans,'cat_ru:TransportRegNumber'))
+              );
+              POST('Transport_2');
+                  
+            ),
+            vEnd:=1
+         );
+         iCounter := iCounter + 1;
+      )
+);
+
+
+
+
+//Заполняем накладные и пломбы
+iCounter := iConsigmentFirstNodeIndex;
+
+VAR('iTTNCounter', integer, 0);
+VAR('iSealCounter', integer, 0);
+While(iCounter<iTransitInfoChildCount,
+      BLOCK(
+         CASE ( XMLNODENAME(XMLNODECHILD(XmlTransitInfo,iCounter)),
+              ['tci:Consigment',
+                  BLOCK( 
+                        VAR('iConsigment', integer, XMLNODECHILD(XmlTransitInfo, iCounter));
+                            VAR('iConsignor', integer, XMLNODEFIND (iConsigment, 'tci:Consignor'));
+                                VAR('iConsignorOrgFeat',integer,XMLNODEFIND (iConsignor, 'cat_ru:RFOrganizationFeatures'));
+                                VAR('iConsignorAddress',integer,XMLNODEFIND (iConsignor, 'cat_ru:Address'));
+                                VAR('iConsignorIdentityCard',integer,XMLNODEFIND (iConsignor, 'cat_ru:IdentityCard'));
+
+                            VAR('iConsignee', integer, XMLNODEFIND (iConsigment, 'tci:Consignee'));
+                                VAR('iConsigneeOrgFeat',integer,XMLNODEFIND (iConsignee, 'cat_ru:RFOrganizationFeatures'));
+                                VAR('iConsigneeAddress',integer,XMLNODEFIND (iConsignee, 'cat_ru:Address'));
+                                VAR('iConsigneeIdentityCard',integer,XMLNODEFIND (iConsignee, 'cat_ru:IdentityCard'));
+
+                            VAR('iGoodsFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (iConsigment, 'tci:GoodsItem')));
+                            VAR('iPrDocumentFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (iConsigment, 'tci:ProducedDocument')));
+
+                            VAR('iConsChildCount', integer, XMLNODECHILDCOUNT (iConsigment));
+                            VAR('iCounterCons', integer, iGoodsFirstNodeIndex);
+
+                            iTTNCounter := iTTNCounter+1;
+                            APPENDRECORD ('TTN_2');
+                            EDIT ('TTN_2');
+                            SETFIELDVALUE('TTN_2',
+                                          'JOURNAL_MASTER_ID', iJMID,
+                                          'JOURNAL_CHILD_ID', iTTNCounter,
+                                          'JOURNAL_UUID', GENERATEUUID (),
+                                          'PrDocumentName', XMLNODEVALUE(XMLNODEFIND(iConsigment,'cat_ru:PrDocumentName')),
+                                          'PrDocumentNumber', XMLNODEVALUE(XMLNODEFIND(iConsigment,'cat_ru:PrDocumentNumber')),
+                                          'PrDocumentDate', GetDate(iConsigment,'cat_ru:PrDocumentDate'),
+                                          'DocumentKind', XMLNODEVALUE(XMLNODEFIND(iConsigment,'tci:DocumentKind')),
+                                          'Sequence', XMLNODEVALUE(XMLNODEFIND(iConsigment,'tci:Sequence')),
+                                          'CustomsInvoiceNumber', XMLNODEVALUE(XMLNODEFIND(iConsigment,'tci:CustomsInvoiceNumber')),
+                                          'ConsignorOrganizationName', XMLNODEVALUE(XMLNODEFIND(iConsignor,'cat_ru:OrganizationName')),
+                                          'ConsignorShortName', XMLNODEVALUE(XMLNODEFIND(iConsignor,'cat_ru:ShortName')),
+                                          'ConsignorOrganizationLang', XMLNODEVALUE(XMLNODEFIND(iConsignor,'cat_ru:OrganizationLanguage')),
+                                          'ConsignorOGRN', XMLNODEVALUE(XMLNODEFIND(iConsignorOrgFeat,'cat_ru:OGRN')),
+                                          'ConsignorINN', XMLNODEVALUE(XMLNODEFIND(iConsignorOrgFeat,'cat_ru:INN')),
+                                          'ConsignorKPP', XMLNODEVALUE(XMLNODEFIND(iConsignorOrgFeat,'cat_ru:KPP')),
+                                          'ConsignorAddress', GetAddress(iConsignorAddress),
+                                          'ConsignorCountryCode', XMLNODEVALUE(XMLNODEFIND(iConsignorAddress,'cat_ru:CountryCode')),
+                                          'ConsignorIdentityCard', GetIdentityCard(iConsignorIdentityCard),
+                                          'ConsignorIdentityCardCode', XMLNODEVALUE(XMLNODEFIND(iConsignorIdentityCard,'cat_ru:IdentityCardCode')),
+                                          'ConsigneeOrganizationName', XMLNODEVALUE(XMLNODEFIND(iConsignee,'cat_ru:OrganizationName')),
+                                          'ConsigneeShortName', XMLNODEVALUE(XMLNODEFIND(iConsignee,'cat_ru:ShortName')),
+                                          'ConsigneeOrganizationLang', XMLNODEVALUE(XMLNODEFIND(iConsignee,'cat_ru:OrganizationLanguage')),
+                                          'ConsigneeOGRN', XMLNODEVALUE(XMLNODEFIND(iConsigneeOrgFeat,'cat_ru:OGRN')),
+                                          'ConsigneeINN', XMLNODEVALUE(XMLNODEFIND(iConsigneeOrgFeat,'cat_ru:INN')),
+                                          'ConsigneeKPP', XMLNODEVALUE(XMLNODEFIND(iConsigneeOrgFeat,'cat_ru:KPP')),
+                                          'ConsigneeAddress', GetAddress(iConsigneeAddress),
+                                          'ConsigneeCountryCode', XMLNODEVALUE(XMLNODEFIND(iConsigneeAddress,'cat_ru:CountryCode')),
+                                          'ConsigneeIdentityCard', GetIdentityCard(iConsigneeIdentityCard),
+                                          'ConsigneeIdentityCardCode', XMLNODEVALUE(XMLNODEFIND(iConsigneeIdentityCard,'cat_ru:IdentityCardCode'))
+                            );
+                            POST('TTN_2');
+                            vEnd :=0;
+                            VAR('iGoodsCounter', integer, 0);
+                            VAR('iDocCounter', integer, 0);
+                            WHILE((iCounterCons < iConsChildCount)*(vEnd=0),
+                                  BLOCK(
+                                     IF(XMLNODENAME(XMLNODECHILD(iConsigment,iCounterCons))='tci:GoodsItem',
+                                        BLOCK(
+                                            VAR('iGoods', integer,XMLNODECHILD(iConsigment,iCounterCons));
+                                                VAR('iDescriptionFirstNodeIndex', integer, XMLNODEINDEX (XMLNODEFIND (iGoods, 'catESAD_cu:GoodsDescription')));
+                                                VAR('iSupplementary', integer, XMLNODEFIND(iGoods,'tci:SupplementaryGoodsQuantity'));
+                                                
+                                            VAR('iGoodsChildCount', integer, XMLNODECHILDCOUNT (iGoods));
+                                            VAR('iCounterInGoods', integer, iDescriptionFirstNodeIndex);
+                                            
+                                            VAR('sDescription', memo,'');
+                                            vEnd := 0;
+                                            While((iCounterInGoods<iGoodsChildCount)*(vEnd=0),
+                                                  BLOCK(
+                                                     IF(XMLNODENAME(XMLNODECHILD(iGoods,iCounterInGoods))='catESAD_cu:GoodsDescription',
+                                                        sDescription:=sDescription + XMLNODEVALUE(XMLNODECHILD(iGoods,iCounterInGoods)),
+                                                        vEnd:=1
+                                                     );
+                                                     iCounterInGoods := iCounterInGoods + 1;
+                                                  )
+                                            );
+                                            vEnd:=0;
+                                            
+                                            iGoodsCounter := iGoodsCounter + 1;
+                                            APPENDRECORD ('GOODINFO_2');
+                                            EDIT ('GOODINFO_2');
+                                            SETFIELDVALUE('GOODINFO_2',
+                                                          'JOURNAL_MASTER_ID', iJMID,
+                                                          'JOURNAL_CHILD_ID', iTTNCounter,
+                                                          'JOURNAL_CHILD_ID_2', iGoodsCounter,
+                                                          'JOURNAL_UUID', GENERATEUUID (),
+                                                          'GoodsNumeric', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:GoodsNumeric')),
+                                                          'ListNumeric', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:ListNumeric')),
+                                                          'GoodFeatures', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:GoodFeatures')),
+                                                          'GoodsDescription', sDescription,
+                                                          'GrossWeightQuantity', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:GrossWeightQuantity')),
+                                                          'NetWeightQuantity', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:NetWeightQuantity')),
+                                                          'NetWeightQuantity2', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:NetWeightQuantity2')),
+                                                          'InvoicedCost', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:InvoicedCost')),
+                                                          'CustomsCost', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:CustomsCost')),
+                                                          'StatisticalCost', XMLNODEVALUE(XMLNODEFIND(iGoods,'catESAD_cu:StatisticalCost')),
+                                                          'TNVEDCode', XMLNODEVALUE(XMLNODEFIND(iGoods,'tci:TNVEDCode')),
+                                                          'SupplementaryGoodsQuantit', XMLNODEVALUE(XMLNODEFIND(iSupplementary,'cat_ru:GoodsQuantity')),
+                                                          'MeasureUnitQualifierName', XMLNODEVALUE(XMLNODEFIND(iSupplementary,'cat_ru:MeasureUnitQualifierName')),
+                                                          'MeasureUnitQualifierCode', XMLNODEVALUE(XMLNODEFIND(iSupplementary,'cat_ru:MeasureUnitQualifierCode'))
+                                            );
+                                            POST('GOODINFO_2');
+                                        ),
+                                        vEnd:=1
+                                     );
+                                     iCounterCons:=iCounterCons+1;
+                                  )
+                            );
+
+                            iCounterCons := iPrDocumentFirstNodeIndex;
+
+                            WHILE(iCounterCons < iConsChildCount,
+                                  BLOCK(
+                                     IF(XMLNODENAME(XMLNODECHILD(iConsigment,iCounterCons))='tci:ProducedDocument',
+                                        BLOCK(
+                                            VAR('iDoc', integer,XMLNODECHILD(iConsigment,iCounterCons));
+                                            iDocCounter := iDocCounter +1;
+                                            APPENDRECORD ('Document_2');
+                                            EDIT ('Document_2');
+                                            SETFIELDVALUE('Document_2',
+                                                          'JOURNAL_MASTER_ID', iJMID,
+                                                          'JOURNAL_CHILD_ID', iTTNCounter,
+                                                          'JOURNAL_CHILD_ID_2', iDocCounter,
+                                                          'JOURNAL_UUID', GENERATEUUID (),
+                                                          'PrDocumentName', XMLNODEVALUE(XMLNODEFIND(iDoc,'cat_ru:PrDocumentName')),
+                                                          'PrDocumentNumber', XMLNODEVALUE(XMLNODEFIND(iDoc,'cat_ru:PrDocumentNumber')),
+                                                          'PrDocumentDate', GetDate(iDoc,'cat_ru:PrDocumentDate'),
+                                                          'DocumentKind', XMLNODEVALUE(XMLNODEFIND(iDoc,'tci:DocumentKind'))
+                                            );
+                                            POST('GOODINFO_2');
+                                        )
+                                     );
+                                     iCounterCons:=iCounterCons+1;
+                                  )
+                            );
+
+                  ),
+              'tci:Seal',
+                  BLOCK(
+                        iSealCounter := iSealCounter + 1;
+                        VAR('iSeal',integer,XMLNODECHILD (XmlTransitInfo, iCounter));
+
+                        APPENDRECORD ('Seal_2');
+                        EDIT ('Seal_2');
+                        SETFIELDVALUE('Seal_2',
+                                      'JOURNAL_MASTER_ID', iJMID,
+                                      'JOURNAL_CHILD_ID', iSealCounter,
+                                      'JOURNAL_UUID', GENERATEUUID (),
+                                      'IdentNumber', XMLNODEVALUE(XMLNODEFIND(iSeal,'tci:IdentNumber')),
+                                      'IdentKind', XMLNODEVALUE(XMLNODEFIND(iSeal,'tci:IdentKind')),
+                                      'IdentDesc', XMLNODEVALUE(XMLNODEFIND(iSeal,'tci:IdentDesc')),
+                                      'Quantity', XMLNODEVALUE(XMLNODEFIND(iSeal,'tci:Quantity'))
+                        );
+                        POST('Seal_2');
+                  )
+              ]
+         ,,
+         );
+         iCounter := iCounter + 1;
+      )
+);
+
+
+CLOSEDATASET ('TD_2');
+CLOSEDATASET ('TTN_2');
+CLOSEDATASET ('Transport_2');
+CLOSEDATASET ('Seal_2');
+
+CLOSEDATASET ('GOODINFO_2');
+CLOSEDATASET ('Document_2');
+
+

@@ -1,0 +1,163 @@
+// *****************************************************************************
+// Название: Корректировка счетчиков и поиск пропусков в номерах документов
+// Описание: Корректировка номеров ДО
+// Кнопка вызова: 1
+// Подпись кнопки: Нумерация
+// *****************************************************************************
+//
+
+Func('LogMessage', Block(
+  Param('sDO_NUM', String, 0),
+), Block(
+  AppendlogFile(sLogFile, '| ' + CENTER(sDO_NUM, 33) + ' | ');
+));
+
+Var('sCurNo', String, '');
+Var('sSQL', String, '');
+
+Var('iCounter', Integer, 0);
+
+Var('iMinNum', Integer, 0);
+Var('iMaxNum', Integer, 0);
+Var('SelType', Integer, 0);
+Var('iDO1Num', Integer, 0);
+
+
+Const('iRecordCount', Integer, 0);
+Const('iCurrentRecord', Integer, 1);
+Const('ProgrItem', Float, 0);
+
+Var('dtBegin', DateTime, DATE());
+Var('dtEnd', DateTime, DATE());
+
+Var('sDateBegin', String, '');
+Var('sDateEnd', String, '');
+
+VAR ('sLogFile', String, TempDirectory() + 'CommChk.log');  { имя файла журнала }
+CreateLogFile(sLogFile);                                    { создание журнала }
+
+Let('selType', CHOICEVARIANT ('Выберите какое действие прозвести', 3, 0, 'Корректировать нумерацию вручную','Корректировать нумерацию автоматически', 'Поиск пропущенных номеров'));
+
+CASE( selType,[0, block(
+                    iDO1Num:= CONVERT(INPUTTEXT ('Номер ДО1', 'Введите номер ДО1'),integer);
+                    WRITEINIFILE ('Docs', 'CurrentBriefDeclNo', iDO1Num, PROGRAMPATH()+'\counters.ini');
+                    WRITEINIFILE ('Docs', 'StartNumber', iDO1Num - 1, PROGRAMPATH()+'\counters.ini');
+                    WRITEINIFILE ('ContractDocNo', 'Default', LEFTPAD (CONVERT(iDO1Num - 1, string), 6, '0'), PROGRAMPATH()+'\counters.ini');
+                  ),
+               1, block(
+                    if(YESNO ('Если другой пользователь создает новый ДО1, счетчики будут скорректированы без учета создаваемого документа. Продолжить?'),
+                         block(
+                           sDateBegin :=CHAR(39) + '01.01.' + FormatDateTime('YYYY', DATE()) + ' 01.01' + CHAR(39);
+                           sDateEnd := CHAR(39) + '31.12.' + FormatDateTime('YYYY', DATE()) + ' 23.59' + CHAR(39);
+                           OPENQUERY ('KR', 'STS_DB', 'SELECT NBD AS DOC_NUM FROM KRD_MAIN ' +
+                                                      'WHERE BD_DATE >= ' + sDateBegin + ' ' +
+                                                      'AND BD_DATE <= ' + sDateEnd + ' ' +
+                                                      'ORDER BY NBD');
+                           LAST('KR');
+                           iMaxNum := CONVERT(KR.DOC_NUM, Integer);
+                           WRITEINIFILE ('Docs', 'CurrentBriefDeclNo', iMaxNum + 1, PROGRAMPATH()+'\counters.ini');
+                           WRITEINIFILE ('Docs', 'StartNumber', iMaxNum, PROGRAMPATH()+'\counters.ini');
+                           WRITEINIFILE ('ContractDocNo', 'Default', LEFTPAD (CONVERT(iMaxNum, string), 6, '0'), PROGRAMPATH()+'\counters.ini');
+                         )
+                    )
+                  ) ,
+               2, block(
+
+                    AppendLogFile(sLogFile, 'Пропущенные номера ДО'),
+                    AppendLogFile(sLogFile, ''),
+
+                                            {         1         2         3         4         5         6         7         8         9          }
+                                            {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+                    AppendLogFile(sLogFile, '-------------------------------------');
+                    AppendLogFile(sLogFile, '|                № ДО               |');
+                    AppendLogFile(sLogFile, '-------------------------------------');
+                    AppendLogFile(sLogFile, '-----------------ДО1------------------');
+
+                    INPUTDATERANGE ('dtBegin', 'dtEnd', 'Выберите диапазон дат');
+
+                    IF(INIFILE ('Database', 'DbmsType', 'PARADOX') = 'MSSQL', Block(
+                      sDateBegin := Trim(CONVERT(ROUND(dtBegin), Integer));
+                      sDateEnd := Trim(CONVERT(ROUND(dtEnd), Integer));
+                    ), Block(
+                      sDateBegin := CHAR(39) + FormatDateTime('DD.MM.YYYY HH:NN', dtBegin) + CHAR(39);
+                      sDateEnd := CHAR(39) + FormatDateTime('DD.MM.YYYY HH:NN', dtEnd) + CHAR(39);
+                    ));
+
+                    ShowProgress('Обработка ДО1...');
+
+                    sSQL := 'SELECT NBD AS DOC_NUM FROM KRD_MAIN ' +
+                                               'WHERE BD_DATE >= ' + sDateBegin + ' ' +
+                                               'AND BD_DATE <= ' + sDateEnd + ' ' +
+                                               'ORDER BY NBD';
+                    OPENQUERY ('KR','STS_DB', sSQL);
+
+
+                    FIRST('KR');
+                    iMinNum := CONVERT(KR.DOC_NUM, Integer);
+                    LAST('KR');
+                    iMaxNum := CONVERT(KR.DOC_NUM, Integer);
+
+                    iRecordCount := iMaxNum;
+                    ProgrItem := CONVERT(iRecordCount, Float)/100.0;
+
+                    iCurrentRecord := iMinNum;
+
+                    WHILE((iCurrentRecord <= iRecordCount)*RECORDCOUNT('KR'), Block(
+                      
+                      sCurNo := LEFTPAD(iCurrentRecord, 8, '0');
+                      IF(LOCATE('KR', 'DOC_NUM', sCurNo) = 0, Block(
+                        LogMessage(sCurNo);
+                        iCounter := iCounter + 1;
+                      ));
+                      SETPROGRESS(iCurrentRecord/ProgrItem);
+                      IF(CANCELPRESSED(), iRecordCount := iCurrentRecord);
+                      iCurrentRecord := iCurrentRecord + 1;
+                    ));
+
+                    SETPROGRESS (100);
+                    HideProgress();
+                    {AppendLogFile(sLogFile, '-----------------ДО2------------------');
+
+                    ShowProgress('Обработка ДО2...');
+
+                    OPENQUERY ('KR', 'STS_DB', 'SELECT RELEASE_NO AS DOC_NUM FROM RELEASE ' +
+                                               'WHERE OUT_DATE >= ' + sDateBegin + ' ' +
+                                                ' AND OUT_DATE <= ' + sDateEnd + ' ' +
+                                               'ORDER BY RELEASE_NO');
+
+                    FIRST('KR');
+                    iMinNum := CONVERT(KR.DOC_NUM, Integer);
+                    LAST('KR');
+                    iMaxNum := CONVERT(KR.DOC_NUM, Integer);
+
+                    iRecordCount := iMaxNum;
+                    ProgrItem := CONVERT(iRecordCount, Float)/100.0;
+
+                    iCurrentRecord := iMinNum;
+
+                    WHILE((iCurrentRecord <= iRecordCount)*RECORDCOUNT('KR'), Block(
+
+                      sCurNo := LEFTPAD(iCurrentRecord, 7, '0');
+
+                      IF(LOCATE('KR', 'DOC_NUM', sCurNo) = 0, Block(
+                        LogMessage(sCurNo);
+                        iCounter := iCounter + 1;
+                      ));
+
+                      SETPROGRESS(iCurrentRecord/ProgrItem);
+                      IF(CANCELPRESSED(), iRecordCount := iCurrentRecord);
+                      iCurrentRecord := iCurrentRecord + 1;
+                    ));
+
+                    SETPROGRESS (100);
+                    HideProgress();}
+                    AppendLogFile(sLogFile, '-------------------------------------');
+
+                    AppendLogFile(sLogFile, '');
+
+                    AppendLogFile(sLogFile, 'Всего: ' + Trim(iCounter));
+
+                    ShowLogFile(sLogFile, 'Пропущенные номера ДО')
+
+                  )],
+);

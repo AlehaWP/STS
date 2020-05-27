@@ -1,0 +1,123 @@
+// *****************************************************************************
+// Название: Проверка фактических сведений
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// *****************************************************************************
+//
+
+Var('factG311', Float, 0);
+Var('factG35', Float, 0);
+Var('factG42', Float, 0);
+Var('factG315C', Float, 0);
+Var('factG315A', Float, 0);
+
+Var('bWasDiff', Boolean, False);
+
+Var('iCounter', Integer);
+Var('iDiffCounter', Integer);
+
+//Взяли из ini-шника "Только таможенные документы учета"
+Const('CustomDocsOnly', Integer, CONVERT(IniFile('RegBook', 'CustomsDocsOnly', '0'), Integer));
+//Включена ли настройка "Совместимость с АИСТом", 1-да, 0-нет
+Const('AistCompatible', Integer, CONVERT(IniFile('Docs', 'AistCompatible', '0'), Integer));
+//Отключен ли блок складских документов
+Const('StoreDocsBlock', Integer, CONVERT(IniFile('Database', 'StoreDocsBlock', '0'), Integer));
+//Флаг использования складских документов
+Const('bUseStoreDocs', Boolean, (StoreDocsBlock = 1)*((AistCompatible = 1)|((AistCompatible = 0)*(CustomDocsOnly = 0))));
+
+FUNC('GetFactData', Block(
+  Param('iPlaceId', Integer, 0),
+  Param('iId', Integer, 1),
+  Param('iG32', Integer, 2),
+), Block(
+  factG311 := 0; factG35 := 0; factG42 := 0; factG315C := 0; factG315A := 0;
+  IF(bUseStoreDocs, Block(
+    IF(FINDKEY('IN_COMM_2', [iPlaceId, iId, iG32]), Block(
+      factG311 := IN_COMM_2.G311;
+      factG35 := IN_COMM_2.G35;
+      factG42 := IN_COMM_2.G42;
+      factG315C := IN_COMM_2.G315C;
+      factG315A := IN_COMM_2.G315A;
+    ), Block(
+      factG311 := KRD_COMM.G311;
+      factG35 := KRD_COMM.G35;
+      factG42 := KRD_COMM.G42;
+      factG315C := KRD_COMM.G315C;
+      factG315A := KRD_COMM.G315A;
+    ));
+  ), Block(
+    factG311 := KRD_COMM.FACT_G311;
+    factG35 := KRD_COMM.FACT_G35;
+    factG42 := KRD_COMM.FACT_G42;
+    factG315C := KRD_COMM.FACT_G315C;
+    factG315A := KRD_COMM.FACT_G315A;
+  ));
+)),
+
+if(BOOKOPENED() < 1, RAISEEXCEPTION('Книга учета закрыта'));
+
+VAR ('sLogFile', String, TempDirectory() + 'CommChk.log');  { имя файла журнала }
+CreateLogFile(sLogFile);                                    { создание журнала }
+
+IF(bUseStoreDocs, Block(
+  AppendLogFile(sLogFile, 'В качестве фактической информации используются данные актов приемки.');
+  AppendLogFile(sLogFile, '');
+));
+                        {         1         2         3         4         5         6         7         8         9          }
+                        {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------'),
+AppendLogFile(sLogFile, '|                           | № по книге |    №    |          Тип            |               Расхождение            |'),
+AppendLogFile(sLogFile, '|     № документа учета     |    учета   |  товара |       информации        |--------------------------------------|'),
+AppendLogFile(sLogFile, '|                           |            |         |                         |   По документам   |    Фактически    |'),
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------'),
+
+Func('LogMessage', Block(
+  Param('sInfoType', String, 0),
+  Param('sDocInfo', String, 1),
+  Param('sFactInfo', String, 2),
+),        { функция для вывода строки в журнал }
+  AppendlogFile(sLogFile, '| ' + RightPad(KRD_MAIN.NBD, 25, ' ') + ' | ' + CENTER(KRD_MAIN.STORE_DOC_NO, 10) + ' | ' + CENTER(KRD_COMM.G32, 7) + ' | ' + CENTER(sInfoType, 23) + ' | ' +
+    CENTER(sDocInfo, 18) + '|' + CENTER(sFactInfo, 18) + '|')
+),
+
+ShowInformation ('Обработка документов...'),
+FIRST('KRD_MAIN');                                                 { переход на первый документ книги учета }
+WHILE ((EOF('KRD_MAIN') = 0) & (StopPressed() = 0), BLOCK (        { цикл по документам книги учета }
+  FIRST ('KRD_COMM'),                                              { переход на первый товар }
+  WHILE (EOF ('KRD_COMM') = 0, BLOCK (                             { цикл по товарам }
+    GetFactData(KRD_COMM.PLACEID, KRD_COMM.ID, KRD_COMM.G32);
+    IF (ABS(KRD_COMM.G311 - factG311) > 0.000001, { проверка количества мест }
+      LogMessage('Количество мест', FormatFloat('0.##', KRD_COMM.G311), FormatFloat('0.##', factG311))
+    ),
+    IF (ABS(KRD_COMM.G35 - factG35) > 0.000001,   { проверка веса брутто }
+      LogMessage('Вес брутто', FormatFloat('0.######', KRD_COMM.G35), FormatFloat('0.######', factG35))
+    ),
+    IF (ABS(KRD_COMM.G42 - factG42) > 0.000001,   { проверка фактурной стоимости }
+      LogMessage('Фактурная стоимость', FormatFloat('0.###', KRD_COMM.G42), FormatFloat('0.###', factG42))
+    ),
+    IF (ABS(KRD_COMM.G315C - factG315C) > 0.000001, { проверка физического объема}
+      LogMessage('Физический объем', FormatFloat('0.##', KRD_COMM.G315C), FormatFloat('0.##', factG315C))
+    ),
+    IF (ABS(KRD_COMM.G315A - factG315A) > 0.000001, { проверка кол-ва в доп. ед. изм. }
+      LogMessage('Кол-во в доп. ед. изм.', FormatFloat('0.##', KRD_COMM.G315A), FormatFloat('0.##', factG315A))
+    ),
+    IF ((ABS(KRD_COMM.G311 - factG311) > 0.000001)|(ABS(KRD_COMM.G35 - factG35) > 0.000001)|(ABS(KRD_COMM.G42 - factG42) > 0.000001)|
+        (ABS(KRD_COMM.G315C - factG315C) > 0.000001)|(ABS(KRD_COMM.G315A - factG315A) > 0.000001), Block(
+      bWasDiff := True;
+    ));
+    NEXT('KRD_COMM');                                      { переход на следующий товар }
+  ));
+  iCounter := iCounter + 1;
+  IF(bWasDiff, Block(
+    AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------'),
+    iDiffCounter := iDiffCounter + 1;
+  ));
+  bWasDiff := False;
+  NEXT ('KRD_MAIN')                                       { переход на следующий документ книги учета }
+));
+
+AppendLogFile(sLogFile, CHAR(13) + 'Проверено документов: ' + Trim(iCounter) + CHAR(13) + 'Обнаружено документов с несоответствиями: ' + Trim(iDiffCounter));
+
+HideInformation (),
+if (StopPressed() = 0, ShowLogFile(sLogFile, 'Проверка фактических сведений'))

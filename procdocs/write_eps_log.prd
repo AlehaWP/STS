@@ -1,0 +1,207 @@
+// *****************************************************************************
+// Название: добавление записи в журнал регистрации сообщений
+// Описание: добавление записи в журнал регистрации сообщений
+// Кнопка вызова: 0
+// Подпись кнопки: WriteEpsLog
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+EXECUTESCRIPT ('PROCDOCS\sql_insert.prd');
+EXECUTESCRIPT ('PROCDOCS\writelog.prd');
+
+
+FUNC ('QuoteDateTime',
+  Block(
+    PARAM ('pDate', DateTime, 0);
+    PARAM ('pDbName', String, 1, 'dbJournals');
+    PARAM ('pIsQuery', Integer, 2, 1);
+  ),
+  Block(
+    DBFORMATDATETIME (pDate, GETDATABASETYPE (pDbName), 1, pIsQuery, 1);
+  )
+), // FUNC - QuoteDateTime
+
+
+FUNC ('QuoteDate',
+  Block(
+    PARAM ('pDate', DateTime, 0);
+    PARAM ('pDbName', String, 1, 'dbJournals');
+    PARAM ('pIsQuery', Integer, 2, 1);
+  ),
+  Block(
+    DBFORMATDATETIME (pDate, GETDATABASETYPE (pDbName), 0, pIsQuery, 1);
+  )
+), // FUNC - QuoteDateTime
+
+
+FUNC ('WriteEpsLog',
+  Block(
+    PARAM ('pPlaceId',     Integer, 0, 9999);
+    PARAM ('pId',          Integer, 1, 0);
+    PARAM ('pCounter',     Integer, 2, 0);
+    PARAM ('pDocumentId',  String,  3, '');
+    PARAM ('pDocType',     String,  4, '');
+    PARAM ('pDocNo',       String,  5, '');
+    PARAM ('pDocDate',     String,  6, 'NULL');
+    PARAM ('pDocStatus',   String,  7, '');
+    PARAM ('pRegDate',     String,  8, Date() + Time(1));
+    PARAM ('pJourGUID',    String,  9, GENERATEUUID ());
+    PARAM ('pSubStatus',   String,  10, '');
+    PARAM ('pFileName',    String,  11, '');
+    PARAM ('pReaded',      Integer, 12, 1);
+    PARAM ('pDODT',        String,  13, Date() + Time(1));
+    PARAM ('pRecordType',  String,  14, 0);
+  ),
+  Block(
+    IF (LENGTH (TRIM (pDocStatus)) > 0,
+      Block(
+
+        sSQL := 'SELECT' +
+                ' LICENCENO, LICENCEDATE' +
+                ' FROM STORES' +
+                ' WHERE' +
+                ' PLACEID=' + pPlaceId;
+        OPENQUERY ('qLicence', 'STS_DB', sSQL, 1);
+
+        IF ((GETDATABASETYPE ('dbJournals') = 'Paradox') | (INIFILE ('RMF', 'OldSQLServer', 0)),
+          Block(
+            TRYEXCEPT (
+              Block(
+
+{
+                VAR ('iJournalMasterId', Integer, GENFIELDVALUE ('EPS_LOG.JOURNAL_MASTER_ID'));
+                GENFIELDVALUE(Имя поля [, Ключевые поля, Значения ключевых полей]);
+}
+{
+                VAR ('iJournalMasterId', Integer, 1);
+
+                OPENQUERY ('qJournalMasterId', 'dbJournals', sSQL, 1);
+                iJournalMasterId := qJournalMasterId.MAX_ID + 1;
+
+                sSQL := 'INSERT INTO EPS_LOG' +
+                        ' (JOURNAL_MASTER_ID,PLACEID,ID,COUNTER,DOCUMENTID,' +
+                        'DOCTYPE,DOCNO,DOCDATE,DOCSTATUS,REGDATE,' +
+                        'LICENCENO,LICENCEDATE,JOURGUID,SUBSTATUS,FILENAME,' +
+                        'READED,DODT,USERLOGIN)' +
+                        ' VALUES' +
+                        ' (' + iJournalMasterId +
+                        ',' + pPlaceId +
+                        ',' + pId +
+                        ',' + pCounter +
+                        ',' +char(39)+ pDocumentId +char(39)+
+                        ',' +char(39)+ pDocType +char(39)+
+                        ',' +char(39)+ pDocNo +char(39)+
+                        ', NULL' +
+                        ',' +char(39)+ pDocStatus +char(39)+
+                        ', NULL' +
+                        ',' +char(39)+ qLicence.LICENCENO +char(39)+
+                        ', NULL' +
+                        ',' +char(39)+ pJourGUID +char(39)+
+                        ',' +char(39)+ pSubStatus +char(39)+
+                        ',' +char(39)+ pFileName +char(39)+
+                        ',' +char(39)+ pReaded +char(39)+
+                        ', NULL' +
+                        ',' +char(39)+ USERINFO ('', 'UserLogin') +char(39)+
+                        ')';
+                EXECUTESQL ('dbJournals', sSQL);
+
+                sSQL := 'UPDATE EPS_LOG' +
+                        ' SET' +
+                        ' DOCDATE=' + IF (pDocDate = 'NULL', pDocDate, QuoteDate (pDocDate)) +
+                        ', REGDATE=' + QuoteDateTime (pRegDate) +
+                        ', LICENCEDATE=' + IF (FIELDISNULL ('qLicence', 'LICENCEDATE'), 'NULL', QuoteDate (qLicence.LICENCEDATE))+
+                        ', DODT=' + QuoteDateTime (pDODT) +
+                        ', CREATED_AT=' + QuoteDateTime(Date()+Time(1)) +
+                        ' WHERE JOURNAL_MASTER_ID=' + iJournalMasterId;
+                EXECUTESQL ('dbJournals', sSQL);
+}
+
+                PrepareInsert2 ();
+                Insert2 ('CREATED_AT', Date()+Time(1), 2);
+                Insert2 ('DODT', pDODT, 2);
+                Insert2 ('USERLOGIN', USERINFO ('', 'UserLogin'));
+                Insert2 ('READED', pReaded);
+                Insert2 ('FILENAME', pFileName);
+                Insert2 ('SUBSTATUS', pSubStatus);
+                Insert2 ('LICENCEDATE', qLicence.LICENCEDATE, 2);
+                Insert2 ('LICENCENO', qLicence.LICENCENO);
+                Insert2 ('REGDATE', pRegDate, 2);
+                Insert2 ('DOCSTATUS', pDocStatus);
+                Insert2 ('DOCDATE', pDocDate, 2);
+                Insert2 ('DOCNO', pDocNo);
+                Insert2 ('DOCTYPE', pDocType);
+                Insert2 ('DOCUMENTID', pDocumentId);
+                Insert2 ('PLACEID', pPlaceId, 1);
+                Insert2 ('ID', pId, 1);
+                Insert2 ('COUNTER', pCounter, 1);
+                Insert2 ('JOURGUID', GENERATEUUID ());
+                IF (FIELDEXISTS ('EPS_LOG', 'RECORD_TYPE'),
+                  Block(
+                    Insert2 ('RECORD_TYPE', pRecordType, 1);
+                  )
+                );
+
+                sSQL := 'SELECT' +
+                        ' MAX(JOURNAL_MASTER_ID) AS M' +
+                        ' FROM EPS_LOG';
+                OPENQUERY ('qEpsLog', 'dbJournals', sSQL, 1);
+                Insert2 ('JOURNAL_MASTER_ID', (1 + CONVERT (qEpsLog.M, Integer)), 1);
+                Insert2 ('', '', 0, 'EPS_LOG');
+                CLOSEDATASET ('qJournalMasterId');
+
+              ),
+              Block(
+                WriteLog ('EPSLOG', EXCEPTIONMESSAGE ());
+              )
+            ); // TRYEXCEPT
+          ),
+          Block(
+            sSQL := 'INSERT INTO EPS_LOG' +
+                    ' (JOURNAL_MASTER_ID,PLACEID,ID,COUNTER,DOCUMENTID,' +
+                    'DOCTYPE,DOCNO,DOCDATE,DOCSTATUS,REGDATE,' +
+                    'LICENCENO,LICENCEDATE,JOURGUID,SUBSTATUS,FILENAME,' +
+                    'READED,DODT,USERLOGIN' +
+                    IF (FIELDEXISTS ('EPS_LOG', 'RECORD_TYPE'), ',RECORD_TYPE', '') +
+                    ')' +
+                    ' VALUES' +
+                    ' (CASE WHEN (SELECT MAX(JOURNAL_MASTER_ID) FROM EPS_LOG) IS NULL THEN 1 ELSE (SELECT (MAX(JOURNAL_MASTER_ID)+1) FROM EPS_LOG) END' +
+                    ',' + pPlaceID +
+                    ',' + pID +
+                    ',' + pCounter +
+                    ',' +char(39)+ pDocumentID +char(39)+
+                    ',' +char(39)+ pDocType +char(39)+
+                    ',' +char(39)+ pDocNo +char(39)+
+                    ', ' + IF (pDocDate = 'NULL', pDocDate, QuoteDateTime (pDocDate)) +
+                    ',' +char(39)+ pDocStatus +char(39)+
+                    ', ' + IF (LENGTH (pRegDate) = 0, 'NULL', QuoteDateTime (pRegDate)) +
+                    ',' +char(39)+ qLicence.LICENCENO +char(39)+
+                    ', ' + IF (FIELDISNULL ('qLicence', 'LICENCEDATE'), 'NULL', QuoteDate (qLicence.LICENCEDATE)) +
+                    ',' +char(39)+ pJourGUID +char(39)+
+                    ',' +char(39)+ pSubStatus +char(39)+
+                    ',' +char(39)+ pFileName +char(39)+
+                    ',' +char(39)+ pReaded+char(39)+
+                    ', ' + IF (LENGTH (pDODT) = 0, 'NULL', QuoteDate (pDODT)) +
+                    ',' +char(39)+ USERINFO ('', 'UserLogin') +char(39)+
+                    IF (FIELDEXISTS ('EPS_LOG', 'RECORD_TYPE'), ',' + pRecordType, '') +
+                    ')';
+            TRYEXCEPT (
+              Block(
+                EXECUTESQL ('dbJournals', sSQL);
+              ),
+              Block(
+                WriteLog ('EPSLOG', EXCEPTIONMESSAGE ());
+              )
+            ); // TRYEXCEPT
+
+          )
+        ); // IF
+
+        CLOSEDATASET ('qLicence');
+      )
+    ); // IF
+  )
+), // FUNC - WriteEpsLog

@@ -1,0 +1,219 @@
+// *****************************************************************************
+// Название: Обмен ДО1
+// Описание: Обмен ДО1
+// Кнопка вызова: 1
+// Подпись кнопки: Обмен ДО1
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+FUNC('ReadXML',,
+     BLOCK(
+          //VAR('sDirPath', string, INIFILE ('DO1_AUTO', 'DirectoryPath', ''));
+          //IF (sDirPath='',BLOCK(GetDir();sDirPath:=INIFILE ('DO1_AUTO', 'DirectoryPath', '')));
+          VAR('sDirPath', string, '');
+          IF (SELECTDIRECTORY ('sDirPath'),, RAISEEXCEPTION ('Выполнение отменено'));
+
+          VAR('mFileList', Memo, GETFILELIST(sDirPath, '*.xml', '|'));
+          VAR('iTotalFile', integer, 0);
+          VAR('iCount', integer, 0);
+          VAR('sDOFileName', string, '');
+          VAR('sXMLName', string, '');
+          VAR('sTemp', string,'');
+          // кол-во файлов в папке
+          iTotalFile := SPLITSTR (mFileList, '|', sTemp);
+          // счетчик
+          iCount := 1;
+          SHOWPROGRESS ('Поиск ДО'+convert(VidDO,string)+' для привязки ID из СОЛВО. Дождитесь окончания');
+          //ShowMessage(1);
+          While ( iCount <= iTotalFile,
+                Block(
+                      sDOFileName := EXTRACTSTR (mFileList, iCount, '|');
+                      sXMLName := sDOFileName;
+                      VAR ('XMLDOC', Integer, XMLDOCUMENTCREATE());
+                      XMLDOCUMENTLOAD(XMLDOC, sDirPath+sDOFileName);
+                      VAR ('iRoot', Integer, XMLDOCUMENTROOT (XMLDOC));
+
+                      VAR('Report',integer, XMLNODECHILD(iRoot,0));
+                      VAR('Attachment',integer,XMLNODEFIND(Report,'Attachment') );
+                      VAR('sReportType',integer,XMLNODEVALUE(XMLNODEFIND(Attachment, 'ReportType')) );
+                      //ShowMessage(sDirPath+sDOFileName);
+
+                      ReadDO1();
+
+                      iCount := iCount + 1;
+                      SETPROGRESS (iCount, 100, iTotalFile);
+                )
+          );
+          HIDEPROGRESS ();
+          iTotalFile
+     )//FUNC READXML BLOCK
+),
+
+FUNC('ReadDO1',,
+     BLOCK(
+            //Отправитель XML : Солво = 0, ТОС Бронка = 1
+            VAR('iSender', integer, 0);
+
+            VAR ('sSource', string , '');
+            IF (XMLNODEFIND(Report, 'Source'), sSource := XMLNODEVALUE(XMLNODEFIND(Report, 'Source')));
+            IF ( sSource = 'Bronka', iSender := 1);
+
+            VAR('Vessel',integer,XMLNODEFIND(Attachment, 'Vessel') );
+
+
+            VAR ('vID', Integer);
+            VAR ('vPlaceID', Integer);
+            VAR ('sSQL', String, '');
+
+            //ID системы солво
+            VAR ('vCustRepID', Integer,XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'CustRepId')));
+            VAR ('vBillID', Integer, XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND(Attachment, 'Bill'),'BillID')));
+            VAR ('vVesID', Integer,XMLNODEVALUE(XMLNODEFIND(Vessel, 'VesID')));
+            VAR ('vContID', Integer,0);
+            VAR ('vGoodID', Integer);
+
+            OPENQUERY('FIND_STS_ID', 'STSDB', 'SELECT PLACEID, ID FROM  KRD_SOLVOID WHERE CUSTREPID='+vCustRepID + ' AND SENDER='+iSender);
+            IF(FIELDISNULL('FIND_STS_ID', 'ID'),
+               BLOCK(
+                    VAR('Bill',integer,XMLNODEFIND(Attachment, 'Bill'));
+                    VAR('sBillNo', string, XMLNODEVALUE(XMLNODEFIND(Bill,'BillNumber')));//=KR_PAPER PAPERNO
+                    VAR('sBillDate', string, XMLNODEVALUE(XMLNODEFIND(Bill,'BillDate'))); //=KR_PAPER PAPERDATE
+                    VAR('Containers', integer, XMLNODEFIND(Attachment, 'Containers'));
+                    VAR('vContCount', integer, XMLNODECHILDCOUNT (Containers));
+                    VAR('vContCounter', integer, 0);
+                    VAR('vG32', integer, 0);
+                    VAR('nCont', integer, 0);
+
+                    OPENQUERY ('FIND_ID', ' SELECT KP.PLACEID, KP.ID, KS.ID as IDSOLV FROM KR_PAPER KP LEFT JOIN KRD_SOLVOID KS ON(KP.ID=KS.ID) '+
+                                          ' WHERE KS.ID IS NULL AND KP.PAPERNO='+char(39)+'sBillNo'+char(39)+
+                                          ' AND KR.PAPERDATE='+char(39)+'sBillDate'+char(39), 'STSDB');
+                    IF (FIELDISNULL('FIND_ID', 'ID'), vContCount:=0,
+                       BLOCK(
+                             vPlaceid = FIND_ID.PLACEID;
+                             vID = Find_ID.ID;
+                             showmessage(vID);
+
+                       )
+                    );
+                    WHILE(vContCounter<vContCount,
+                          BLOCK(
+                                VAR('AcceptanceContainer', integer, XMLNODECHILD(Containers, vContCounter));
+                                VAR ('sContNo', string,'');
+                                VAR('nCont_TTN',integer);
+                                vContID := 0;
+                                IF (XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContID')) <> '', vContID := XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContID')));
+
+                                if (vContID <> 0,
+                                    BLOCK(
+                                          nCont := nCont + 1;
+                                          sContNo := XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContNumber')); //KRD_CONT CONTNO
+                                          nCont_TTN:= XMLNODEVALUE(XMLNODEFIND(AcceptanceContainer,'ContNumberBill')); //KRD_CONT N_CONT
+
+                                    )
+                                );
+
+                                VAR('Goods', integer, XMLNODEFIND(AcceptanceContainer, 'Goods'));
+                                VAR('vGoodsCount', integer, XMLNODECHILDCOUNT (Goods));
+                                VAR('vGoodsCounter', integer, 0);
+                                WHILE(vGoodsCounter<vGoodsCount,
+                                      BLOCK(
+                                            VAR('AcceptanceGood', integer,XMLNODECHILD(Goods, vGoodsCounter));
+                                            vGoodID := XMLNODEVALUE(XMLNODEFIND(AcceptanceGood,'GoodID'));
+                                            vG32 := vG32 + 1;
+
+                                            {EXECUTESQL('STSDB',
+                                                       'INSERT INTO KRD_SOLVOID '+
+                                                       '( '+
+                                                       'PLACEID, '+//1
+                                                       'ID, '+//2
+                                                       'CUSTREPID, '+//3
+                                                       'G32, '+//4
+                                                       'GOODID, '+//5
+                                                       'TOVINCONT, '+//6
+                                                       'TOVINTTN, '+//7
+                                                       'CONTID, '+//8
+                                                       'CONTCOUNTER, '+//9
+                                                       'CONTINTTN, '+//10
+                                                       'TTNCOUNTER, '+//11
+                                                       'VESID, '+//12
+                                                       'BILLID, '+//13
+                                                       'EXPDO1, '+//14
+                                                       'SENDER, ' + //15
+                                                       'XMLNAME '+//16
+                                                       ') '+
+                                                       'VALUES '+
+                                                       '('+
+                                                       vPLACEID+','+//1
+                                                       vID+','+//2
+                                                       vCustRepID+','+//3
+                                                       vG32+','+//4
+                                                       vGoodID+','+//5
+                                                       nCont+','+//6
+                                                       '1,'+//7
+                                                       vContID+','+//8
+                                                       if (vContID <> 0, nCont, 'NULL')+','+//9
+                                                       if (vContID <> 0, nCont_TTN, 'NULL')+','+//10
+                                                       '1,'+//11
+                                                       vVesID+','+//12
+                                                       vBillID+','+
+                                                       '0,'+
+                                                       iSender + ','+
+                                                       char(39)+sXMLName+char(39)+
+                                                       ')'
+                                            );
+                                            }
+                                            vGoodsCounter := vGoodsCounter + 1;
+                                      )//BLOCK(WHILE(vGoodsCounter<vGoodsCount,
+                                );//WHILE(vGoodsCounter<vGoodsCount,
+                                vContCounter := vContCounter + 1;
+
+                          )//BLOCK(//WHILE(vContCounter<vContCount,
+                    );//WHILE(vContCounter<vContCount,
+                    //DELETEFILE(sDirPath+sDOFileName);
+
+               )
+            );
+     )
+),//FUNC('ReadDO1',,
+
+//------------------------------------------------------------------------------Старт--------------------------------------------------------------------------------------------------------------------------------------------------
+EXECUTESCRIPT (procPath+'OpenDB.prd'); // Подключение к БД ВЭД-Склад, СТМ-Журналы
+
+//Просматрииваем и читаем ДО1 из каталога обмена
+ReadXML();
+EXECUTESCRIPT(PROGRAMPATH() + 'PROCDOCS\ExportRegInfo.prd');
+EXECUTESCRIPT(PROGRAMPATH() + 'PROCDOCS\CheckDublNum.prd');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

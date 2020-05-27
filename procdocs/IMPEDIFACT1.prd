@@ -1,0 +1,904 @@
+// *****************************************************************************
+// Название: Импорт из Манифеста(CUSCAR)
+// Описание: Импорт из формата EDIFACT
+// Кнопка вызова: 1
+// Подпись кнопки: Манифест
+// *****************************************************************************
+//
+VAR ('vTmpID', Integer, 0);
+VAR ('sOtprav', String);
+VAR ('sPoluch', String);
+VAR ('sOtprav', String);
+VAR ('sOtpravAdress', String);
+VAR ('vPaperNo', String);
+VAR ('vContNo', String);
+VAR ('sTransp', String);
+VAR ('sPoluchAdress', String);
+VAR ('vContWeight', Integer, 0);
+VAR ('vBrutto', Integer, 0);
+VAR ('vNetto', Integer, 0);
+VAR ('vVesTov', Integer, 0);
+VAR ('CurrentFilter', String, '');
+VAR ('sSQL', Memo, '');
+VAR ('sFilePath', String, 'C:\STS_TMP\');
+VAR ('sFileName', String);
+VAR ('i', Integer, 1);
+VAR ('iRecCount', Integer, 0);
+  VAR ('vPlaceId', Integer);
+  VAR ('vID', Integer);
+  VAR ('vMainId', Integer);   {текущие значения соотв. полей}
+  VAR ('vGN', Integer, 0);
+  VAR ('vPartNo', Integer);
+  VAR ('vNBD', String);
+  VAR ('vNu', String);
+  VAR ('vCounter', Integer);
+VAR ('isNewTTN', Boolean, True);
+VAR ('vG32', Integer, 1);
+VAR ('vContCOUNTER', Integer, 1);
+VAR ('dtDODate', DateTime);
+VAR ('dtStoreDate', DateTime);
+VAR ('vStorePeriod', Integer, 1);
+VAR ('dtBegkeep', DateTime);
+VAR('vFtov', integer, 0);
+VAR('vG144', string);
+VAR('vG142', string);
+VAR('vG143', string);
+VAR('vG1440', string);
+VAR('dG145', DateTime);
+VAR('sNBD', string);
+
+FUNC ('ClearTMP_BD', ,
+  Block(
+    DELETEFILE (sFilePath+'tmpMAIN.DBF');
+    DELETEFILE (sFilePath+'tmpEdifact.DBF');
+    DELETEFILE (sFilePath+'tmpCOMM.DBF');
+    DELETEFILE (sFilePath+'tmpPAPERS.DBF');
+    DELETEFILE (sFilePath+'tmpCONT.DBF');
+    DELETEFILE (sFilePath+'tmpTRANSP.DBF');
+  );
+), {FUNC - ClearTMP_BD() }
+
+Func('isLeapYear',
+  Param('iYear', Integer, 0),
+Block(
+  (MOD(iYear, 4) = 0) * ((MOD(iYear, 400) = 0) | (MOD(iYear, 100) <> 0))
+));
+
+Func('DaysInMonth', Block(
+  Param('sYear', String, 0),
+  Param('sMonth', String, 1)
+),
+Block(
+  Var('iYear', Integer, CONVERT (sYear, Integer));
+  Var('iMonth', Integer, CONVERT (sMonth, Integer));
+  CASE (iMonth,
+    [1, 31,
+     2, IF(isLeapYear(iYear), 29, 28),
+     3, 31,
+     4, 30,
+     5, 31,
+     6, 30,
+     7, 31,
+     8, 31,
+     9, 30,
+     10, 31,
+     11, 30,
+     12, 31],
+    30)
+));
+
+Func('AddMonths', Block(
+  Param('dtDate', DateTime, 0),
+  Param('fMonths', Float, 1)
+), Block(
+  Var('dtResult', DateTime);
+
+  Var('iYear', Integer, CONVERT(FORMATDATETIME ('YYYY', dtDate), Integer));
+  Var('iMonth', Integer, CONVERT(FORMATDATETIME ('MM', dtDate), Integer));
+  Var('iDay', Integer, CONVERT(FORMATDATETIME ('DD', dtDate), Integer));
+
+  Var('fMonthPart', Float, 0);
+
+  // Прибавляем целое кол-во месяцев без учета годов в общем числе месяцев
+  iMonth := iMonth + MOD(TRUNC(fMonths), 12);
+  
+  // Прибавляем кол-во лет
+
+  iYear := iYear + TRUNC(fMonths) / 12;
+  //showmessage(iYear);
+
+  // Прибавим год, если есть переход
+  IF(iMonth > 12, iMonth := iMonth - 12);
+
+  // Проверяем последние числа месяца, если надо - выравниваем
+  IF(iDay > DaysInMonth(Trim(iYear), Trim(iMonth)),
+    iDay := DaysInMonth(Trim(iYear), Trim(iMonth))
+  );
+
+  // Прибавляем кусок месяца, если надо
+  IF(CONVERT(TRUNC(fMonths), Float) < fMonths, Block(
+    // Доля остатка дней до конца месяца в общем числе дней месяца
+    fMonthPart := 1 - CONVERT(iDay, Float) / CONVERT(DaysInMonts(Trim(iYear), Trim(iMonth)), Float);
+
+    // Если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+    // прибавляемую долю уменьшим на остаток дней в предыдущем месяце
+    IF(FRAC(fMonths) > fMonthPart, Block(
+      iMonth := iMonth + 1;
+      IF(iMonth > 12,
+        iYear := iYear + 1
+      );
+      fMonthPart := FRAC(fMonths) - fMonthPart;
+    ),
+      fMonthPart := FRAC(fMonths)
+    );
+//showmessage('iDay='+iDay+CHAR(13)+'fMounthPart='+fMounthPart+CHAR(13)+'DaysinMounth='+DaysinMonth(Trim(iYear), Trim(iMonth)));
+    iDay := iDay + TRUNC(fMonthPart * CONVERT(DaysinMonth(Trim(iYear), Trim(iMonth)), Float));
+    IF(iDay > DaysinMonth(Trim(iYear), Trim(iMonth)),
+      iDay := iDay - DaysinMonth(Trim(iYear), Trim(iMonth))
+    );
+  ));
+if(imonth <= 2 , iYear := iYear + 1);
+  ENCODEDATE(iYear, iMonth, iDay)
+));
+
+//СОЗДАНИЕ ВРЕМЕННЫХ DBF-ФАЙЛОВ ================================================
+FUNC ('CreateDBF', ,
+  Block(
+    //sFilePath := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ());
+    sFilePath := 'C:\STS_TMP\';
+  //создаём tmpMAIN
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sFilePath);
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpMAIN.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'tmpID INT, ';
+      sSQL := sSQL + 'G022 CHAR(254), ';
+      sSQL := sSQL + 'G023 CHAR(254), ';
+      sSQL := sSQL + 'G082 CHAR(254), ';
+      sSQL := sSQL + 'G083 CHAR(254), ';
+      sSQL := sSQL + 'PART_NO CHAR(254), ';
+      sSQL := sSQL + 'PART_MODE CHAR(254), ';
+      sSQL := sSQL + 'SHIP_NAME CHAR(254) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+   //Создаем tmpEdifact
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sFilePath);
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpEdifact.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'Col1 CHAR(254), ';
+      sSQL := sSQL + 'Col2 CHAR(254), ';
+      sSQL := sSQL + 'Col3 CHAR(254), ';
+      sSQL := sSQL + 'Col4 CHAR(254), ';
+      sSQL := sSQL + 'Col5 CHAR(254), ';
+      sSQL := sSQL + 'Col6 CHAR(254), ';
+      sSQL := sSQL + 'Col7 CHAR(254), ';
+      sSQL := sSQL + 'Col8 CHAR(254), ';
+      sSQL := sSQL + 'Col9 CHAR(254), ';
+      sSQL := sSQL + 'Col10 CHAR(254) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  //создаём tmpCOMM
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpCOMM.DBF'+CHAR(39)+' ';
+    sSQL := sSQL + '(';
+      sSQL := sSQL + 'tmpID INT, ';
+      sSQL := sSQL + 'G32 INTEGER, ';
+      sSQL := sSQL + 'GN INTEGER, ';
+      sSQL := sSQL + 'G35 INT, ';
+      sSQL := sSQL + 'G312 CHAR(254), ';
+      sSQL := sSQL + 'ContNo CHAR(254) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  //создаём tmpPAPERS
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpPAPERS.DBF'+CHAR(39)+' ';
+    sSQL := sSQL + '(';
+      sSQL := sSQL + 'tmpID INT, ';
+      sSQL := sSQL + 'PAPERNAME CHAR(254), ';
+      sSQL := sSQL + 'PAPERNO CHAR(254), ';
+      sSQL := sSQL + 'PAPERCODE CHAR(254)';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  //создаём tmpCONT
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpCONT.DBF'+CHAR(39)+' ';
+    sSQL := sSQL + '(';
+      sSQL := sSQL + 'COUNTER INT, ';
+      sSQL := sSQL + 'PLOMB CHAR(254), ';
+      sSQL := sSQL + 'CONTNO CHAR(254), ';
+      sSQL := sSQL + 'G35 INT, ';
+      sSQL := sSQL + 'G38 INT ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  //создаём tmpTRANSP
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpTRANSP.DBF'+CHAR(39)+' ';
+    sSQL := sSQL + '(';
+//      sSQL := sSQL + 'TRANSP_CODE CHAR(254), ';  //максимальный размер имени поля 10 символов, дальше обрезается
+      sSQL := sSQL + 'TRANSP_COD CHAR(254), ';
+      sSQL := sSQL + 'CARNO CHAR(254), ';
+      sSQL := sSQL + 'NTRAILER CHAR(254) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  );
+), {FUNC - CreateDBF() }
+
+FUNC('WriteTmpEdifact',,
+  while( (length(sStr1)>0)*((n<10)*(end_str1<>1)),
+    block(
+      if(STRPOS('+', sStr1)>0,
+         Block(
+           sCol:= Copy(sStr1, 1, STRPOS('+', sStr1)-1);
+           sStr1:= Delete(sStr1, 1, STRPOS('+', sStr1));
+           n:=n+1;
+         ),
+         block(
+           sCol:=Copy(sStr1, 1, STRPOS(char(39), sStr1)-1);
+           n:=n+1;
+           end_str1:=1;
+         )
+      );
+      If(n=1,APPENDRECORD ('tmpEdifact'),);
+      EDITRECORD ('tmpEdifact');
+      SETFIELDVALUE ('tmpEdifact',
+                     'Col'+ n, sCol
+      );
+      POSTRECORD ('tmpEdifact');
+    )
+  );
+),
+
+//ЗАПИСЫВАЕМ в tmpMAIN =========================================================
+FUNC ('WriteTmpMAIN',
+  PARAM ('Accessory', string, '')  ,
+  Block(
+    CASE (Accessory,
+     ['CZ',
+          Block(
+            IF(STRPOS (':', Edifact.Col4) = 0,
+              Block(
+                sOtprav := Removechar (Edifact.Col4,char(39));
+                sOtpravAdress := '';
+              ),
+              Block(
+                sOtprav:=COPY (Edifact.Col4, 1, STRPOS (':', Edifact.Col4)-1);
+                sOtpravAdress := Removechar (Delete(Edifact.Col4, 1, STRPOS (':', Edifact.Col4)), char(39));
+              )
+            );
+            APPENDRECORD ('tmpMAIN');
+            EDITRECORD ('tmpMAIN');
+            SETFIELDVALUE ('tmpMAIN',
+                           'G022', sOtprav,
+                           'tmpID', vTmpID,
+                           'PART_NO', vTmpID,
+                           'PART_MODE', '1',
+                           'A_MODE', '7',
+                           'G023', sOtpravAdress
+
+            );
+            POSTRECORD ('tmpMAIN');
+          ),
+      'CN',
+          Block(
+            IF(STRPOS (':', Edifact.Col4) = 0,
+              Block(
+                sPoluch := Removechar (Edifact.Col4,char(39));
+                sPoluchAdress := '';
+              ),
+              Block(
+                sPoluch:=COPY (Edifact.Col4, 1, STRPOS (':', Edifact.Col4)-1);
+                sPoluchAdress := Removechar (Delete(Edifact.Col4, 1, STRPOS (':', Edifact.Col4)), char(39));
+              )
+            );
+            
+            EDITRECORD ('tmpMAIN');
+            SETFIELDVALUE ('tmpMAIN',
+                           'G082', sPoluch,
+                           'G083', sPoluchAdress,
+                           'SHIP_NAME', sTransp
+            );
+            POSTRECORD ('tmpMAIN');
+          )
+     ], ''
+    ); {CASE - Accessory }
+  )
+), {FUNC - WriteTmpMAIN() }
+
+//ЗАПИСЫВАЕМ в tmpCOMM =========================================================
+FUNC ('WriteTmpCOMM',
+  PARAM('CommStrNo', Integer, 0),
+  Block(
+    CASE(CommStrNo,
+      [1, Block(
+            vGN := vGN+1;
+            OPENQUERY ('qryMAXG32', 'SELECT MAX(G32) AS MAX_G32 FROM tmpCOMM WHERE TMPID='+IF(isNewTTN, vTmpID, FIELDVALUE ('qryTMPID', 'TMPID')), 'TMP_DB');
+            vG32 := FIELDVALUE ('qryMAXG32', 'MAX_G32');
+            APPENDRECORD ('tmpCOMM');
+            EDITRECORD ('tmpCOMM');
+            SETFIELDVALUE ('tmpCOMM',
+                           'G32', (vG32+1), //Edifact.Col2
+                           'GN', vGN,
+                           'tmpID', IF(isNewTTN, vTmpID, FIELDVALUE ('qryTMPID', 'TMPID'))
+            );
+            POSTRECORD ('tmpCOMM');
+          ),
+       2, Block(
+            VAR ('sTovar', String, '');
+            sTovar:= Edifact.col5,char(39);
+            IF( (STRPOS (':', Edifact.Col5) = 0)*(STRPOS ('?', Edifact.Col5) = 0),
+              block(
+                If(vFtov = 1,
+                   block(vGN := vGN+1;
+                         OPENQUERY ('qryMAXG32', 'SELECT MAX(G32) AS MAX_G32 FROM tmpCOMM WHERE TMPID='+IF(isNewTTN, vTmpID, FIELDVALUE ('qryTMPID', 'TMPID')), 'TMP_DB');
+                         vG32 := FIELDVALUE ('qryMAXG32', 'MAX_G32');
+                         sTovar:= Edifact.col5,char(39);
+                         APPENDRECORD ('tmpCOMM');
+                         EDITRECORD ('tmpCOMM');
+                         SETFIELDVALUE ('tmpCOMM',
+                                        'G32', (vG32+1), //Edifact.Col2
+                                        'GN', vGN,
+                                        'tmpID',IF(isNewTTN, vTmpID, FIELDVALUE ('qryTMPID', 'TMPID')),
+                                        'G312', sTovar
+                         );
+                         POSTRECORD ('tmpCOMM');
+                   ),
+                   block(
+                     EDITRECORD ('TmpCOMM');
+                     SETFIELDVALUE ('tmpCOMM',
+                                    'G312', sTovar
+                     );
+                     POSTRECORD ('tmpCOMM');
+                     vFtov:=1;
+                   )
+                );
+              ),
+            );
+          ),
+       3, Block(
+            vContNo := COPY (Edifact.Col2, 1, STRPOS (':', Edifact.Col2) - 1);
+            OPENQUERY ('qryContTov', 'SELECT * FROM tmpCont WHERE CONTNO='+CHAR(39)+vContNo+CHAR(39), 'TMP_DB');
+            vVesTov := FIELDVALUE ('qryContTov', 'G35');
+            EDITRECORD ('tmpCOMM');
+            SETFIELDVALUE ('tmpCOMM',
+                           'ContNo', vContNo,
+                           'G35', vVesTov
+                           
+            );
+            POSTRECORD ('tmpCOMM');
+            If(vFtov:=1,
+               block(
+               VAR ('sSQL', Memo , "");
+               SSql := 'UPDATE tmpCOMM'+
+                       ' SET ContNo = '+ Char(39) + vContNo + Char(39) + //' AND G35 = '+vVesTov+
+                       ' WHERE TMPID = '+ Char(39) +IF(isNewTTN, vTmpID, FIELDVALUE ('qryTMPID', 'TMPID')) + Char(39)+' AND  ContNo IS NULL';
+               //showmessage(ssql);
+               EXECUTESQL ('TMP_DB', sSQL);
+               sSql := 'UPDATE tmpCOMM'+
+                       ' SET G35 = '+ Char(39) + vVesTov + Char(39) + //' AND G35 = '+vVesTov+
+                       ' WHERE TMPID = '+ Char(39) +IF(isNewTTN, vTmpID, FIELDVALUE ('qryTMPID', 'TMPID')) + Char(39)+' AND  G35 = 0';
+               //showmessage(ssql);
+               EXECUTESQL ('TMP_DB', sSQL);
+               ),
+            );
+          )
+      ], ''
+    ); {CASE - CommStrNo }
+  )
+), {FUNC - WriteTmpCOMM() }
+
+//ЗАПИСЫВАЕМ в tmpPAPERS =======================================================
+FUNC ('WriteTmpPAPERS', ,
+  Block(
+    vPaperNo := Edifact.col3;
+    IF (LOCATE ('tmpPAPERS', 'PAPERNO', vPaperNo) = 1,
+      Block(
+        OPENQUERY ('qryTMPID', 'SELECT TMPID FROM tmpPAPERS WHERE PAPERNO='+CHAR(39)+vPaperNo+CHAR(39), 'TMP_DB');
+        isNewTTN := False;
+      ),
+      Block(
+        vTmpId := vTmpID + 1;
+        isNewTTN := True;
+        APPENDRECORD ('tmpPAPERS');
+        SETFIELDVALUE ('tmpPAPERS',
+                       'tmpID', vTmpId,
+                       'PAPERNAME', 'КОН',
+                       'PAPERNO', vPaperNo,
+                       'PAPERCODE', '02011',
+        );
+        POSTRECORD ('tmpPAPERS');
+      )
+    ); {IF - LOCATE ('tmpPAPERS', 'PAPERNO', vPaperNo) = 1 }
+  );
+), {FUNC - WriteTmpPAPERS() }
+
+//ЗАПИСЫВАЕМ в tmpCONT =========================================================
+FUNC ('WriteTmpCONT',
+       PARAM ('ContStrNo', Integer, 0) ,
+  Block(
+    CASE (ContStrNo, [1, block(
+                           APPENDRECORD ('TmpCONT');
+                           EDITRECORD ('TmpCONT');
+                           SETFIELDVALUE ('TmpCONT',
+                                          'CONTNO', COPY (Edifact.Col3, 1, STRPOS (':', Edifact.Col3) - 1));
+                           POST('TmpCONT');
+                         ),
+                      2, block(
+                           if( FIELDVALUE ('Edifact', 'col3') = 'T' ,
+                             vNetto := Convert(delete(Edifact.Col4,1,4), integer),
+                           );
+                           if( FIELDVALUE ('Edifact', 'col3') = 'G' ,
+                               block(
+                                 vBrutto := Convert(delete(Edifact.Col4,1,4), integer);
+                                 EDITRECORD ('TmpCONT');
+                                 SETFIELDVALUE ('TmpCONT',
+                                                'G38', vNetto,
+                                                'G35', vBrutto
+                                                );
+                                POST('TmpCONT');
+                               ),
+                           );
+                         ),
+                      3, block(
+                           EDITRECORD ('TmpCONT');
+                           SETFIELDVALUE ('TmpCONT',
+                                          'PLOMB', Removechar(Edifact.Col2,char(39)));
+                           POST('TmpCONT');
+                         )
+                      ], ''
+    ); {CASE - ContStrNo }
+    POSTRECORD ('tmpCONT');
+  );
+), {FUNC - WriteTmpCONT() }
+
+
+//ЗАПИСЫВАЕМ в tmpTRANSP =======================================================
+FUNC ('WriteTmpTRANSP', ,
+  Block(
+    sTransp := removechar(DELETE (Edifact.Col9, 1, (STRPOS (':', Edifact.Col9)+5)), char(39));
+    APPENDRECORD ('tmpTRANSP');
+    SETFIELDVALUE ('tmpTRANSP',
+                   'TRANSP_COD','10',
+                   'CARNO', sTransp,
+                   'NTRAILER', Edifact.Col3
+    );
+    POSTRECORD ('tmpTRANSP');
+  );
+), {FUNC - WriteTmpTRANSP() }
+
+
+//ПЕРЕНОСИМ В KRD_MAIN =========================================================
+FUNC ('ImportMAIN', , 
+  Block(
+    APPENDRECORD ('KRD_MAIN');
+    EDIT ('KRD_MAIN');
+    SETFIELDVALUE ('KRD_MAIN',
+                   'PLACEID',   vPlaceId,
+                   'NBD', sNBD,
+                   'G022',      FIELDVALUE ('tmpMAIN', 'G022'),
+                   'G023',      FIELDVALUE ('tmpMAIN', 'G023'),
+                   'G082',      FIELDVALUE ('tmpMAIN', 'G082'),
+                   'G083',      FIELDVALUE ('tmpMAIN', 'G083'),
+                   'PART_NO',   FIELDVALUE ('tmpMAIN', 'PART_NO'),
+                   'PART_MODE', '1',
+                   'A_MODE',    '7',
+                   'SHIP_NAME', FIELDVALUE ('tmpMAIN', 'SHIP_NAME'),
+                   'BEG_KEEP', dtDODate + 1,
+                   'BD_DATE', dtDODate,
+                   'G142',vG142,
+                   'G143',vG143,
+                   'G144',vG144,
+                   'G1440','1',
+                   'G145',dG145,
+    );
+    POST ('KRD_MAIN');
+    IF (i = 1,
+      Block(
+        vMainID := FIELDVALUE ('KRD_MAIN', 'ID');
+      )
+    );
+    EDIT ('KRD_MAIN');
+    SETFIELDVALUE ('KRD_MAIN',
+                   'MAIN_ID', vMainID
+    );
+    POST ('KRD_MAIN');
+    vID := FIELDVALUE ('KRD_MAIN', 'ID');
+  )
+), {FUNC - ImportMAIN() }
+
+//ПЕРЕНОСИМ В KRD_COMM =========================================================
+FUNC ('ImportCOMM', ,
+  Block(
+    
+    //showmessage(dtDODate);
+    //showmessage(CONVERT(REFERENCE('STORTYPE.DB', 'STORAGE_TYPE', '20', 'STORAGE_PERIOD'), Integer) );
+    APPENDRECORD ('KRD_COMM_2');
+    EDIT ('KRD_COMM_2');
+    SETFIELDVALUE ('KRD_COMM_2',
+                   'PLACEID', vPlaceID,
+                   'ID',      vID,
+                   'G32',     FIELDVALUE ('tmpCOMM', 'G32'),
+                   'GN',      FIELDVALUE ('tmpCOMM', 'GN'),
+                   'G312',    FIELDVALUE ('tmpCOMM', 'G312'),
+                   'G35',     FIELDVALUE ('tmpCOMM', 'G35'),
+                   'G311',    '1',
+                   'ACCEPTDATE', dtDODate,
+                   'STORAGE_TYPE', 'НОР',
+                   'LEG_PERIOD', '15' ,
+                   'STORE_PERIOD', vStorePeriod ,
+                   'STORAGE_DATE', dtStoreDate,
+                   'CONTNO',  FIELDVALUE ('tmpCOMM', 'CONTNO')
+    );
+    POST ('KRD_COMM_2');
+  )
+), {FUNC - ImportCOMM() }
+
+//ПЕРЕНОСИМ В KRD_CONT =========================================================
+FUNC ('ImportCONT', ,
+  Block(
+    IF (LOCATE ('KRD_CONT_2', 'CONTNO', FIELDVALUE ('tmpCONT', 'CONTNO')) = 0,
+      Block(
+        IF (LOCATE ('KRD_CONT_2', 'PLACEID; ID', [vPlaceID, vID]) = 0,
+          Block(
+            APPENDRECORD ('KRD_CONT_2');
+            EDIT ('KRD_CONT_2');
+            SETFIELDVALUE ('KRD_CONT_2',
+                           'PLACEID',  vPlaceID,
+                           'ID',       vID,
+                           'COUNTER',  '1',
+                           'N_TTN',    '1',
+                           'N_CONT',   '1',
+                           'PLOMB',    FIELDVALUE ('tmpCONT', 'PLOMB'),
+                           'CONTNO',   FIELDVALUE ('tmpCONT', 'CONTNO'),
+                           'G35',      FIELDVALUE ('tmpCONT', 'G35'),
+                           'G38',      FIELDVALUE ('tmpCONT', 'G38')
+            );
+            POST ('KRD_CONT_2');
+          ),
+          Block(
+            OPENQUERY ('qryMaxContCounter', 'STS_DB', 'SELECT MAX(COUNTER) AS MAX_COUNTER FROM KRD_CONT WHERE PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39));
+            APPENDRECORD ('KRD_CONT_2');
+            EDIT ('KRD_CONT_2');
+            SETFIELDVALUE ('KRD_CONT_2',
+                           'PLACEID',  vPlaceID,
+                           'ID',       vID,
+                           'COUNTER',  FIELDVALUE ('qryMAXContCounter', 'MAX_COUNTER')+1,
+                           'N_TTN',    '1',
+                           'N_CONT',   FIELDVALUE ('qryMAXContCounter', 'MAX_COUNTER')+1,
+                           'PLOMB',    FIELDVALUE ('tmpCONT', 'PLOMB'),
+                           'CONTNO',   FIELDVALUE ('tmpCONT', 'CONTNO'),
+                           'G35',      FIELDVALUE ('tmpCONT', 'G35'),
+                           'G38',      FIELDVALUE ('tmpCONT', 'G38')
+            );
+            POST ('KRD_CONT_2');
+          )
+        ); {IF - }
+      )
+    ); {IF - LOCATE ('KRD_CONT_2', 'CONTNO', FIELDVALUE ('tmpCONT', 'CONTNO')) }
+  )
+), {FUNC - ImportCONT() }
+
+//ПЕРЕНОСИМ В KRD_COMM_PAPERS ==================================================
+FUNC ('ImportKRDCP',
+  PARAM ('iLinkType', Integer, 0), {тип связи: 1 - товар+контейнер, 2 - товар+накладная, 3 - }
+  Block(
+    CASE (iLinkType,
+      [1, Block(
+
+            IF (LOCATE ('KRD_COMM_PAPERS_2', 'PLACEID; ID; G32; DOC_TYPE', [vPlaceID, vID, FIELDVALUE ('tmpCOMM', 'G32'), '11']) = 0,
+              Block(
+                OPENQUERY ('qryContCounter', 'STS_DB', 'SELECT COUNTER FROM KRD_CONT WHERE PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND CONTNO='+CHAR(39)+FIELDVALUE ('tmpCONT', 'CONTNO')+CHAR(39));
+                CurrentFilter := '';
+                CurrentFilter := GETFILTER ('KRD_COMM_2');
+                SETFILTER ('KRD_COMM_2', 'PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND G32='+CHAR(39)+FIELDVALUE ('tmpCOMM', 'G32')+CHAR(39));
+                EDIT ('KRD_COMM_2');
+                SETFIELDVALUE ('KRD_COMM_2',
+                               'N_CONT', FIELDVALUE ('qryContCounter', 'COUNTER')
+                );
+                POST ('KRD_COMM_2');
+                SETFILTER ('KRD_COMM_2', CurrentFilter);
+                APPENDRECORD ('KRD_COMM_PAPERS_2');
+                EDIT ('KRD_COMM_PAPERS_2');
+                SETFIELDVALUE ('KRD_COMM_PAPERS_2',
+                               'PLACEID', vPlaceID,
+                               'ID', vID,
+                               'G32',         FIELDVALUE ('tmpCOMM', 'G32'),
+                               'DOC_TYPE',    '11',
+                               'DOC_COUNTER', FIELDVALUE ('qryContCounter', 'COUNTER')
+                );
+                POST ('KRD_COMM_PAPERS_2');
+
+              )
+            );
+
+          ),
+       2, Block(
+            CurrentFilter := GETFILTER ('KRD_COMM_2');
+            SETFILTER ('KRD_COMM_2', 'PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND G32='+CHAR(39)+FIELDVALUE ('tmpCOMM', 'G32')+CHAR(39));
+            EDIT ('KRD_COMM_2');
+            SETFIELDVALUE ('KRD_COMM_2',
+                           'N_TTN', '1',
+                           'N_TTN_G32', FIELDVALUE ('tmpCOMM', 'G32')
+            );
+            POST ('KRD_COMM_2');
+            SETFILTER ('KRD_COMM_2', CurrentFilter);
+            APPENDRECORD ('KRD_COMM_PAPERS_2');
+            EDIT ('KRD_COMM_PAPERS_2');
+            SETFIELDVALUE ('KRD_COMM_PAPERS_2',
+                           'PLACEID', vPlaceID,
+                           'ID',      vID,
+                           'G32',         FIELDVALUE ('tmpCOMM', 'G32'),
+                           'DOC_TYPE',    '13',
+                           'DOC_COUNTER', '1'
+            );
+            POST ('KRD_COMM_PAPERS_2');
+
+          ),
+       3, Block(
+{            OPENQUERY ('qryContCounter', 'STS_DB', 'SELECT COUNTER FROM KRD_CONT WHERE PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND CONTNO='+CHAR(39)+FIELDVALUE ('tmpCONT', 'CONTNO')+CHAR(39));
+            SETFIELDVALUE ('KRD_COMM_2',
+                           'N_CONT', FIELDVALUE ('qryContCounter', 'COUNTER')
+            );
+            POST ('KRD_COMM_2');
+}
+          ),
+      ], ''
+    );
+  )
+), {FUNC - ImportKRDCP() }
+
+//ПЕРЕНОСИМ В KRD_PAPERS =========================================================
+FUNC ('ImportPAPERS', ,
+  Block(
+    APPENDRECORD ('KRD_PAPERS_2');
+    EDIT ('KRD_PAPERS_2');
+    SETFIELDVALUE ('KRD_PAPERS_2',
+                   'PLACEID', vPlaceID,
+                   'ID',      vID,
+                   'COUNTER', '1',
+                   'PAPERNAME', FIELDVALUE ('tmpPAPERS', 'PAPERNAME'),
+                   'PAPERNO',   FIELDVALUE ('tmpPAPERS', 'PAPERNO'),
+                   'PAPERCODE', FIELDVALUE ('tmpPAPERS', 'PAPERCODE')
+    );
+    POST ('KRD_PAPERS_2');
+  )
+), {FUNC - ImportPAPERS() }
+
+//ПЕРЕНОСИМ В KR_TRANS =========================================================
+FUNC ('ImportTRANSP', ,
+  Block(
+    APPENDRECORD ('KRD_TRANSP_2');
+    EDIT ('KRD_TRANSP_2');
+    SETFIELDVALUE ('KRD_TRANSP_2',
+                   'PLACEID',     vPlaceID,
+                   'ID',          vID,
+                   'COUNTER',     '1',
+                   'TRANSP_CODE', FIELDVALUE ('tmpTRANSP', 'TRANSP_COD'),
+                   'CARNO',       FIELDVALUE ('tmpTRANSP', 'CARNO'),
+                   'NTRAILER',    FIELDVALUE ('tmpTRANSP', 'NTRAILER')
+    );
+    POST ('KRD_TRANSP_2');
+  )
+), {FUNC - ImportTRANSP() }
+
+{======================================================================================================================
+                     НАЧАЛО
+======================================================================================================================}
+VAR ('PlaceIsSelected', Integer, 0);
+VAR ('isFirstGood', Boolean, True);
+VAR ('TestList', Integer, StringListCreate());
+VAR ('TestList', Integer, StringListCreate());
+var('sFileName', string );
+var('strBegin', string, '');
+var('sStr1', string, '');
+var('sStr2', string, '');
+
+
+IF( SELECTFILE ('sFileName','Выбирите файл',''),
+Block(
+  // скопировали файл себе для работы
+  OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES');
+
+  PlaceIsSelected := SelectValues ('Выбор склада, на который будет создан документ', 'Stors',
+                                          [
+                                            ['LICENCENO',   'Номер лицензии', 15],
+                                            ['LICENCENO_EXT',   ' ', 1],
+                                            ['STORE_NO',   'Номер склада', 15],
+                                            ['NAME',   'Название склада', 30],
+                                            ['PlaceId',   '', 10]
+                                          ],
+                                          [
+                                            ['PlaceId', 'vPlaceId'],
+                                            ['LICENCENO', 'vG144'],
+                                            ['NAME', 'vG142'],
+                                            ['ADDRESS', 'vG143'],
+                                            ['LICENCEDATE', 'dG145'],
+                                          ], '', 'STS_DB');
+   IF (PlaceIsSelected = 0,
+       RAISEEXCEPTION ('Отменено пользователем')
+   ); {IF - PlaceIsSelected = 0 }
+   sNBD := SOLVE (INIFILE('Docs','MakeBD_No',''));
+   StringListLoadFromFile(TestList, sFileName);
+
+   //OPENQUERY ('tmpEdifact', 'select * from edifact#txt', 'edifact_DB');
+   IF (STRINGLISTGETITEM(TestList, 0)<> 0,
+     Block(
+       ClearTMP_BD();
+       CreateDBF();
+       OPENTABLE('tmpEdifact', sFilePath+'tmpEdifact.DBF', 'Col1', 'TMP_DB', 1);
+       OPENTABLE('tmpCONT', sFilePath+'tmpCONT.DBF', 'CONTNO', 'TMP_DB', 1);
+       OPENTABLE('tmpCOMM', sFilePath+'tmpCOMM.DBF', 'tmpID', 'TMP_DB', 1);
+       OPENTABLE('TmpMAIN', sFilePath+'tmpMAIN.DBF', 'tmpID', 'TMP_DB', 1);
+       OPENTABLE('tmpTRANSP', sFilePath+'tmpTRANSP.DBF', 'CARNO', 'TMP_DB', 1);
+       OPENTABLE('tmpPAPERS', sFilePath+'tmpPAPERS.DBF', 'tmpID', 'TMP_DB', 1);
+     ),
+     RAISEEXCEPTION ('Выбран пустой файл')
+   ); {IF - STRINGLISTGETITEM(TestList, 0) <> 0 }
+
+
+     strBegin := STRINGLISTGETTEXT(TestList);
+     while(length(strBegin) > 3,
+           if(Length(STRPOS (Char(39), strBegin)) > 0,
+              block(
+                var('n', integer, 0);
+                var('sCol', string, '');
+                var('end_str1', integer, 0);
+                sStr1:=Copy(strBegin, 1, STRPOS (Char(39), strBegin));
+                //sStr2:= sStr2 + sStr1;
+                strBegin := DELETE (strBegin, 1, STRPOS (Char(39), strBegin));
+                //showmessage(sstr1);
+                //showmessage(strBegin);
+                //STRINGLISTSETTEXT(TestList, strBegin);
+                WriteTmpEdifact();
+                //showmessage('1');
+
+              ),
+              Block(
+                sStr1 := sStr2 + strBegin;
+                WriteTmpEdifact();
+                strBegin:= '';
+              )
+           )
+
+     );
+
+   
+   OPENQUERY ('Edifact', 'select * from tmpEdifact', 'TMP_DB');
+   LET ('vPartNo', 1);
+   First ('Edifact');
+   showmessage(Edifact.Col1);
+   iRecCount := RECORDCOUNT ('Edifact');
+   SHOWPROGRESS ('Создание временных таблиц. Подождите..');
+   WHILE ((EOF ('Edifact')=0),  // & (CancelPressed() = 0), отключим прерывание загрузки пользователем
+     Block(
+       CASE (Trim(Edifact.Col1),
+            ['TDT',
+                Block(IF ((Edifact.col2 = '20'),
+                  WriteTmpTRANSP())
+                ),
+             'EQD',
+                Block(
+                  WriteTmpCONT(1)
+                ),
+             'MEA',
+                Block(
+                  WriteTmpCONT(2)
+                ),
+             'SEL',
+                Block(
+                  WriteTmpCONT(3)
+                ),
+             'CNI',
+                Block(
+                  WriteTmpPAPERS()
+                ),
+             'NAD',
+                Block(
+                  IF (isNewTTN,
+                    Block(
+                      WriteTmpMAIN(Edifact.Col2)
+                    )
+                  ); {IF - isNewTTN }
+                ),
+             'GID',
+                Block(
+                  WriteTmpCOMM(1)
+                ),
+             'FTX',
+                Block(
+                      WriteTmpCOMM(2)
+                ),
+             'SGP',
+                Block(
+                  WriteTmpCOMM(3);
+                  vFtov:=0;
+                )
+             ], ''
+       ); {CASE - Edifact.BucReq }
+       i := i + 1;
+       SETPROGRESS (i, 100, iRecCount);
+       NEXT ('Edifact');
+     )
+   ); {WHILE - Eof('Edifact') = 0 }
+   HIDEPROGRESS ();
+   SHOWPROGRESS ('Загрузка данных. Подождите..');
+ //ЗАГРУЗКА в БД ===============================================================
+   dtDODate := NOW();
+   dtBegkeep := DATE() + 1;
+   dtStoreDate := AddMonths(dtDODate + 1, 60 / 30);
+
+   vStorePeriod := dtStoreDate - dtBegkeep;
+   FIRST ('tmpMAIN');
+   iRecCount := RECORDCOUNT ('tmpMAIN');
+   i := 1;
+   WHILE (EOF ('tmpMAIN') = 0,
+     Block(
+       //пишем в KRD_MAIN
+       ImportMAIN();
+       isFirstGood := True;
+       SETFILTER ('tmpCOMM', 'TMPID='+FIELDVALUE ('tmpMAIN', 'TMPID'));
+       FIRST ('tmpCOMM');
+       WHILE (EOF ('tmpCOMM') = 0,
+         Block(
+           //пишем в KRD_COMM
+             ImportCOMM();
+             //пишем в KRD_CONT
+             SETFILTER ('tmpCONT', 'CONTNO='+CHAR(39)+FIELDVALUE ('tmpCOMM', 'CONTNO')+CHAR(39));
+             IF (RECORDCOUNT ('tmpCONT') > 0,
+               Block(
+                 ImportCONT();
+                 //пишем в KRD_COMM_PAPERS
+                 ImportKRDCP(1);
+               )
+             );
+             SETFILTER ('tmpCONT', '');
+           //пишем в KRD_PAPERS
+             SETFILTER ('tmpPAPERS', 'TMPID='+FIELDVALUE ('tmpMAIN', 'TMPID'));
+             FIRST ('tmpPAPERS');
+             WHILE (EOF ('tmpPAPERS') = 0,
+               Block(
+                 IF (isFirstGood,
+                   Block(
+                     ImportPAPERS();
+                   )
+                 ); {IF - IsFirstGood }
+                 NEXT ('tmpPAPERS');
+               )
+             ); {WHILE - EOF ('tmpPAPERS') = 0 }
+             SETFILTER ('tmpPAPERS', '');
+             //пишем в KRD_COMM_PAPERS
+               ImportKRDCP(2);
+           //пишем в KRD_TRANSP
+             IF (isFirstGood, ImportTRANSP()); {IF - }
+           NEXT ('tmpCOMM');
+           IsFirstGood := False;
+         )
+       ); {WHILE - EOF ('tmpCOMM') = 0 }
+       SETFILTER ('tmpCOMM', '');
+       i := i + 1;
+       SETPROGRESS (i, 100, iRecCount);
+       NEXT ('tmpMAIN');
+     )
+   ); {WHILE - EOF ('tmpMAIN') = 0 }
+   HIDEPROGRESS ();
+  ),
+  Block(
+    RAISEEXCEPTION ('Отменено пользователем');
+  )
+); {IF - SelectFile('sFileName','Выбирите файл','TXT - файлы (*.txt)|*.txt') }
+  CLOSEDATASET('TmpMAIN');
+  CLOSEDATASET('TmpEdifact');
+  CLOSEDATASET('tmpCOMM');
+  CLOSEDATASET('tmpPAPERS');
+  CLOSEDATASET('tmpTRANSP');
+  CLOSEDATASET ('tmpCont');
+  CLOSEDATABASE ('TMP_DB');
+// ClearTMP_BD();
+
+
+
+
+
+
+
+

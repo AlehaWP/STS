@@ -1,0 +1,58 @@
+// *****************************************************************************
+// Название: Создание болванки в журнале
+// Описание: Создание болванки в журнале
+// Кнопка вызова: 0
+// Подпись кнопки: Создание болванки в журнале
+// Вызов по событию: 
+// *****************************************************************************
+//
+APPENDRECORD('jrInventory');
+EDIT('jrInventory');
+SETFIELDVALUE('jrInventory',
+              'DocumentID', 12345,
+              'RefDocumentID', 12345,
+              'InventoryInstanceDate', '14.08.2012',
+              'CustomsCode', '1023567',
+              'CustomsOfficeName', 'Пулковская',
+              'CustomsPersonName', 'Васечкин',
+              'CustomsPersonPost', 'Инспектор',
+              'LNP', '357',
+              'DocumentModeCode', '02030',
+              'DocumentNumber', '123654789',
+              'RegNumberDoc', '1023567/14082012/0000007'
+
+);
+POST('jrInventory');
+
+APPENDRECORD('jrInventDocument');
+EDIT('jrInventDocument');
+SETFIELDVALUE('jrInventDocument',
+              'InvDocCode', '02015',
+              'InvDocNumber', '123',
+              'InvDocDate', '123',
+              'InvDocLists', 5,
+              'ArchID', '561684321',
+              'ArchDocID', '47645231',
+              'InventDocumentID', '1',
+              'InventLineID', ' 45646541',
+              'Note', 'Накладная',
+              'GetDoc', 1,
+              'Document', 'Не загружен'
+);
+POST('jrInventDocument');
+APPENDRECORD('jrInventDocument');
+EDIT('jrInventDocument');
+SETFIELDVALUE('jrInventDocument',
+              'InvDocCode', '02017',
+              'InvDocNumber', '345',
+              'InvDocDate', '345',
+              'InvDocLists', 3,
+              'ArchID', '7554324',
+              'ArchDocID', '321484',
+              'InventDocumentID', '2',
+              'InventLineID', ' 87653412',
+              'Note', 'Вторая накладная',
+              'GetDoc', 1,
+              'Document', 'Не загружен'
+);
+POST('jrInventDocument');

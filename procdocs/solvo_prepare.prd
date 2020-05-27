@@ -1,0 +1,87 @@
+// *****************************************************************************
+// Название: настройку программы для загрузки из SOLVO
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: SOLVO (настройка)
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sSQL', String, '');
+
+VAR ('sWorkDir', String, INIFILE ('SOLVO', 'WorkDir', ''));
+// создаём рабочую структуру каталогов
+// а так же файл лога
+FUNC ('CheckDirectories', ,
+  Block (
+    sWorkDir := IncludeTrailingBackslash (sWorkDir);
+    FORCEDIRECTORIES (sWorkDir);
+    FORCEDIRECTORIES (sWorkDir + 'DO1_IN');
+    FORCEDIRECTORIES (sWorkDir + 'DO1_OUT');
+    FORCEDIRECTORIES (sWorkDir + 'DO2_IN');
+//    FORCEDIRECTORIES (sWorkDir + 'DO2_OUT');
+    FORCEDIRECTORIES (sWorkDir + 'PERM_OUT');
+    FORCEDIRECTORIES (sWorkDir + 'OUTBOX');
+    FORCEDIRECTORIES (sWorkDir + 'ERRORS');
+    FORCEDIRECTORIES (sWorkDir + 'LOGS');
+  )
+), // FUNC - CheckDirectories () //
+
+
+// создание таблицы
+FUNC ('CreateKRD_SOLVOID',,
+  Block (
+    sSQL := 'CREATE TABLE KRD_SOLVOID ' +
+            '(PLACEID INT, ' +
+            'ID INT, ' +
+            'CUSTREPID INT, ' +
+            'G32 INT, ' +
+            'GOODID INT, ' +
+            'TOVINCONT INT, ' +
+            'TOVINTTN INT, ' +
+            'CONTID INT, ' +
+            'CONTCOUNTER INT, ' +
+            'CONTINTTN INT, ' +
+            'TTNCOUNTER INT, ' +
+            'VESID INT, ' +
+            'BILLID INT, ' +
+            'EXPDO1 INT, ' +
+            'XMLNAME CHAR(254) )';
+     EXECUTESQL ('STS_DB', sSQL);
+  )
+), // FUNC - CreateKRD_SOLVO ()
+
+
+// проверяем и создаём рабочие каталоги
+IF (YESNO ('Выбрать основной каталог для обмена с SOLVO?' + char (13) + char (13) + 'Текущее расположение каталога обмена: ' + char (13) + sWorkDir),
+  Block (
+    IF (LENGTH (sWorkDir) = 0, sWorkDir := ProgramPath ());
+    IF (SELECTDIRECTORY ('sWorkDir') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+    WRITEINIFILE ('SOLVO', 'WorkDir', sWorkDir);
+    CheckDirectories ();
+  )
+); // IF - //
+
+
+IF (YESNO ('Создать служебную таблицу для обмена с SOLVO?'),
+  Block (
+    {
+    IF (TABLEEXISTS ('KRD_SOLVOID', 'STS_DB'),
+       showmessage ('Таблица KRD_SOLVOID уже существует!'),
+       Block (}
+         TRYEXCEPT (
+           Block (
+             CreateKRD_SOLVOID ();
+             showmessage ('Таблица KRD_SOLVOID успешно создана создана!');
+           ),
+           showmessage ('Таблица KRD_SOLVOID уже существует!' + char (13) + 'Повторное создание не требуется.')
+         );
+     {    showmessage ('Таблица KRD_SOLVOID создана!');
+       )
+    ); // IF - //
+    }
+  )
+); // IF - //
+
+
+
+

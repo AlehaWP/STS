@@ -1,0 +1,226 @@
+// *****************************************************************************
+// Название: Создание ДО1 из уведомления
+// Описание: Создание ДО1 из уведомления
+// Кнопка вызова: 1
+// Подпись кнопки: Ув. --> ДО1
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+func('selectUVFromBdJournals',
+     BLOCK(
+           PARAM('tblSelected', string, 0);
+     ),
+     BLOCK(
+           //OPENQUERY ('GET_UV', 'SELECT * FROM JrGoodOut2 WHERE PrDocumentDate>=(GetDate()-30) ORDER BY PrDocumentDate ASC', 'dbJournals', 0);
+           OPENQUERY ('GET_UV', 'SELECT * FROM JrGoodOut2 ORDER BY PrDocumentDate ASC', 'dbJournals', 0);
+           VAR ('iResult', integer,
+               SELECTRECORDS ('Укажите номер ДТ', 'GET_UV',
+                              [
+                                 ['PrDocumentNumber', 'Номер ДТ', 30],
+                                 ['PrDocumentDate', 'Дата ДТ', 15]
+                             ],
+                             tblSelected, , 'STS_DB'
+               )
+           );
+           CLOSEDATASET('GET_UV');
+           iResult
+     )
+),
+
+func('selectTransportDocFromBdJournalsByJMID',
+     BLOCK(
+           PARAM('tblSelected', string, 0);
+           PARAM('iUVID', string, 1);
+     ),
+     BLOCK(
+           OPENQUERY ('GET_TTN', 'SELECT DISTINCT JOURNAL_MASTER_ID,PrDocumentDate, PrDocumentName, PrDocumentNumber FROM TransportDoc2 WHERE JOURNAL_MASTER_ID='+iUVID, 'dbJournals', 0);
+           VAR ('iResult', integer,
+               SELECTRECORDS ('Укажите накладную', 'GET_TTN',
+                           [
+                             ['PrDocumentNumber', 'Номер накладной', 30],
+                             ['PrDocumentDate', 'Дата накладной', 15]
+                           ],
+                           tblSelected, , 'STS_DB'
+               )
+           );
+           CLOSEDATASET('GET_TTN');
+           iResult
+           
+     )
+),
+
+func('getGoodsFormUvForCreateDO',
+     BLOCK(
+           PARAM('tblForOpen', string, 0);
+           PARAM('iUVID', string, 1);
+           PARAM('TTNNum', string, 2);
+     ),
+     BLOCK(
+           OPENQUERY (tblForOpen, 'SELECT * FROM GOODINFO2 WHERE JOURNAL_MASTER_ID='+iUVID+
+                                    ' AND JOURNAL_CHILD_ID IN (SELECT JOURNAL_CHILD_ID FROM TRANSPORTDOC2 WHERE JOURNAL_MASTER_ID='+iUVID+
+                                                              ' AND PrDocumentNumber='+char(39)+TTNNum+char(39)+') ORDER BY JOURNAL_CHILD_ID'
+                     , 'dbJournals', 0);
+     )
+),
+
+func('getPalceid',,
+     BLOCK(
+           KRD_MAIN.PLACEID
+     )
+),
+
+func('addDO1',
+     BLOCK(
+           PARAM('PlaceID', integer, 0);
+           PARAM('tblUV', string, 1);
+     ),
+     BLOCK(
+           LOCATE ('STORES', 'PLACEID', PlaceID);
+           VAR ('dDODate', datetime, NOW());
+           APPENDRECORD('KRD_MAIN');
+           EDIT('KRD_MAIN');
+           SETFIELDVALUE ('KRD_MAIN'
+                          ,'PLACEID', PlaceID
+                          ,'NBD', SOLVE (INIFILE ('Docs', 'MakeBD_No', ''))
+                          ,'G082', FIELDVALUE(tblUV, 'OrganizationName')
+                          ,'G083', FIELDVALUE(tblUV, 'AddressLine')
+                          ,'G084_C', FIELDVALUE(tblUV, 'INN')
+                          ,'G08_OGRN', FIELDVALUE(tblUV, 'OGRN')
+                          ,'G08_KPP', FIELDVALUE(tblUV, 'KPP')
+                          ,'STATUS_EPS', 'ДО1 оздан из уведомления о выпуске'
+                          //,'', FIELDVALUE(tblUV, '')
+                          //,'', FIELDVALUE(tblUV, '')
+                          //,'', FIELDVALUE(tblUV, '')}
+                          ,'BD_DATE', dDODate
+                          ,'BEG_KEEP', dDODate + 1
+                          ,'RAD_CONTROL','В НОРМЕ'
+                          ,'G142',FIELDVALUE('STORES', 'NAME')
+                          ,'G143',FIELDVALUE('STORES', 'ADDRESS')
+                          ,'G144',FIELDVALUE('STORES', 'LICENCENO')
+                          ,'G1440', Case (FIELDVALUE('STORES', 'Store_Type'), ['СВХ', '1', 'СП', '3', 'ЗТК', '4' , 'ПЗТК', '4', 'ВЗТК', '5'], '2')
+                          ,'G145',FIELDVALUE('STORES', 'LICENCEDATE')
+                          ,'AUTHOR', UserInfo (, 'UserName')
+                          ,'AUTHOR_POST', UserInfo (, 'UserPost')
+           );
+           POST('KRD_MAIN');
+           KRD_MAIN.ID
+     )
+),
+
+func('createDO1DCD',
+     BLOCK(
+           PARAM('PlaceID', integer, 0);
+           PARAM('ID', integer, 1);
+           PARAM('tblUV', string, 2);
+     ),
+     BLOCK(
+
+           APPENDRECORD('KRD_DCD');
+           SETFIELDVALUE ('KRD_DCD'
+                          ,'PLACEID', PlaceID
+                          ,'ID', ID
+                          ,'COUNTER', 1
+                          ,'PAPERNO', FIELDVALUE(tblUV, 'PrDocumentNumber')
+                          ,'PAPERDATE', IF (FIELDVALUE(tblUV, 'PrDocumentDate') > 3,FIELDVALUE(tblUV, 'PrDocumentDate')) //Сделано, чтобы избечать записи SQL даты 1899 год
+                          ,'PAPERCODE', '01'
+                          ,'PAPERNAME', FIELDVALUE(tblUV, 'PrDocumentName')
+           );
+           POST('KRD_DCD');
+     )
+),
+
+func('createDO1Ttn',
+     BLOCK(
+           PARAM('PlaceID', integer, 0);
+           PARAM('ID', integer, 1);
+           PARAM('tblUV', string, 2);
+     ),
+     BLOCK(
+           
+           APPENDRECORD('KRD_PAPERS');
+           SETFIELDVALUE ('KRD_PAPERS'
+                          ,'PLACEID', PlaceID
+                          ,'ID', ID
+                          ,'COUNTER', 1
+                          ,'PAPERNO', FIELDVALUE(tblUV, 'PrDocumentNumber')
+                          ,'PAPERDATE', IF (FIELDVALUE(tblUV, 'PrDocumentDate') > 3,FIELDVALUE(tblUV, 'PrDocumentDate'))
+                          ,'PAPERCODE', '02015'
+                          ,'PAPERNAME', 'CMR'
+                          ,'', FIELDVALUE(tblUV, 'PrDocumentName')
+                          ,'', FIELDVALUE(tblUV, '')
+           );
+           POST('KRD_PAPERS');
+     )
+),
+
+func('addGoodInDO',
+     BLOCK(
+           PARAM('PlaceID', integer, 0);
+           PARAM('ID', integer, 1);
+           PARAM('G32', integer, 2);
+           PARAM('tblUV', string, 3);
+     ),
+     BLOCK(
+           VAR('iBrutto',integer,0);
+           iBrutto := FINDNUMBER(FIELDVALUE(tblUV, 'PlaceDescription'), 'КГ)^кг)^Кг)^кГ)^КГ^Кг^кг^кГ');
+           iBrutto := iBrutto + FIELDVALUE(tblUV, 'BruttoVolQuantity');
+           APPENDRECORD('KRD_COMM');
+           SETFIELDVALUE ('KRD_COMM'
+                          ,'PLACEID', PlaceID
+                          ,'ID', ID
+                          //,'G32', G32
+                          ,'G33', FIELDVALUE(tblUV, 'GoodsTNVEDCode')
+                          ,'G311', FIELDVALUE(tblUV, 'PlaceNumber')
+                          ,'G312', FIELDVALUE(tblUV, 'GoodsDescription')
+                          ,'G35', iBrutto
+                          ,'G42', FIELDVALUE(tblUV, 'InvoiceCost')
+                          ,'G42_CURRENCY', FIELDVALUE(tblUV, 'CurrencyCode')
+           );
+           POST('KRD_COMM');
+     )
+),
+//--------------------------------------------------------------Начало выполнения-----------------------------------------------------------------------------
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'ProcDocs\FindNumber.prd');
+
+VAR('tblUVData', string, 'uvData');
+IF (selectUVFromBdJournals(tblUVData),, RAISEEXCEPTION ('Выполнение прекращено'));
+IF (FIELDISNULL(tblUVData, 'JOURNAL_MASTER_ID'), RAISEEXCEPTION ('Выполнение прекращено'));
+VAR('iJMID', integer, FIELDVALUE(tblUVData, 'JOURNAL_MASTER_ID'));
+
+VAR('tblUvTTN', string, 'uvTtn');
+IF (selectTransportDocFromBdJournalsByJMID(tblUvTTN, iJMID),, RAISEEXCEPTION ('Выполнение прекращено'));
+IF (FIELDISNULL(tblUvTTN, 'JOURNAL_MASTER_ID'), RAISEEXCEPTION ('Выполнение прекращено'));
+VAR('sTTNNumber', string, FIELDVALUE(tblUvTTN, 'PrDocumentNumber'));
+
+VAR('tblUvGoods', string, 'uvGoods');
+getGoodsFormUvForCreateDO(tblUvGoods, iJMID, sTTNNumber);
+IF (FIELDISNULL(tblUvGoods, 'JOURNAL_MASTER_ID'), RAISEEXCEPTION ('Нет товаров к указанной накладной'));
+
+VAR('iPlaceid', integer);
+iPlaceID := getPalceid();
+IF(iPlaceid=0, RAISEEXCEPTION ('Не определена складская площадка для создания'));
+
+SHOWINFORMATION ('Создание ДО1. Дождитесь окончания!');
+
+VAR('iID', integer);
+iID := addDO1(iPlaceID, tblUVData);
+IF(iID=0, RAISEEXCEPTION ('Ошибка создания ДО1'));
+
+createDO1DCD(iPlaceID, iID, tblUvData);
+
+createDO1Ttn(iPlaceID, iID, tblUvTTN);
+
+
+FIRST(tblUvGoods);
+VAR ('iG32', integer, 0);
+WHILE(EOF(tblUvGoods)=0,
+      BLOCK(
+            iG32 := iG32 + 1;
+            addGoodInDO(iPlaceID, iID, iG32, tblUvGoods);
+            NEXT(tblUvGoods);
+      )
+);
+HIDEINFORMATION();

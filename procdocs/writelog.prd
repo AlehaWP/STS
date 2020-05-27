@@ -1,0 +1,82 @@
+// *****************************************************************************
+// Название: Запись в  лог файл
+// Описание: Запись в  лог файл
+// Кнопка вызова: 0
+// Подпись кнопки: WriteLog
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+// Функция чистки бекапов log файлов
+// берется дата файла из его имени (YYYY_MM_DD_*)
+// если дата меньше, текущая дата минус период, то удаляем файл
+// пример вызова: DeleteBackupLog(ProgramPath ()+'LOGS\BACKUP', 120);
+
+FUNC ('DeleteBackupLog',
+     Block(
+           PARAM ('sPathBackup', String, 0),
+           PARAM ('iDayPeriod', Integer, 1)
+     ),//block param
+     Block(
+            VAR ( 'sZipFileList', Memo,  GETFILELIST( sPathBackup, '*.ZIP', '|'));
+            VAR ( 'sTemp',            String,  '');
+            VAR ( 'sDateFile',        String,  '');
+            VAR ( 'dDateFile',        DateTime,  '');
+            VAR ( 'iCountFiles',      Integer, SPLITSTR (sZipFileList, '|', sTemp));
+            VAR ( 'iI',               Integer, 0);
+            iI := 1;
+            WHILE( iI <= iCountFiles,
+                   Block(
+                         sTemp := EXTRACTSTR ( sZipFileList, iI, '|');
+                         sDateFile := Copy (sTemp, 9 , 2) + '.' + Copy (sTemp, 6 , 2) + '.' +Copy (sTemp, 1 , 4);
+                         TRYEXCEPT (
+                                   Block(
+                                         dDateFile := CONVERT (sDateFile, DateTime);
+                                         if ( (DATE()-iDayPeriod) > dDateFile,
+                                                DeleteFile (IncludeTrailingBackslash (sPathBackup) + sTemp),
+                                         ); //if
+                                   ),
+                         );//TRYEXCEPT
+                         iI := iI + 1;
+                   )//BLOCK
+            );//WHILE
+     )//block
+);//end func DeleteBackupLog
+
+
+
+// Функция ведения лога
+// создается LOG файл в папке программы в подпапке LOGS
+// лог автоматически архивируется, при достижении размера лога больше 10Мб
+// архив создается в папке LOGS\BACKUP
+// при вызове функции первым параметром идет имя лог файла, вторым параметром текст, который надо записать лог
+// пример вызова: WriteLog('add_file.log', 'Начало работы');
+
+FUNC ('WriteLog',
+     BLOCK( PARAM ('sLogName', String, 0),
+            PARAM ('sText',    String, 1)
+     ),
+     BLOCK (
+            DeleteBackupLog(ProgramPath ()+'LOGS\BACKUP', 360);
+            sLogName := TRIM(sLogName);
+            if ( sLogName <> '',
+                Block (
+                        if ( STRPOS ('.LOG', UPPERSTR (sLogName))=0, sLogName :=sLogName + '.log', );
+                        if (VAREXISTS ('sLogFile')=0, var ('sLogFile', String , ''),);
+                        sLogFile := IncludeTrailingBackslash (ProgramPath ()) + 'LOGS';
+                        IF (DirectoryExists (sLogFile)=0, ForceDirectories (sLogFile),);
+                        sLogFile := IncludeTrailingBackslash (sLogFile) + sLogName;
+                        if ( FileExists (sLogFile)=0, CREATELOGFILE (sLogFile, ''),);
+                        if ( FileSize (sLogFile) > 10000000,
+                           Block(
+                                 ForceDirectories (IncludeTrailingBackslash (ProgramPath ()) + 'LOGS\BACKUP');
+                                 ZipAddFile (IncludeTrailingBackslash (ProgramPath ()) + 'LOGS\BACKUP\'+ FDT('YYYY_MM_DD_HH_MM_SS', DATE()+TIME(1)) + '_' + REPLACESTR (UPPERSTR (sLogName), '.LOG', '') + '_' + '.ZIP', sLogFile);
+                                 DeleteFile (sLogFile);
+                                 CREATELOGFILE (sLogFile, '');
+                           ), );
+                        APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + sText);
+                 )//block
+            );
+     )//block
+);//end func WriteLog

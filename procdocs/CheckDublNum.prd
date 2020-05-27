@@ -1,0 +1,100 @@
+// *****************************************************************************
+// Название: Проверить задвоение номеров
+// Описание: Проверить задвоение номеров
+// Кнопка вызова: 1
+// Подпись кнопки: Проверить задвоение номеров
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+VAR ('sMessageLog', string, '');
+
+VAR ('sSQL', string, '');
+sSQL := 'SELECT PLACEID, NBD as DOC_NO, 1 as DocType FROM KRD_MAIN '+
+        'WHERE YEAR(BD_DATE)=YEAR(SYSDATETIME()) '+
+        'GROUP BY PLACEID, NBD HAVING COUNT(ID)>1 '+
+        'UNION '+
+        'SELECT PLACEID, RELEASE_NO  as DOC_NO, 2 as DocType FROM (SELECT DISTINCT PLACEID, RELEASE_NO, MAIN_ID, MAIN_COUNTER FROM RELEASE WHERE YEAR(OUT_DATE)=YEAR(SYSDATETIME())) as REL '+
+        'GROUP BY PLACEID, RELEASE_NO HAVING COUNT(MAIN_ID)>1 ';
+
+
+OPENQUERY('DO_DUBL', sSQL, 'STS_DB');
+IF (FIELDISNULL('DO_DUBL', 'PLACEID') = 0,
+    WHILE (EOF ('DO_DUBL')=0,
+          BLOCK(
+                IF (DO_DUBL.DocType = 1,
+                    BLOCK(
+                          OPENQUERY ('DO1', 'SELECT PLACEID, ID, BD_DATE, NBD, STATUS = CASE  WHEN MC_STATUS_BD IN ('+char(39)+'3'+char(39)+' ,'+char(39)+'И'+char(39)+') THEN 0 ELSE 1 END '+
+                                            //Делал отдельное числовое поле статуса для нужной мне сортировки
+                                            ' FROM KRD_MAIN WHERE NBD=' + char(39) + DO_DUBL.DOC_NO + char(39) +
+                                            ' AND PLACEID=' + DO_DUBL.PLACEID +
+                                            ' AND YEAR(BD_DATE)=YEAR(SYSDATETIME())' +
+                                            ' ORDER BY STATUS, BD_DATE', 'STS_DB');
+                          //SHOWMESSAGE(DO1.NBD);
+                          NEXT ('DO1');//Первую не меняем (либо она зарегена либо самая ранняя)
+                          WHILE (EOF('DO1')=0,
+                                 BLOCK(
+                                       IF (DO1.STATUS <> 0,
+                                          BLOCK(
+                                              VAR('vNBD', string, LEFTPAD(GENNO('DO1', '№ ДО1'), 7, '0'));
+                                              VAR('vSHOWNBD', string, FDT('YYYYMMDD', DATE())+LEFTPAD(RIGHT(vNBD, 5), 5, '0'));
+                                              //showmessage(DO1.ID);
+                                              sMessageLog := 'Номер ДО1 изменен с ' + DO1.NBD + ' на '+ vNBD + char(13) + char(10);
+                                              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET NBD = '+char(39) + vNBD + char(39)+
+                                                                    ', SHOW_NBD = '+char(39) + vSHOWNBD + char(39)+
+                                                                    ' WHERE PLACEID='+DO1.PLACEID+ ' AND ID='+DO1.ID + ' AND (MC_STATUS_BD NOT IN (' +char(39)+'3'+char(39)+','+char(39)+'И'+char(39)+') OR MC_STATUS_BD IS NULL)'
+                                              );
+                                         )
+                                      );
+                                      NEXT('DO1');
+                                )
+                          );
+                          CLOSEDATASET('DO1');
+                    ),
+                    BLOCK(
+                          OPENQUERY ('DO2', 'SELECT PLACEID, MAIN_ID, MAIN_COUNTER, RELEASE_NO, MAX(CASE  WHEN MC_STATUS IN ('+char(39)+'3'+char(39)+' ,'+char(39)+'И'+char(39)+') THEN 0 ELSE 1 END ) as STATUS, MIN(OUT_DATE) as OUT_DATE '+
+                                            //Делал отдельное числовое поле статуса для нужной мне сортировки
+                                            ' FROM RELEASE WHERE RELEASE_NO=' + char(39) + DO_DUBL.DOC_NO + char(39) +
+                                            ' AND PLACEID=' + DO_DUBL.PLACEID +
+                                            ' AND YEAR(OUT_DATE)=YEAR(SYSDATETIME())' +
+                                            ' GROUP BY PLACEID, MAIN_ID, MAIN_COUNTER, RELEASE_NO'+
+                                            ' ORDER BY STATUS, OUT_DATE', 'STS_DB');
+                          //SHOWMESSAGE(DO2.RELEASE_NO);
+                          NEXT ('DO2');//Первую не меняем (либо она зарегена либо самая ранняя)
+                          WHILE (EOF('DO2')=0,
+                                 BLOCK(
+                                       IF (DO2.STATUS <> 0,
+                                          BLOCK(
+                                              VAR('vREL_NO', string, LEFTPAD(GENNO('DO2', '№ ДО2'), 7, '0'));
+                                              sMessageLog := 'Номер ДО2 изменен с ' + DO2.RELEASE_NO + ' на '+ vRel_NO + char(13) + char(10);
+                                              EXECUTESQL ('STS_DB', 'UPDATE RELEASE SET RELEASE_NO = '+char(39) + vREL_NO + char(39)+
+                                                                    ' WHERE PLACEID='+DO2.PLACEID+ ' AND MAIN_ID='+DO2.MAIN_ID+ ' AND MAIN_COUNTER='+DO2.MAIN_COUNTER +
+                                                                    ' AND (MC_STATUS NOT IN (' +char(39)+'3'+char(39)+','+char(39)+'И'+char(39)+') OR MC_STATUS IS NULL)'
+                                              );
+                                         )
+                                      );
+                                      NEXT('DO2');
+                                )
+                          );
+                          CLOSEDATASET('DO2');
+                    )
+                );
+                NEXT('DO_DUBL');
+          )
+    )
+);
+
+IF ( sMessageLog <> '', BLOCK( REFRESH ('KRD_MAIN'); showmessage(sMessageLog);));
+
+
+
+
+
+
+
+
+
+
+
+

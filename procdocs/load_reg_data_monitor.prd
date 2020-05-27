@@ -1,0 +1,180 @@
+// *****************************************************************************
+// Название: Загрузка рег. данных из монитора ЭД
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: LoadReg
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+// Функция загрузки информации о регистрации ДО(1,2), а так же всех документов у которых такой же DOCUMENTID как и у ДО1 и есть сообщение CMN.13010
+// функция формирует xml файлы в папку STS-MED\iout\ (UUID пользвателя, если он есть) и запускается скрипт eps.imp
+//
+// Пример вызова:
+// EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'procdocs\load_reg_data_monitor.prd');
+// LoadLostRegInfoDO( 'PLACEID', 'DOCUMENTID');
+// передоваемые переменные строки.
+// если переданы пустые строки, то поиск по базе монитора осуществляется по данным текущего ДО1
+// если есть выделенные документы, то обрабатывеются в ПЕРВУЮ очередь они.
+
+// подключаем функцию GetBackupFile (используется для определения пути к файлу резервной копии Монитор ЭД)
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd');
+
+FUNC ('LoadLostRegInfoDO',
+     Block(
+           PARAM ('sPlaceid', String, 0);
+           PARAM ('sDOCUMENTID', String, 1);
+     ),
+     Block(
+          VAR ( 'CSIDL_WINDOWS', Integer, 36);
+          Const('CSIDL_PROGRAM_FILES_COMMON', Integer, 43);
+          VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_PROGRAM_FILES_COMMON))+'CTM\ctm.cfg');
+
+          VAR ( 'sConnString', String, '');
+          VAR ( 'sXmlFileRegInfo', String, '');
+          VAR ( 'sXmlFileToSave', String, '');
+          VAR ( 'mSQL', Memo, "");
+          VAR ( 'XmlDoc', integer, 0);
+          VAR ( 'XmlObject', integer, 0);
+          Var ( 'XMLDORegInfo', Integer, 0);
+
+          Var ( 'iTotal', Integer, 0); // общее кол-во
+          Var ( 'iTek', Integer, 0); // текущая запись в цикле
+
+          IF (INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath) = '', RAISEEXCEPTION ('Не найден Монитор ЭД'));
+
+          VAR ('sMonitorIniPath', String, INCLUDETRAILINGBACKSLASH (INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath)) + 'MONITORED.INI');
+
+            IF (INIFILE ('DB', 'ArcType', '1') = 1,
+              Block(
+                // База данных Access
+                VAR ('sDBPath', String, INIFILE ('DB', 'ArcDir', '', sMonitorIniPath) + 'MONITORED.MDB');
+                IF (sDBPath = '', RAISEEXCEPTION ('Не найден путь к базе Монитора ЭД'));
+                sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sDBPath +';Persist Security Info=False';
+              ),
+              Block(
+                // База данных SQL Server
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + INIFILE ('DB', 'Arc_SQL_ServerName', '', sMonitorIniPath) + ';Initial Catalog=' + INIFILE ('DB', 'Arc_SQL_DBName', '', sMonitorIniPath) + ';';
+                IF (INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0', sMonitorIniPath) = '1',
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + INIFILE ('DB', 'Arc_SQL_Login', '', sMonitorIniPath) + ';Password=' + INIFILE ('DB', 'Arc_SQL_Password', '', sMonitorIniPath);
+                  )
+                ); // IF - //
+              )
+            ); // IF - //
+
+          OPENDATABASE ('dbMonitor', 'ActiveX Data Objects (ADO)', sConnString );
+          GETSELECTEDDOCS ( 'QSELECT', 'PLACEID', 'ID', 'DOCUMENTID');
+
+          if ( GETSELECTEDCOUNT()=0,
+             Block(
+                    sXmlFileRegInfo := '';
+                    mSQL := "";
+                    mSQL := mSQL + " SELECT  * ";
+                    mSQL := mSQL + " FROM  [ED_ProcMessages] E2 where E2.MsgId=" + CHAR (39) +"CMN.13010" + CHAR (39) +
+                    " and  E2.WHId=" + if (sPlaceid<>'', sPlaceid, KRD_MAIN.PLACEID)  +
+                    " AND  E2.WHDocId=" + CHAR (39) + if (sDOCUMENTID<>'', sDOCUMENTID, KRD_MAIN.DOCUMENTID) + CHAR (39);
+                    //showmessage(mSQL);
+                    OPENQUERY ( 'Q_MONITOR', mSQL, 'dbMonitor');
+                    WHILE(EOF( 'Q_MONITOR')=0,
+                           Block(
+                                  sXmlFileRegInfo := Q_MONITOR.BackupFile;
+                                  sXmlFileRegInfo := GetBackupFile (sXmlFileRegInfo, Q_MONITOR.INCOMING);
+
+                                  //showmessage(sXmlFileRegInfo);
+                                  if ( FILEEXISTS(sXmlFileRegInfo),
+                                     Block(
+                                            sXmlFileToSave := '';
+                                            XMLDoc := XMLDOCUMENTCREATE();
+                                            XMLDOCUMENTLOAD(XMLDoc, sXmlFileRegInfo);
+                                            XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+                                            XMLDORegInfo := XMLNODECHILD (XmlObject, 0) ;
+                                            XMLNODESETATTRIBUTE (XMLDORegInfo, 'whid', KRD_MAIN.PLACEID);
+                                            XMLNODESETATTRIBUTE (XMLDORegInfo, 'do1id', KRD_MAIN.DOCUMENTID);
+                                            XMLNODESETATTRIBUTE (XMLDORegInfo, 'do2id', Q_MONITOR.WHDocId2);
+                                            if (DIRECTORYEXISTS(INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS-MED\iout\'+UserInfo('', 'UserUuid'))=0,
+                                                FORCEDIRECTORIES(INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS-MED\iout\'+UserInfo('', 'UserUuid')),
+                                            );//if
+                                            sXmlFileToSave := INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS-MED\iout\'+UserInfo('', 'UserUuid') +'\'+ GENERATEUUID () + '.xml';
+                                            XMLNODESAVE(XMLDORegInfo, sXmlFileToSave);
+                                            
+                                     ),
+                                  );//if
+                                 Next( 'Q_MONITOR');
+                           )//block
+                    );//while
+                    CLOSEDATASET ( 'Q_MONITOR');
+             ),//block
+             Block(
+                    FIRST ('QSELECT');
+                    iTek := 0;
+                    iTotal := GETSELECTEDCOUNT();
+                    SHOWPROGRESS ('Обработка ...');
+                    WHILE ( EOF('QSELECT') = 0,
+                          BLOCK(
+                                sXmlFileRegInfo := '';
+                                mSQL := "";
+                                mSQL := mSQL + " SELECT  * ";
+                                mSQL := mSQL + " FROM  [ED_ProcMessages] E2 where E2.MsgId=" + CHAR (39) +"CMN.13010" + CHAR (39) +
+                                " and  E2.WHId=" + QSELECT.PLACEID  +
+                                " AND  E2.WHDocId=" + CHAR (39) + QSELECT.DOCUMENTID + CHAR (39);
+
+                                OPENQUERY ('Q_MONITOR', mSQL, 'dbMonitor');
+                                WHILE(EOF( 'Q_MONITOR')=0,
+                                       Block(
+                                              sXmlFileRegInfo := Q_MONITOR.BackupFile;
+                                              sXmlFileRegInfo := GetBackupFile (sXmlFileRegInfo, Q_MONITOR.INCOMING);
+                                             
+                                              //showmessage(sXmlFileRegInfo);
+                                              if ( FILEEXISTS(sXmlFileRegInfo),
+                                                 Block(
+                                                        sXmlFileToSave := '';
+                                                        XMLDoc := XMLDOCUMENTCREATE();
+                                                        XMLDOCUMENTLOAD(XMLDoc, sXmlFileRegInfo);
+                                                        XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+                                                        XMLDORegInfo := XMLNODECHILD (XmlObject, 0) ;
+                                                        XMLNODESETATTRIBUTE (XMLDORegInfo, 'whid', QSELECT.PLACEID);
+                                                        XMLNODESETATTRIBUTE (XMLDORegInfo, 'do1id', QSELECT.DOCUMENTID);
+                                                        XMLNODESETATTRIBUTE (XMLDORegInfo, 'do2id', Q_MONITOR.WHDocId2);
+                                                        if (DIRECTORYEXISTS(INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS-MED\iout\'+UserInfo('', 'UserUuid'))=0,
+                                                            FORCEDIRECTORIES(INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS-MED\iout\'+UserInfo('', 'UserUuid')),
+                                                        );//if
+                                                        sXmlFileToSave := INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS-MED\iout\'+UserInfo('', 'UserUuid') +'\'+ GENERATEUUID () + '.xml';
+                                                        XMLNODESAVE(XMLDORegInfo, sXmlFileToSave);
+                                                        
+                                                 ),
+                                              );//if
+                                             Next( 'Q_MONITOR');
+                                       )//block
+                                );//while
+                                CLOSEDATASET ( 'Q_MONITOR');
+                                SETPROGRESS ( ((iTek*100)/iTotal) );
+                                iTek := iTek + 1;
+                                NEXT( 'QSELECT');
+                                if ( CANCELPRESSED (),
+                                   Block(
+                                         HIDEPROGRESS ();
+                                         RAISEEXCEPTION ('Обработка остановлена');
+                                   ),//block
+                                ); //if
+                          )//block
+                    );//while
+                    HIDEPROGRESS ();
+             )//block
+          );//if
+          CLOSEDATASET ( 'QSELECT');
+          CLOSEDATABASE ('dbMonitor');
+          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'data\impex\SCRIPTS\eps.imp');
+
+          GLOBALREFRESH ();
+          )//block
+);//end func
+//EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'procdocs\load_reg_data_monitor.prd');
+//не надо выполнять внутри - вызывать только из стороннего скрита
+// LoadLostRegInfoDO('','');
+

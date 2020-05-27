@@ -1,0 +1,76 @@
+// *****************************************************************************
+// Название: Выгрузка формы ДО-1 с несоответствиями из доп. листа к форме ДО-1
+// Описание: Выгрузка формы ДО-1 с несоответствиями из доп. листа к форме ДО-1
+// Кнопка вызова: 0
+// Подпись кнопки: Доп. лист ДО-1
+// *****************************************************************************
+//
+
+FUNC ('ChoiceDir', '',
+  Block(
+    SELECTDIRECTORY ('sDir');
+    IF (sDir <> '',
+      sDir := INCLUDETRAILINGBACKSLASH (sDir),
+      RAISEEXCEPTION ('Каталог не выбран')
+    ); // IF - //
+  )
+),
+
+FUNC ('ExportDO1',
+  Block(
+    PARAM ('pPlaceID', String, 0);
+    PARAM ('pID', String, 1);
+  ),
+  Block(
+    XMLDescr := XMLDOCUMENTCREATE();
+    XMLDoc := XMLDOCUMENTROOT (XMLDescr);
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\5.0.5\do1_mismatch.exp');
+    XMLDocumentSave(XMLDescr, sDir + 'do1-'+CUSTOMSNOPART(KRD_MAIN.NBD, 1, STORES.CUSTOMS_CODE)+'-'+FDT ('YYYYMMDD', KRD_MAIN.BD_DATE) + '-'+KRD_MAIN.NBD+'.xml');
+  )
+),
+
+VAR ('vPlaceID', String, '');
+VAR ('vID', String, '');
+VAR ('sDir', String, '');
+VAR ('XMLDescr', Integer);
+VAR ('XMLDoc', Integer);
+
+// Проверяем открыта ли книга учёта
+IF (BOOKOPENED () = 1,
+  Block(
+    // Проверяем выделены ли документы
+    VAR ('iSelCount', Integer, GETSELECTEDCOUNT ());
+    IF (iSelCount > 0,
+      Block(
+        ChoiceDir ();
+        SHOWPROGRESS ('Выгрузка данных, подождите..');
+        VAR ('i', Integer, 0);
+        GETSELECTEDDOCS ('SEL_MAIN', 'PLACEID', 'ID', 'MAIN_ID', 'NBD', 'PART_NO', 'BD_DATE');
+        FIRST ('SEL_MAIN');
+        WHILE (EOF ('SEL_MAIN') = 0,
+          Block(
+            SETPROGRESS (((i*100)/iSelCount));
+            i := i + 1;
+            vPlaceID := SEL_MAIN.PLACEID;
+            vID := SEL_MAIN.ID;
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [SEL_MAIN.PLACEID, SEL_MAIN.ID]);
+            ExportDO1 (vPlaceID, vID);
+            NEXT ('SEL_MAIN');
+          )
+        ); // WHILE - //
+        HIDEPROGRESS ();
+      ),
+      Block(
+        ChoiceDir ();
+        vPlaceID := KRD_MAIN.PLACEID;
+        vID := KRD_MAIN.ID;
+        ExportDO1 (vPlaceID, vID);
+      )
+    );
+  ),
+  Block(
+    RAISEEXCEPTION ('Не открыта книга учёта');
+  )
+); // IF - //
+
+

@@ -1,0 +1,137 @@
+// *****************************************************************************
+// Название: Загрузка требования о проведении операций
+// Описание: Загрузка требования о проведении операций
+// Кнопка вызова: 1
+// Подпись кнопки: Загрузка требования о проведении операций
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC('GetDate',
+     BLOCK(
+       PARAM ('iParrentElement', integer, 0),
+       PARAM ('sElementName', string, 1),
+     ),
+     BLOCK(
+       VAR('dDate', datetime);
+       //showmessage(iParrentElement);
+       dDate:=STRTODATE(XMLNODEVALUE(XMLNODEFIND(iParrentElement,sElementName)),'YYYY-MM-DD', '-');
+       dDate;
+     );
+),
+
+
+
+  VAR ('sPath', String, '');
+  IF (SELECTFILE ('sPath', 'Выбор уведомления о выпуске', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+  VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+  XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+  VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+
+
+OPENTABLE ('OPERATE', 'JRREQOPER', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+
+
+VAR ('XmlReqOper', Integer, XMLNODECHILD (XmlRoot, 0));
+      VAR ('sDocumentID', string, XMLNODEVALUE (XMLNODEFIND (XmlReqOper, 'cat_ru:DocumentID')));
+
+IF(LOCATE('OPERATE', 'DocumentID', sDocumentID)=0,
+   BLOCK(
+   
+      OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM JRREQOPER', 'dbJournals');
+      VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+
+      VAR('iCustoms', integer, XMLNODEFIND (XmlReqOper, 'reqop:Customs'));
+      VAR('iDeclarant', integer, XMLNODEFIND (XmlReqOper, 'reqop:Declarant'));
+          VAR('iRFOrganizationFeatures', integer, XMLNODEFIND (iDeclarant, 'cat_ru:RFOrganizationFeatures'));
+          VAR('iRepresentative', integer, XMLNODEFIND (iDeclarant, 'reqop:Representative'));
+              VAR('iRepOrganizationFeatures', integer, XMLNODEFIND (iRepresentative, 'cat_ru:RFOrganizationFeatures'));
+      VAR('iTransportation', integer, XMLNODEFIND (XmlReqOper, 'reqop:Transportation'));
+      VAR('iWeighing', integer, XMLNODEFIND (XmlReqOper, 'reqop:Weighing'));
+      VAR('iDifferentDefinitionQuantity', integer, XMLNODEFIND (XmlReqOper, 'reqop:DifferentDefinitionQuantity'));
+      VAR('iLoading', integer, XMLNODEFIND (XmlReqOper, 'reqop:Loading'));
+      VAR('iUnloading', integer, XMLNODEFIND (XmlReqOper, 'reqop:Unloading'));
+      VAR('iOverload', integer, XMLNODEFIND (XmlReqOper, 'reqop:Overload'));
+      VAR('iCorrectionPackaging', integer, XMLNODEFIND (XmlReqOper, 'reqop:CorrectionPackaging'));
+      VAR('iUnpacking', integer, XMLNODEFIND (XmlReqOper, 'reqop:Unpacking'));
+      VAR('iPacking', integer, XMLNODEFIND (XmlReqOper, 'reqop:Packing'));
+      VAR('iRepackaging', integer, XMLNODEFIND (XmlReqOper, 'reqop:Repackaging'));
+      VAR('iOpeningLocationGoods', integer, XMLNODEFIND (XmlReqOper, 'reqop:OpeningLocationGoods'));
+      VAR('iDivisionConsignment', integer, XMLNODEFIND (XmlReqOper, 'reqop:DivisionConsignment'));
+      VAR('iCustomsPerson', integer, XMLNODEFIND (XmlReqOper, 'reqop:CustomsPerson'));
+      VAR('iPersonSignature', integer, XMLNODEFIND (XmlReqOper, 'reqop:PersonSignature'));
+      VAR('iDirectionRequirement', integer, XMLNODEFIND (XmlReqOper, 'reqop:DirectionRequirement'));
+          VAR('iDirectionReqCustomsPerson', integer, XMLNODEFIND (iDirectionRequirement, 'reqop:CustomsPerson'));
+          VAR('iDirectionReqPerson', integer, XMLNODEFIND (iDirectionRequirement, 'reqop:Person'));
+          VAR('iDirectionReqAddress', integer, XMLNODEFIND (iDirectionRequirement, 'reqop:Address'));
+      
+      APPENDRECORD ('OPERATE');
+      EDIT ('OPERATE');
+     //showmessage(XMLNODEVALUE(XMLNODEFIND(iDeclarant, 'cat_ru:OrganizationName')));
+      SETFIELDVALUE('OPERATE',
+                    'JOURNAL_MASTER_ID', iJMID,
+                    'JOURNAL_UUID', GENERATEUUID (),
+                    'DocumentId',sDocumentID,
+                    'Status','',//XMLNODEVALUE(XMLNODEFIND(, '')),
+                    'sendReqOp','',//XMLNODEVALUE(XMLNODEFIND(, '')),
+                    'ReqDate',GetDate(XmlReqOper, 'reqop:ReqDate'),
+                    'DocSign',IF(XMLNODEVALUE(XMLNODEFIND(XmlReqOper, 'reqop:DocSign'))='true','Требование', 'Заявление'),
+                    'CustomsCode',XMLNODEVALUE(XMLNODEFIND(iCustoms, 'cat_ru:Code')),
+                    'CustomsOfficeName',XMLNODEVALUE(XMLNODEFIND(iCustoms, 'cat_ru:OfficeName')),
+                    'CustomsCountryCode',XMLNODEVALUE(XMLNODEFIND(iCustoms, 'cat_ru:CustomsCountryCode')),
+                    'DeclOrgName',XMLNODEVALUE(XMLNODEFIND(iDeclarant, 'cat_ru:OrganizationName')),
+                    'DeclINN',XMLNODEVALUE(XMLNODEFIND(iRFOrganizationFeatures, 'cat_ru:INN')),
+                    'ReprOrgName',XMLNODEVALUE(XMLNODEFIND(iRepresentative, 'cat_ru:OrganizationName')),
+                    'ReprINN',XMLNODEVALUE(XMLNODEFIND(iRepOrganizationFeatures, 'cat_ru:INN')),
+                    //'DocFinishSign','',
+                    'TranspValue',IF(XMLNODEVALUE(XMLNODEFIND(iTransportation, 'reqop:Value'))='true','1','0'),
+                    'TranspRemark',XMLNODEVALUE(XMLNODEFIND(iTransportation, 'reqop:Remark')),
+                    //'TranspFinish','',
+                    'WeighValue',IF(XMLNODEVALUE(XMLNODEFIND(iWeighing, 'reqop:Value'))='true','1','0'),
+                    'WeighRemark',XMLNODEVALUE(XMLNODEFIND(iWeighing, 'reqop:Remark')),
+                    //'WeighFinish','',
+                    'DiffValue',IF(XMLNODEVALUE(XMLNODEFIND(iDifferentDefinitionQuantity, 'reqop:Value'))='true','1','0'),
+                    'DiffRemark',XMLNODEVALUE(XMLNODEFIND(iDifferentDefinitionQuantity, 'reqop:Remark')),
+                    //'DiffFinish',XMLNODEVALUE(XMLNODEFIND(iDifferentDefinitionQuantity, '')),
+                    'LoadValue',IF(XMLNODEVALUE(XMLNODEFIND(iLoading, 'reqop:Value'))='true','1','0'),
+                    'LoadRemark',XMLNODEVALUE(XMLNODEFIND(iLoading, 'reqop:Remark')),
+                    //'LoadFinish',XMLNODEVALUE(XMLNODEFIND(iLoading, '')),
+                    'UnloadValue',IF(XMLNODEVALUE(XMLNODEFIND(iUnloading, 'reqop:Value'))='true','1','0'),
+                    'UnloadRemark',XMLNODEVALUE(XMLNODEFIND(iUnloading, 'reqop:Remark')),
+                    //'UnloadFinish',XMLNODEVALUE(XMLNODEFIND(iUnloading, '')),
+                    'OverloadValue',IF(XMLNODEVALUE(XMLNODEFIND(iOverload, 'reqop:Value'))='true','1','0'),
+                    'OverloadRemark',XMLNODEVALUE(XMLNODEFIND(iOverload, 'reqop:Remark')),
+                    //'OverloadFinish',XMLNODEVALUE(XMLNODEFIND(iOverload, '')),
+                    'CorrPackValue',IF(XMLNODEVALUE(XMLNODEFIND(iCorrectionPackaging, 'reqop:Value'))='true','1','0'),
+                    'CorrPackRemark',XMLNODEVALUE(XMLNODEFIND(iCorrectionPackaging, 'reqop:Remark')),
+                    //'CorrPackFinish',XMLNODEVALUE(XMLNODEFIND(iCorrectionPackaging, '')),
+                    'UnPackValue',IF(XMLNODEVALUE(XMLNODEFIND(iUnpacking, 'reqop:Value'))='true','1','0'),
+                    'UnPackRemark',XMLNODEVALUE(XMLNODEFIND(iUnpacking, 'reqop:Remark')),
+                    //'UnPackFinish',XMLNODEVALUE(XMLNODEFIND(iUnpacking, '')),
+                    'PackValue',IF(XMLNODEVALUE(XMLNODEFIND(iPacking, 'reqop:Value'))='true','1','0'),
+                    'PackRemark',XMLNODEVALUE(XMLNODEFIND(iPacking, 'reqop:Remark')),
+                    //'PackFinish',XMLNODEVALUE(XMLNODEFIND(iPacking, '')),
+                    'RePackValue',IF(XMLNODEVALUE(XMLNODEFIND(iRepackaging, 'reqop:Value'))='true','1','0'),
+                    'RePackRemark',XMLNODEVALUE(XMLNODEFIND(iRepackaging, 'reqop:Remark')),
+                    //'RePackFinish',XMLNODEVALUE(XMLNODEFIND(iRepackaging, '')),
+                    'OpenValue',IF(XMLNODEVALUE(XMLNODEFIND(iOpeningLocationGoods, 'reqop:Value'))='true','1','0'),
+                    'OpenRemark',XMLNODEVALUE(XMLNODEFIND(iOpeningLocationGoods, 'reqop:Remark')),
+                    //'OpenFinish',XMLNODEVALUE(XMLNODEFIND(iOpeningLocationGoods, '')),
+                    'DivValue',IF(XMLNODEVALUE(XMLNODEFIND(iDivisionConsignment, 'reqop:Value'))='true','1','0'),
+                    'DivRemark',XMLNODEVALUE(XMLNODEFIND(iDivisionConsignment, 'reqop:Remark')),
+                    //'DivFinish',XMLNODEVALUE(XMLNODEFIND(iDivisionConsignment, '')),
+                    'InspFIO',XMLNODEVALUE(XMLNODEFIND(iCustomsPerson, 'cat_ru:PersonName')),
+                    'InspLNP',XMLNODEVALUE(XMLNODEFIND(iCustomsPerson, 'cat_ru:LNP'))
+      );
+      POST('OPERATE');
+     
+   )
+);
+
+
+CLOSEDATASET ('OPERATE');
+
+
+

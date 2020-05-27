@@ -1,0 +1,710 @@
+// *****************************************************************************
+// Название: XML-->Ком.акт
+// Описание: XML-->Ком.акт
+// Кнопка вызова: 1
+// Подпись кнопки: XML-->Ком.акт
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC ('GetDir',,
+      BLOCK(
+        VAR('sDir', string);
+        SELECTDIRECTORY ('sDir');
+        sDir := INCLUDETRAILINGBACKSLASH(sDir);
+        WRITEINIFILE ('CreateComAct', 'DirectoryPath', sDir);
+        sDir;
+      )
+),
+
+FUNC('GetDTNumber',PARAM(iGDTNumber, integer, 0),
+     BLOCK(
+	   
+	   Var('sDt',string);
+     sDtDate:=XMLNODEVALUE(XMLNODECHILD(iGDTNumber,1));
+	   var('SecondPart', string, EXTRACTSTR (sDtDate, 3, '-')+EXTRACTSTR (sDtDate, 2, '-')+RIGHT(EXTRACTSTR (sDtDate, 1, '-'),2));
+	   sDT:=XMLNODEVALUE(XMLNODECHILD(iGDTNumber,0))+'-'+SecondPart+'-'+XMLNODEVALUE(XMLNODECHILD(iGDTNumber,2));
+	   sDT
+	 )
+),
+
+FUNC('FindNumber',
+     BLOCK(
+       PARAM('sStroka', string, 0),
+       PARAM('PriznakNahozdenia', string,1),
+       //PARAM('KolvoSimvolov', integer, 2)
+     ),
+     BLOCK(
+        VAR('sPart', string, '');
+        VAR('iCountPart', integer, SPLITSTR (sStroka, PriznakNahozdenia, sPart));
+        VAR('iCounter', integer, 1);
+        VAR('dNumber', float, 0);
+        VAR('sNumber', string, '');
+        VAR('iLengthPart', integer, 0);
+        VAR('sLetter', string, '');
+
+        WHILE((iCounter<=iCountPart)*(dNumber=0),//бежим по частям пока не найдем число
+              BLOCK(
+                sPart:= TRIM (EXTRACTSTR (sStroka, iCounter, PriznakNahozdenia));
+                iLengthPart := LENGTH (sPart);
+                sNumber := '';
+                While(iLengthPart>0,
+                      BLOCK(
+                        sLetter := COPY(sPart, iLengthPart, 1);
+                        IF(sLetter=',', sLetter:='.');
+
+                        IF(STRPOS (sLetter, '0123456789.'),
+                             sNumber := sLetter + sNumber,
+                             IF((sNumber<>'')*(sLetter<>' '), iLengthPart:=0)// Если число закончилось и начались буквы(исключая пробелы), прекращаем чтение
+                        );
+                        iLengthPart :=iLengthPart-1;
+                      )
+                );
+                //showmessage(sNumber);
+                IF(sNumber<>'', dNumber:=convert(sNumber, float));
+                iCounter:=iCounter+1;
+              );
+        );
+        dNumber
+        //showmessage(EXTRACTSTR (sStroka, 1, PriznakNahozdenia));
+     )
+),
+
+FUNC('FindOldActs',,
+     BLOCK(
+        VAR('iActCounter', integer, 1);
+        //Смотрим старые акты, и получаем текущий counter
+        OPENQUERY('OLD_ACTS', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KRD_DOP WHERE PLACEID='+ iPlaceid + ' AND ID='+iID);
+        IF(RECORDCOUNT('OLD_ACTS')<>0, iActCounter := OLD_ACTS.COUNTER + 1);
+        CLOSEDATASET('OLD_ACTS');
+        iActCounter
+     )
+),
+
+FUNC('ChangeCHR',
+     BLOCK(
+          PARAM('sOldString', string, 0),
+          PARAM('sOldSymbol', string, 1),
+          PARAM('sNewSymbol', string, 2 )
+     ),
+     BLOCK(
+            VAR('sNewString', string, sOldString);
+            IF(STRPOS(sOldSymbol, sOldString)<>0,
+               BLOCK(
+                 sNewString:='';
+                 VAR('iCount', integer, SPLITSTR (sOldString, ':', sNewString));
+                 VAR('iCounter', integer, 1);
+                 WHILE(iCounter<iCount,
+                       Block(
+                          iCounter := iCounter +1;
+                          sNewString :=sNewString + sNewSymbol + EXTRACTSTR (sOldString, iCounter, sOldSymbol);
+                       )
+                 );
+               );
+            );
+            sNewString
+     )
+),
+
+ Func('FindTovarInDO',,
+               BLOCK(
+                 OPENQUERY('GET_DT_GOODS', 'Select * FROM UVGOODSTMP', 'dbJournals');
+                 FIRST('GET_DT_GOODS');
+                 WHILE(EOF('GET_DT_GOODS')=0,
+                       BLOCK(
+                         iG35 := 0;
+                         sG33:='';
+                         iG311:=0;
+                         iG42:=0;
+                         iG42Cur:=0;
+
+                         iG35 := GET_DT_GOODS.UV_G35;
+                         sG33:=GET_DT_GOODS.UV_TNVD;
+                         iG311:=GET_DT_GOODS.UV_G311;
+                         iG42:=GET_DT_GOODS.UV_G42;
+                         iG42Cur:=GET_DT_GOODS.UV_G42CUR;
+
+                         //Ищем совпадение по коду ТНВЭД
+                         OPENQUERY('FindG32', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+' AND G33='+char(39)+sG33+char(39)+ IF(sBusyG32<>'',' AND G32 NOT IN ('+sBusyG32+')',''));
+
+                         IF(RECORDCOUNT('FindG32')<>0,
+                            FillTmpTable(),
+                            BLOCK( //Если не находим совпадения по ТНВЭД ищем совпадение по стоимости
+                                   CLOSEDATASET('FindG32');
+                                   OPENQUERY('FindG32', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+' AND G42='+iG42+IF(sBusyG32<>'',' AND G32 NOT IN ('+sBusyG32+')',''));
+                                   IF(RECORDCOUNT('FindG32')<>0,
+                                      FillTmpTable(),
+                                      BLOCK(//Если не находим совпадение по стоимости, ищем совпадение по весу.
+                                           CLOSEDATASET('FindG32');
+                                           OPENQUERY('FindG32', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+' AND G35='+iG35+IF(sBusyG32<>'',' AND G32 NOT IN ('+sBusyG32+')',''));
+                                           IF(RECORDCOUNT('FindG32')<>0, FillTmpTable());
+                                      )
+                                   );
+                            )
+                         );
+                         NEXT('GET_DT_GOODS');
+                       )
+                 );
+               )
+          ),
+              FUNC('FillTmpTable',,
+                   BLOCK(
+                         FillVariable();
+
+                         sBusyG32:=sBusyG32 + IF(sBusyG32 <> '', ',') + FindG32.G32;
+                         //Смотрим создавался ли ком.акт на этот товар если да, плюсуем значения из уведомления с текущими. В документальные заносим данные из CSDM
+                         //Было сделано на случай прихода уведомлений в разное время.
+                         {OPENQUERY('Find_old_acts', 'STS_DB','Select * From KRD_CSDM WHERE PLACEID='+FindG32.Placeid+' AND ID='+FindG32.ID+' AND G32='+FindG32.G32);
+                         IF(RECORDCOUNT('Find_old_acts')<>0,
+                             BLOCK(
+                                   iG35_DO:=Find_old_acts.DOC_G35;
+                                   iG311_DO:=Find_old_acts.DOC_G311;
+                                   iG42_DO:=Find_old_acts.DOC_G42;
+                                   iG42_CUR_DO:=Find_old_acts.DOC_G42_CURRENCY;
+                                   iG312_DO:=Convert(Find_old_acts.DOC_G312, string);
+                                   sG33_DO:=Find_old_acts.DOC_G33;
+                                   EXECUTESQL('dbJournals','UPDATE UVGOODSTMP SET '+
+                                                           ' UV_G35=(UV_G35+'+FindG32.G35+') , '+
+                                                           ' UV_G311=(UV_G311+'+FindG32.G311+') , '+
+                                                           ' UV_G42=(UV_G42+'+FindG32.G42+')  '+
+                                                           ' WHERE JOURNAL_MASTER_ID='+GET_DT_GOODS.JOURNAL_MASTER_ID+' AND JOURNAL_CHILD_ID='+GET_DT_GOODS.JOURNAL_CHILD_ID+' AND JOURNAL_CHILD_ID_2='+GET_DT_GOODS.JOURNAL_CHILD_ID_2
+                                   );
+                             )
+                         );}
+                         ParralelDoDt();
+                         FillDoValues();
+                   )
+              ),
+
+              FUNC('FillVariable',,
+                   BLOCK(
+                         VAR('iG35_DO', float, FindG32.G35);
+                         VAR('iG311_DO', float, FindG32.G311);
+                         VAR('iG42_DO', float, FindG32.G42);
+                         VAR('iG42_CUR_DO', integer, FindG32.G42_CURRENCY);
+                         VAR('iG312_DO', string, convert(FindG32.G312, string));
+                         VAR('sG33_DO', string, FindG32.G33);
+                   )
+              ),
+
+              FUNC('ParralelDoDt',,
+                   BLOCK(
+                      VAR('sDiffDescript', string, '');
+                      IF(sG33 <> sG33_DO,
+                         sDiffDescript:= 'Изменение кода ТНВЭД'
+                      );
+                      IF(iG311 <> iG311_DO,
+                         sDiffDescript:= IF(sDiffDescript='', 'Изменение кол-ва мест', sDiffDescript+', кол-ва мест'); //Отключено по просьбе ЗАО Восход
+                      );
+                      IF(iG35 <> iG35_DO,
+                         sDiffDescript:= IF(sDiffDescript='', 'Изменение веса', sDiffDescript+', веса');
+                      );
+                      IF(iG42 <> iG42_DO,
+                         sDiffDescript:= IF(sDiffDescript='', 'Изменение стоимости', sDiffDescript+', стоимости');
+                      );
+                      IF(iG42Cur <> iG42_CUR_DO,
+                         sDiffDescript:= IF(sDiffDescript='', 'Изменение кода валюты', sDiffDescript+', кода валюты');
+                      );
+                   )
+              ),
+
+              FUNC('FillDoValues',,
+                   EXECUTESQL('dbJournals','UPDATE UVGOODSTMP SET '+
+                                           ' PLACEID='+FindG32.PLACEID+' , '+
+                                           ' ID='+FindG32.ID+' , '+
+                                           ' G32='+FindG32.G32+' , '+
+                                           ' DO_TNVD='+char(39)+sG33_DO+char(39)+' , '+
+                                           ' DO_G35='+iG35_DO+' , '+
+                                           ' DO_G311='+iG311_DO+' , '+
+                                           ' DO_G42='+iG42_DO+' , '+
+                                           ' DO_G312='+char(39)+changeCHR(iG312_DO, ':', '-')+char(39)+' , '+
+                                           ' DO_G42Cur='+iG42_CUR_DO+' , '+
+                                           ' OPIS_MIST='+char(39)+sDiffDescript + ' согласно ДТ'+char(39)+' , '+
+                                           ' NO_MIST='+IF(sDiffDescript='', 1,0)+ ' , '+//Если изменений нет, ставим признак
+                                           ' VID_MIST=0'+
+                                           ' WHERE JOURNAL_MASTER_ID='+GET_DT_GOODS.JOURNAL_MASTER_ID+' AND JOURNAL_CHILD_ID='+GET_DT_GOODS.JOURNAL_CHILD_ID
+                   );
+              ),
+
+
+
+Func('ConnectFreeDoUvGoods',,
+     BLOCK(
+         VAR('iFinded', integer, 0);
+         OPENQUERY('GET_DT_GOODS', 'SELECT * FROM UVGOODSTMP WHERE G32 IS NULL', 'dbJournals');
+         FIRST('GET_DT_GOODS');
+
+         WHILE(EOF('GET_DT_GOODS')=0,
+               BLOCK(
+                  iFinded:=0;
+                  WHILE(iFinded=0,
+                        BLOCK(
+                            OPENQUERY('FindG32', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+ IF(sBusyG32<>'',' AND G32 NOT IN ('+sBusyG32+')','') );
+                            IF(RECORDCOUNT('FindG32')<>0,
+                               BLOCK(
+                                  FIRST('FindG32');
+                                  //Ищем созданные на товар ком. акты, если находим, переходим на следующий товар
+                                  //Было сделано на случай прихода уведомлений в разное время
+                                 // OPENQUERY('Find_old_acts', 'STS_DB','Select * From KRD_CSDM WHERE PLACEID='+FindG32.Placeid+' AND ID='+FindG32.ID+' AND G32='+FindG32.G32);
+                                 // IF(RECORDCOUNT('Find_old_acts')=0,
+                                   //  BLOCK(
+
+                                        iG35 := 0;
+                                        sG33:=0;
+                                        iG311:=0;
+                                        iG42:=0;
+                                        iG42Cur:=0;
+
+                                        iG35 := GET_DT_GOODS.UV_G35;
+                                        sG33:=GET_DT_GOODS.UV_TNVD;
+                                        iG311:=GET_DT_GOODS.UV_G311;
+                                        iG42:=GET_DT_GOODS.UV_G42;
+                                        iG42Cur:= GET_DT_GOODS.UV_G42CUR;
+
+                                        FillVariable();
+                                        ParralelDoDt();
+                                        FillDoValues();
+                                        iFinded:=1;
+                                  //   )
+                                  //);
+                                  sBusyG32:=sBusyG32 + IF(sBusyG32 <> '', ',') + FindG32.G32;
+                               ),
+                               BLOCK(
+                                     iNewG32Counter:=iNewG32Counter+1;
+                                     OPENQUERY('FINDINDNUM', 'SELECT MAX(G32) as G32 FROM UVGOODSTMP', 'dbJournals');
+                                     EXECUTESQL('dbJournals','UPDATE UVGOODSTMP SET '+
+                                                             ' PLACEID='+FindG32.PLACEID+' , '+
+                                                             ' ID='+FindG32.ID+' , '+
+                                                             ' G32='+iNewG32Counter+' , '+
+                                                             ' VID_MIST=2'+
+                                                             ' WHERE JOURNAL_MASTER_ID='+GET_DT_GOODS.JOURNAL_MASTER_ID+' AND JOURNAL_CHILD_ID='+GET_DT_GOODS.JOURNAL_CHILD_ID
+                                     );
+                                     iFinded:=1;
+                               )
+                            );
+                        )
+                  );//WHILE(iFinded=0,
+                  NEXT('GET_DT_GOODS');
+               )
+         );
+     )
+),
+
+Func('DelFreeDoGoods',,
+     BLOCK(
+         OPENQUERY('FindG32Del', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+ IF(sBusyG32<>'', ' AND G32 NOT IN ('+sBusyG32+')',''));
+         IF(RECORDCOUNT('FindG32Del')<>0,
+            BLOCK(
+                  VAR('sJournalChildID', integer, 1000);
+                  FIRST('FindG32Del');
+                  WHILE(EOF('FindG32Del')=0,
+                        BLOCK(
+                           sJournalChildID := sJournalChildID + 1;
+                           EXECUTESQL('dbJournals', 'INSERT INTO UvGoodsTmp '+
+                                                    '('+
+                                                    {1}'JOURNAL_MASTER_ID, JOURNAL_CHILD_ID, JOURNAL_CHILD_ID_2, JOURNAL_UUID, '+
+                                                    {2}'DO_TNVD, UV_TNVD, DO_G35, DO_G311, '+
+                                                    {3}'DO_G42, DO_G42CUR, DO_G312, NO_MIST, DT_INF, '+
+                                                    {4}'PLACEID, ID, G32, OPIS_MIST, VID_MIST '+
+                                                    ') '+
+                                                    'VALUES '+
+                                                    '('+
+                                                    {1}'1000, '+sJournalChildID+', 1, '+char(39)+GENERATEUUID ()+char(39)+', '+
+                                                    {2}char(39)+FindG32Del.G33+char(39)+', '+char(39)+FindG32Del.G33+char(39)+', '+FindG32Del.G35+', '+FindG32Del.G311+', '+
+                                                    {3}FindG32Del.G42+', '+FindG32Del.G42_Currency+', '+char(39)+ changeCHR(FindG32Del.G312, ':', '-') +char(39)+', 0'+', '+char(39)+sDT_INF+char(39)+', '+
+                                                    {4}FindG32Del.PLACEID+', '+FindG32Del.ID+', '+FindG32Del.G32+', '+char(39)+'товар отсутствует в ДТ'+char(39)+', 1'+
+                                                    ')'
+                           );
+                           NEXT('FindG32Del');
+                        )
+                  );
+            )
+         );
+         CLOSEDATASET('FindG32Del');
+     )
+),
+
+Func('CreateComAct',PARAM('ActCounter', integer, 0),
+     EXECUTESQL('STS_DB', 'INSERT INTO KRD_DOP '+
+                          '('+
+                          {1}'PLACEID, ID, COUNTER, '+//Doc_Order_Number, '+
+                          {2}'DOC_NAME, DOC_NO, DOC_DATETIME '+
+                          ') '+
+                          'VALUES '+
+                          '('+
+                           {1}iPlaceid+', '+iID+', '+ActCounter+', '+ //iCaOrderCounter + ', '+//1
+                           {2}char(39)+'Коммерческий акт'+char(39)+ ', '+char(39)+{SOLVE (LEFTPAD(GENNO('CA_KPS'+iPlaceid, '№ комм. акта'), 7, '0'))} convert(ActCounter, string)+char(39)+', '+char(39)+FormatDateTime('DD.MM.YYYY HH:MM:SS', NOW())+char(39)+//2
+                          ') '
+     )
+),
+
+Func('AddGoodsInComAct',,
+     BLOCK(
+          EXECUTESQL('STS_DB', ' UPDATE KRD_COMM SET '+
+                               ' G33='+char(39)+TMP_GOODS.UV_TNVD+char(39)+' , '+
+                               ' G312='+char(39)+TMP_GOODS.UV_G312+char(39)+' , '+
+                               ' G35='+TMP_GOODS.UV_G35+' , '+
+                               ' G311='+TMP_GOODS.UV_G311+' , '+
+                               ' G42='+TMP_GOODS.UV_G42+' , '+
+                               ' G42_CURRENCY='+char(39)+TMP_GOODS.UV_G42CUR+char(39)+'  '+
+                               ' WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND G32='+TMP_GOODS.G32
+
+          );
+
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                             '('+
+                             {1}'PLACEID, ID, G32, '+
+                             {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                             {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                             {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, DOC_G311, '+
+                             {5}'DOC_G35, COMMERCEACT '+
+                             ') '+
+                             'VALUES '+
+                             '('+
+                              {1}iPlaceid+', '+iID+', '+TMP_GOODS.G32+', '+
+                              {2}iActCounter+ ', '+char(39)+TMP_GOODS.VID_MIST+char(39)+', '+char(39)+'1'+char(39)+', '+//2
+                              {3}char(39)+FormatDateTime('DD.MM.YYYY HH:MM:SS', dMistakeDate) + char(39)+', '+char(39)+TMP_GOODS.OPIS_MIST+char(39)+', '+char(39)+TMP_GOODS.DO_TNVD+char(39)+', '+
+                              {4}char(39)+TMP_GOODS.DO_G312+char(39)+', '+TMP_GOODS.DO_G42+', '+ char(39)+TMP_GOODS.DO_G42CUR+char(39)+', '+TMP_GOODS.DO_G311+',  '+
+                              {5}TMP_GOODS.DO_G35+', '+char(39)+TMP_GOODS.DT_INF+char(39)+
+                              ') '
+          );
+     )
+),
+
+Func('AddNewGoodsInDOCommAct',,
+     BLOCK(
+          // Получаем порядковый номер товара в накладной
+          OPENQUERY( 'LastComminTTN','STS_DB', 'SELECT MAX(N_TTN_G32) as N_TTN_G32 FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND N_TTN=1');
+          VAR('iNTTNG32', integer, LastComminTTN.N_TTN_G32+1);
+
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_COMM '+
+                               '('+
+                               {1}'PLACEID, ID, G32, GN, '+
+                               'G311, '+
+                               {2}'G33, G312, G35, '+
+                               {3}'G42, G42_CURRENCY, VALCODE, ACCEPTDATE, '+
+                               {4}'STORAGE_DATE, N_TTN, N_TTN_G32, STORAGE_TYPE, LEG_PERIOD, STORE_PERIOD, '+
+                               {5}'G313, BOXNO, SVHAREA, SVHHANGAR '+
+                               ') '+
+                               'VALUES '+
+                               '('+
+                                {1}iPlaceid+', '+iID+', '+TMP_GOODS.G32+', '+TMP_GOODS.G32+', '+
+                                TMP_GOODS.UV_G311+', '+
+                                {2}char(39)+TMP_GOODS.UV_TNVD+ char(39)+', '+char(39)+TMP_GOODS.UV_G312+char(39)+', '+TMP_GOODS.UV_G35+', '+
+                                {3}TMP_GOODS.UV_G42+', '+ char(39)+TMP_GOODS.UV_G42CUR+char(39)+', '+ char(39)+CURRENCYABBR (TMP_GOODS.UV_G42CUR)+char(39)+', '+char(39)+sAcceptDate+char(39)+', '+
+                                {4}char(39)+sStorageDate+char(39)+', 1, '+iNTTNG32+', ' +char(39)+ sStorageType+char(39)+', ' + sLegPeriod+', ' + sStorePeriod+', '+
+                                {5}char(39)+ 'ЧАСТЬ МЕСТ'+char(39)+', ' +char(39)+ sBoxno + '/' + LEFTPAD (convert(TMP_GOODS.G32,string), 6, '0') + ' ' + sGate+char(39)+', '+char(39)+ sSVHAREA+char(39)+', ' +char(39)+ sSVHHANGAR+char(39)+
+                               ') '
+          );
+
+          EXECUTESQL('STS_DB', 'INSERT INTO KR_C_P'+
+                               '('+
+                               {1}'PLACEID, ID, G32, '+
+                               {2}'DOC_COUNTER, DOC_TYPE'+
+                               ') '+
+                               'VALUES '+
+                               '('+
+                                {1}iPlaceid+', '+iID+', '+TMP_GOODS.G32+', '+
+                               {2}'1, '+char(39)+'13'+char(39)+
+                               ') '
+          );
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                             '('+
+                             {1}'PLACEID, ID, G32, '+
+                             {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                             {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                             {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                             {5}'DOC_G311, DOC_G35, COMMERCEACT '+
+                             ') '+
+                             'VALUES '+
+                             '('+
+                              {1}iPlaceid+', '+iID+', '+TMP_GOODS.G32+', '+
+                              {2}iActCounter+ ', '+char(39)+TMP_GOODS.VID_MIST+char(39)+', '+char(39)+'1'+char(39)+', '+//2
+                              {3}char(39)+FormatDateTime('DD.MM.YYYY HH:MM:SS', dMistakeDate) + char(39)+', '+char(39)+TMP_GOODS.OPIS_MIST+char(39)+', NULL, '+
+                              {4}'NULL, NULL, NULL, '+
+                              {5}'NULL, NULL, '+char(39)+TMP_GOODS.DT_INF+char(39)+
+                              ') '
+          );
+
+     )
+),
+
+
+//----------------------------------------------------------Начало программы----------------------------------------------------------------------------------------------------------------------------
+
+
+VAR('iPlaceID', integer, KRD_MAIN.PLACEID);
+VAR('iID', integer, KRD_MAIN.ID);
+
+//<Определяем каталог для чтения xml>
+  VAR('sDirPath', string, INIFILE ('CreateComAct', 'DirectoryPath', ''));
+  IF((SHIFTPRESSED()=1)|(sDirPath =''), sDirPath:=GetDir());
+  IF(sDirPath='', EndScript('Не указан каталог хранения ДТ, выполнение прекращено'));
+//</Определяем каталог для чтения xml>
+
+
+//<Получаем спсиок накладных ДО>
+    OPENQUERY('GET_TTN', 'STS_DB', ' SELECT PAPERNO, PAPERDATE FROM KR_PAPER WHERE PLACEID='+iPlaceid+' AND ID='+iID+ ' AND PAPERCODE LIKE ' +char(39)+ '02%'+char(39)//+
+                                   //' UNION '+
+                                  // ' SELECT PAPERNO, PAPERDATE FROM KRD_DCD WHERE PLACEID='+iPlaceid+' AND ID='+iID
+    );
+
+    VAR('TTNList', string, '');//UNIONVALUES возвращал значения с пробелами char(39)+ TRIM(UNIONVALUES ('GET_TTN', ['PAPERNO'], char(39)+','+char(39), ''))+char(39));
+    FIRST('GET_TTN');
+    WHILE(EOF('GET_TTN')=0,
+          BLOCK(
+            TTNList := TTNList + IF(TTNList<>'', ',')  + Get_TTN.PAPERNO;
+            NEXT('GET_TTN');
+          )
+    );
+    IF(TTNList = '', RAISEEXCEPTION('В указанном ДО отсутствую транспортные документы'));
+//</Получаем спсиок накладных ДО>
+
+
+//<Читаем ДТ в каталоге, записываем товары из ДТ во временную таблицу(только те у которых совпадает номер накладной с текущей ДО), перемещаем файл в бэкап>
+
+
+    var('mFileList', Memo, GETFILELIST(sDirPath, '*.xml', '|'));
+    VAR('iTotalFile', integer, 0);
+    VAR('iCount', integer, 0);
+    VAR('sDTFileName', string, '');
+    VAR('sTemp', string, '');
+
+
+    //showmessage(sDirPath+mFileList);
+    // кол-во файлов в папке
+    iTotalFile := SPLITSTR (mFileList, '|', sTemp);
+    
+    iCount := 1;
+
+    //Директория для резервного копирования xml
+    VAR('sBackupDir', string, sDirPath+ '\BACKUP\'+FORMATDATETIME('DDMMYY', DATE()));
+    IF(DIRECTORYEXISTS(sBackupDir)=0, FORCEDIRECTORIES(sBackupDir));
+    VAR('iGN', integer, 0);
+
+
+    
+    VAR('iG35', float, 0);
+    VAR('iG42Cur', integer);
+    VAR('sG33', string);
+    VAR('iG311', integer);
+    VAR('iG42', float);
+
+    VAR('iJOURNAL_MASTER_ID', integer, 0);
+    VAR('iJOURNAL_CHILD_ID', integer, 0);
+    
+    VAR('iFindedTTNinXML', integer, 0);
+
+    EXECUTESQL('dbJournals', 'DELETE FROM UVGOODSTMP');
+
+
+    While ( iCount <= iTotalFile,
+      Block(
+
+        sDTFileName := sDirPath+EXTRACTSTR (mFileList, iCount, '|');
+
+        VAR('iXML', integer, XMLDOCUMENTCREATE());
+        XMLDOCUMENTLOAD(iXML, sDTFileName);
+
+        VAR('XMLRoot', integer, XMLDOCUMENTROOT(iXML));
+        VAR('DtNode', integer, XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLROOT,0), 1),0),0));
+
+        IF((XMLNODENAME(DtNode)='ESADout_CU')*(XMLNODENAME(DtNode)<>''),
+           BLOCK(
+             iJOURNAL_MASTER_ID := iJOURNAL_MASTER_ID +1;
+             iJOURNAL_CHILD_ID := 0;
+             VAR('sDtDate', string);
+             
+             //<Получаем номер ДТ>
+             VAR('sNDT', string,'');
+                 	   VAR('iGDTNumber', integer,XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLROOT,0), 3),'DocBody'),'Inventory'),'GTDNumber'));
+                	   sDtDate:=XMLNODEVALUE(XMLNODECHILD(iGDTNumber,1));
+                	   var('SecondPart', string, EXTRACTSTR (sDtDate, 3, '-')+EXTRACTSTR (sDtDate, 2, '-')+RIGHT(EXTRACTSTR (sDtDate, 1, '-'),2));
+                	   sNDT:=XMLNODEVALUE(XMLNODECHILD(iGDTNumber,0))+'-'+SecondPart+'-'+XMLNODEVALUE(XMLNODECHILD(iGDTNumber,2));
+                	   VAR('sCommActText', string, 'ДТ,'+ EXTRACTSTR (sNDT, 1,'-')+'/'+EXTRACTSTR (sNDT, 2,'-')+'/'+EXTRACTSTR (sNDT, 3,'-')+','+ sDTDate);
+             //</Получаем номер ДТ>
+
+             VAR('iGoodsShipment', integer, XMLNODECHILD (DtNode, 'ESADout_CUGoodsShipment'));
+             VAR('iGoodsCount', integer, XMLNODECHILDCOUNT (iGoodsShipment));
+             VAR('iGoodsCounter', integer, 0);
+
+             //Валюта контракта
+             iG42CUR:=0;
+             iG42CUR:=CURRENCYCODE (XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD(iGoodsShipment, 'ESADout_CUMainContractTerms'), 'catESAD_cu:ContractCurrencyCode')));
+
+             sDTDate := EXTRACTSTR (sDtDate, 3, '-')+'.'+EXTRACTSTR (sDtDate, 2, '-')+'.'+EXTRACTSTR (sDtDate, 1, '-');
+
+             //Информация по ДТ для записи в сведения об Актах ком.акта
+             VAR('sDT_INF', string, 'ДТ,'+sNDT+','+sDTDate);
+
+             //<Пробегаем  по товарам и те у которых совпала накладная записываем>
+             WHILE(iGoodsCounter< iGoodsCount,
+                   BLOCK(
+                     IF(XMLNODENAME(XMLNODECHILD(iGoodsShipment, iGoodsCounter))='ESADout_CUGoods',
+                        BLOCK(
+                           VAR('iGoods', integer, XMLNODECHILD(iGoodsShipment, iGoodsCounter));
+
+                           //<Ищем накладную и сверяем её с накладной из ДО>
+                           VAR('iPrDocCounter', integer, XMLNODEINDEX (XMLNODECHILD(iGoods, 'cat_ru:PrDocumentDate')));
+                           VAR('iGoodsChildCount', integer, XMLNODECHILDCOUNT (iGoods));
+                           VAR('iFind', integer, 0);
+                           VAR('iPrDocDescript', integer, 0);
+
+
+                           While((iPrDocCounter<iGoodsChildCount)*(iFind=0),
+                              BLOCK(
+                                iPrDocDescript := XMLNODECHILD (iGoods, iPrDocCounter);
+                                IF(XMLNODENAME (iPrDocDescript)='ESADout_CUPresentedDocument',
+                                     IF(COPY(XMLNODEVALUE(XMLNODECHILD (iPrDocDescript, 'catESAD_cu:PresentedDocumentModeCode')),1,2)='02',
+                                        iFind:=STRPOS(XMLNODEVALUE(XMLNODECHILD (iPrDocDescript, 'cat_ru:PrDocumentNumber')), TTNList)
+                                     )
+                                );
+                                iPrDocCounter := iPrDocCounter + 1;
+
+                              )
+                           );
+                           //</Ищем накладную и сверяем её с накладной из ДО>
+
+                           //<Если накладная совпала пишем товар>
+                           IF(iFind>0,
+                              BLOCK(
+                                  iFindedTTNinXML:=iFindedTTNinXML+1;
+                                  VAR('iVesPallete', float, 0);
+                                  VAR('sPalleteDescr', string, XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND (XMLNODEFIND (iGoods, 'ESADGoodsPackaging'), 'catESAD_cu:PalleteInformation'), 'catESAD_cu:PalleteDescription')));
+                                  iVesPallete := IF(sPalleteDescr<>'', FINDNUMBER(sPalleteDescr, 'КГ'),0);
+                                  iG35 := 0;
+                                  sG33:='';
+                                  iG311:=0;
+                                  iG42:=0;
+
+                                  iG35 := XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GrossWeightQuantity')) + iVesPallete;
+                                  sG33:=XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GoodsTNVEDCode'));
+                                  iG311:=XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iGoods, 'ESADGoodsPackaging'), 'catESAD_cu:PakageQuantity'));
+                                  iG42:=XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:InvoicedCost'));
+
+                                  //VAR('sDescriptGoods',string, VIGetCommName (sG33));
+                                  VAR('sDescriptGoods',string, XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GoodsDescription')));
+
+                                 //Смотрим был ли уже добавлен подобный код ТНВЭД, если нет то добавляем новую запись, если да, то суммируем старые значения с новыми.
+                                 OPENQUERY('Find_TNVD', 'SELECT JOURNAL_MASTER_ID, JOURNAL_CHILD_ID, JOURNAL_CHILD_ID_2 FROM UvGoodsTmp WHERE UV_TNVD='+char(39)+sG33+char(39), 'dbJournals');
+                                 IF(RECORDCOUNT('Find_TNVD')=0,
+                                    BLOCK(
+
+                                        iJOURNAL_CHILD_ID := iJOURNAL_CHILD_ID + 1;
+                                        EXECUTESQL('dbJournals', 'INSERT INTO UvGoodsTmp '+
+                                                                 '('+
+                                                                 {1}'JOURNAL_MASTER_ID, JOURNAL_CHILD_ID, JOURNAL_CHILD_ID_2, JOURNAL_UUID, '+
+                                                                 {2}'UV_TNVD, UV_G35, UV_G311, '+
+                                                                 {3}'UV_G42, UV_G42CUR, UV_G312, NO_MIST, DT_INF '+
+                                                                 ') '+
+                                                                 'VALUES '+
+                                                                 '('+
+                                                                 {1}iJOURNAL_MASTER_ID+', '+iJOURNAL_CHILD_ID+', 1, '+char(39)+GENERATEUUID ()+char(39)+', '+
+                                                                 {2}char(39)+sG33+char(39)+', '+iG35+', '+iG311+', '+
+                                                                 {3}iG42+', '+iG42Cur+', '+char(39) +sDescriptGoods +char(39) +', 0'+', '+char(39)+sDT_INF+char(39)+
+                                                                 ')'
+                                        );
+                                    ),
+                                    BLOCK(
+                                        EXECUTESQL('dbJournals','UPDATE UVGOODSTMP SET '+
+                                                               ' UV_G35=(UV_G35+'+iG35+') , '+
+                                                               ' UV_G311=(UV_G311+'+iG311+') , '+
+                                                               ' UV_G42=(UV_G42+'+iG42+')  '+
+                                                               ' WHERE JOURNAL_MASTER_ID='+Find_TNVD.JOURNAL_MASTER_ID+' AND JOURNAL_CHILD_ID='+Find_TNVD.JOURNAL_CHILD_ID+' AND JOURNAL_CHILD_ID_2='+Find_TNVD.JOURNAL_CHILD_ID_2
+                                        );
+                                    )
+                                 );
+                              )
+                           );
+                           //</Если накладная совпала пишем товар>
+
+                        )
+                     );
+
+                     iGoodsCounter :=iGoodsCounter+1;
+                   )
+             );//</Пробегаем  по товарам и те у которых совпала накладная записываем>
+
+             //Перемещаем xml в резервную директорию
+             DELETEFILE(sDTFileName);
+             XMLDOCUMENTSAVE(iXML, INCLUDETRAILINGBACKSLASH(sDirPath{sBackupDir}) + sNDT + '.xml');
+           )
+        );
+        iCount := iCount + 1;
+      )
+    );
+//</Читаем ДТ в каталоге, записываем товары из ДТ во временную таблицу(только те у которых совпадает номер накладной с текущей ДО), перемещаем файл в бэкап>
+
+IF(iFindedTTNinXML=0,RAISEEXCEPTION ('В ДТ не найдено накладных совпадающих с ДО'));
+
+OPENQUERY('SELECT_DT', 'SELECT DISTINCT JOURNAL_MASTER_ID, DT_INF FROM UVGOODSTMP', 'dbJournals');
+IF(SELECTRECORDS ('Укажите ДТ для создания ком. акта', 'SELECT_DT',
+               [
+                 ['DT_INF', 'Информация по ДТ', 30]
+               ],
+               'SELECTED_DT', , 'STS_DB'
+   )=0,
+   RAISEEXCEPTION('Не выбраны ДТ. Выполнение прекращено')
+);
+CLOSEDATASET('SELECT_DT');
+
+EXECUTESQL('dbJournals', 'DELETE FROM UVGOODSTMP WHERE JOURNAL_MASTER_ID NOT IN('+UNIONVALUES ('SELECTED_DT', ['JOURNAL_MASTER_ID'], ',', ',')+')');
+
+VAR('sBusyG32', string, '');//Переменная в которую записываются номера обработанных в ДО товаров
+
+//Ищем совпадения кодов ТНВЭД в ДО и пишем в таблицу номера товаров ДТ по которым обнаружено совпадение. Для совпавших берем описание из ДО. Добавляем найденные номера товаров с писок sBusyG32
+//Если нет изменений то товар не трогать. Проставить признак в таблицу в соответствующей таблице.
+//Сравниваем характеристики, пишем текст причины несоответствия (Не совпадает вес, стоимость, кол-во мест, код ТНВЭД ...)Отдельная функция!
+//Если по товару уже содавался ком.акт до этого момента приплюсовываем к данным из тек. уведомления фактические данные по товару. Ставим признак в таблицу, что товар уже менялся.
+//Заполняем док. сведения из ДО во временной таблице. Сделано для универсализации дaльнейшего заполнения простых товаров и товаров которые менялись в предыдущих ком.актах.
+//У товаров, которые менялись в предыдущих ком.актах данные по товаросопроводительным документам берём из CSDM
+//Указываем причину несоответсвия 0
+
+FindTovarInDO();
+
+//Распределяем оставшие свободные товары из временной таблицы по свободным в ДО. (При запросе к ДО ищем товары, которые NOT IN ('+sBusyG32+')). Продолжаем писать обработанные товары в sBusyG32.
+//Если по товару уже содавался ком.акт до этого момента, тогда его не трогаем!
+//Берем описание товара из ТНВЭД (используем нси таблицу)
+//Сравниваем характеристики, пишем текст причины несоответствия (Не совпадает вес, стоимость, кол-во мест, код ТНВЭД ...). Отдельная функция!
+//Если товары в ДО закончились, добавляем новые пустышки в KRD_COMM, указываем причину несоответсвия 2
+
+ConnectFreeDoUvGoods();
+
+//Товарам которых нет в ДТ ставим признак , отсутствуют по факту
+DelFreeDoGoods();
+//Смотрим старые акты, и получаем текущий counter
+VAR('iActCounter', integer, FindOldActs());
+//Создаем ком.акт
+VAR('dMistakeDate', datetime,NOW());
+dMistakeDate:=INPUTDATE ('dMistakeDate', 'Укажите дату выявления несоответствия');
+
+OPENQUERY('TMP_GOODS', 'SELECT * FROM UVGOODSTMP WHERE NO_MIST=0', 'dbJournals');
+IF(RECORDCOUNT('TMP_GOODS')=0, RAISEEXCEPTION ('В указанных ДО и ДТ качественыые и количественные характеристики товаров совпадают. Ком.акт не требуется'));
+CreateComAct(iActCounter);
+
+//Получаем нужные характеристики из первого товара ДО1
+OPENQUERY('FirstTov','STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID+' AND G32=1');
+VAR('sAcceptDate', string, FirstTov.Acceptdate);
+VAR('sStorageDate', string, FirstTov.storage_date);
+VAR('sStorageType', string, FirstTov.storage_type);
+VAR('sLegPeriod', string, FirstTov.LEG_PERIOD);
+VAR('sStorePeriod', string, FirstTov.STORE_PERIOD);
+VAR('sSVHAREA', string, FirstTov.SVHAREA);
+VAR('sSVHHANGAR', string, FirstTov.SVHHANGAR);
+VAR('sBOXNO', string, EXTRACTSTR (FirstTov.BOXNO, 1, '/'));
+VAR('sGate', string, EXTRACTSTR (FirstTov.BOXNO, 2, ' '));
+
+
+//Бежим по временной таблице и добавляем товары
+FIRST('TMP_GOODS');
+WHILE(EOF('TMP_GOODS')=0,
+     BLOCK(
+       IF(TMP_GOODS.VID_MIST=2,
+         AddNewGoodsInDOCommAct()//Добавляем новый товар в ДО
+       ,
+         AddGoodsInComAct() // Редактируем имеющиеся
+       );
+       NEXT('TMP_GOODS');
+     )
+);
+
+GLOBALREFRESH();

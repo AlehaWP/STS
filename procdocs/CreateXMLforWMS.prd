@@ -1,0 +1,107 @@
+// *****************************************************************************
+// Название: Выгружаем ДТ-товары
+// Описание: Выгружаем ДТ-товары
+// Кнопка вызова: 0
+// Подпись кнопки: Выгружаем ДТ-товары
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('sProgPath', string, ProgramPath());
+
+//Показываем пользователю форму ввода параметров
+FORMCREATE ('ParamForm', sProgPath + 'Forms\CreateXMLforWMS.cfm');
+FORMSETPROPERTY (ParamForm, 'DateFrom.Text', FORMATDATETIME('DD.MM.YYYY 00:00:00', NOW()));
+FORMSETPROPERTY (ParamForm, 'DateTo.Text', FORMATDATETIME('DD.MM.YYYY 23:59:59', NOW()));
+FORMSETPROPERTY (ParamForm, 'Path.Text', INIFILE ('CreateXMLforWMS', 'Path', 'C:\CTM'));
+
+IF(FORMSHOWMODAL (ParamForm) <> 2,
+   BLOCK(
+     // Берем значения формы
+     VAR('sSaveDirectory', string, INCLUDETRAILINGBACKSLASH(FORMGETPROPERTY (ParamForm, 'Path.Text')));
+     WRITEINIFILE ('CreateXMLforWMS', 'Path', sSaveDirectory);
+     VAR('sDateTo', string, FORMATDATETIME('DD.MM.YYYY HH:MM:SS' , FORMGETPROPERTY (ParamForm, 'DateTo.Text')));
+     VAR('sDateFrom', string, FORMATDATETIME('DD.MM.YYYY HH:MM:SS' , FORMGETPROPERTY (ParamForm, 'DateFrom.Text')));
+
+     //Создаем xml
+     VAR ('XmlFile', Integer, XMLDOCUMENTCREATE ());
+     VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+     XMLDOCUMENTENCODING (XmlFile, 'windows-1251');
+     VAR ('Data', Integer, XMLNODEADDCHILD (XmlRoot, 'Data'));
+     VAR ('DTInf', Integer, XMLNODEADDCHILD (Data, 'DTInformation'));
+     
+     //Берем нужные нам товары
+     OPENQUERY('DT', 'STS_DB', 'SELECT M.PLACEID, M.ID, M.NBD, D.PAPERNO'+
+                                  ' FROM KRD_MAIN M '+
+                                  ' LEFT JOIN KRD_COMM C ON ((M.PLACEID = C.PLACEID) AND (M.ID=C.ID)) '+
+                                  ' LEFT JOIN KRD_DCD D ON ((M.PLACEID = D.PLACEID) AND (M.ID=D.ID)) '+
+                                  ' WHERE '+
+                                  ' (M.BD_DATE >= to_date(' + CHAR(39) + sDateFrom + CHAR(39) + ','+char(39)+'DD.MM.YYYY HH24:MI:SS'+char(39)+')) AND (M.BD_DATE <=to_date(' + CHAR(39) + sDateTo + CHAR(39) + ','+char(39)+'DD.MM.YYYY HH24:MI:SS'+char(39)+'))'+
+                                  '  AND (C.BOXNO IS NULL) AND (D.PAPERNAME = '+char(39)+'ДТ'+char(39)+') '+
+                                  ' GROUP BY M.PLACEID, M.ID, M.NBD, D.PAPERNO '
+                                  );
+     IF(RECORDCOUNT('DT')<>0,
+        BLOCK(
+            FIRST('DT');
+            WHILE(EOF('DT')=0,
+                  BLOCK(
+                    VAR ('XmlDT', Integer, XMLNODEADDCHILD (DTInf, 'DTNomber'));
+                    XMLNODESETVALUE (XmlDT, DT.Paperno);
+                    OPENQUERY('GOODS', 'STS_DB', 'SELECT G32, G33, SPR_NUM FROM KRD_COMM WHERE PLACEID='+DT.PLACEID+' AND ID='+DT.ID + ' ORDER BY G32');
+
+                    FIRST('GOODS');
+                        WHILE(EOF('GOODS')=0,
+                              BLOCK(
+                                 VAR ('GoodsInf', Integer, XMLNODEADDCHILD (XmlDT, 'DTGoodsInformation'));
+                                 XMLNODESETVALUES (GoodsInf, ,
+                                                          'DTGoodsNo', GOODS.G32,
+                                                          'ProdCode', GOODS.G33,
+                                                          'PLACEID', DT.PLACEID,
+                                                          'ID', DT.ID,
+                                                          'DONumber', DT.NBD
+
+                                  );
+                                  
+                                            //Блок создания ветки WMSLocationInf для проверки загрузки
+                                            //{
+                                            VAR ('WMSLocationInf', Integer, XMLNODEADDCHILD (GoodsInf, 'WMsLocationInformation'));
+                                            VAR('i', integer, 0);
+                                            WHILE(i < 5,
+                                              BLOCK(//showmessage(i);
+                                                  VAR ('WMSLocationId', Integer, XMLNODEADDCHILD (WMSLocationInf, 'WMSLocationId'));
+                                                  VAR('s', string, '');
+                                                  CASE(i,
+                                                       [
+                                                       0, s:='Раc',
+                                                       1, s:='по',
+                                                       2, s:='ло',
+                                                       3, s:='же',
+                                                       4, s:='ние'
+                                                       ]
+                                                  );
+                                                  XMLNODESETVALUE (WMSLocationId, s);
+                                                  i := i + 1;
+                                              )
+                                            );
+                                            //}
+                                 NEXT('GOODS');
+                              )
+                        );
+                    NEXT('DT');
+                  )
+                  
+            );
+        )
+     );
+
+
+
+
+
+     
+     
+     // Сохраняем XML
+     XMLDOCUMENTSAVE(XmlFile, sSaveDirectory + FormatDateTime('DDMM',FORMGETPROPERTY ('ParamForm', 'DateFrom.Text')) + '-' + FormatDateTime('DDMMYYYY',FORMGETPROPERTY ('ParamForm', 'DateTO.Text')) + '.xml');
+   ),
+   RAISEEXCEPTION ('Выполнение отменено')
+);
+    

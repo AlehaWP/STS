@@ -1,0 +1,86 @@
+// *****************************************************************************
+// Название: После создания документа
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+WRITEINIFILE ('JUSTCREATED', IF (LENGTH (UserInfo ('', 'USERUUID')) > 0, UserInfo ('', 'USERUUID'), 'ADMIN'), KRD_MAIN.MAIN_ID);
+
+
+IF (INIFILE ('EXTENTION', 'LOADUSERTODOC', '0') = '1',
+  Block(
+    IF (LENGTH (USERINFO ('', 'UserName')) > 0,
+      Block(
+        VAR ('sLastName',   String, '');
+        VAR ('sFirstName',  String, '');
+        VAR ('sMiddleName', String, '');
+
+        CASE (DocType,
+          [1, Block(
+             EDIT ('KRD_MAIN');
+             SETFIELDVALUE ('KRD_MAIN',
+                            'AUTHOR',      USERINFO ('', 'UserName'),
+                            'AUTHOR_POST', USERINFO ('', 'UserPost'),
+             ); // SETFIELDVALUE
+             POST ('KRD_MAIN');
+           ),
+           5, Block(
+             EDIT ('REL_MAIN');
+             SETFIELDVALUE ('REL_MAIN',
+                            'RELEASE_GIVE',      USERINFO ('', 'UserName'),
+                            'RELEASE_GIVE_POST', USERINFO ('', 'UserPost'),
+             ); // SETFIELDVALUE
+             POST ('REL_MAIN');
+           ),
+           38, Block(
+             VAR ('sLastName',   String, '');
+             VAR ('sFirstName',  String, '');
+             VAR ('sMiddleName', String, '');
+
+             IF (RegExMatch (USERINFO ('', 'UserName'), '([А-Яа-я]+)[ |\.]+([А-Яа-я]+)[ |\.]+([А-Яа-я]+)', 34, 'sLastName', 'sFirstName', 'sMiddleName'),
+               Block(
+                 EDIT ('KRD_DOP');
+                 SETFIELDVALUE ('KRD_DOP',
+                                'WAREHOUSEPERSON_NAME',    sFirstName,
+                                'WAREHOUSEPERSON_MDLNAME', sMiddleName,
+                                'WAREHOUSEPERSON_SURNAME', sLastName,
+                                'WAREHOUSEPERSON_POST',    USERINFO ('', 'UserPost'),
+                 ); // SETFIELDVALUE
+                 POST ('KRD_DOP');
+               )
+             ); // IF
+           ),
+           39, Block(
+             IF (RegExMatch (USERINFO ('', 'UserName'), '([А-Яа-я]+)[ |\.]+([А-Яа-я]+)[ |\.]+([А-Яа-я]+)', 34, 'sLastName', 'sFirstName', 'sMiddleName'),
+               Block(
+                 EDIT ('KRD_LETTER');
+                 SETFIELDVALUE ('KRD_LETTER',
+                                'WAREHOUSEPERSON_NAME',    sFirstName,
+                                'WAREHOUSEPERSON_MDLNAME', sMiddleName,
+                                'WAREHOUSEPERSON_SURNAME', sLastName,
+                                'WAREHOUSEPERSON_POST',    USERINFO ('', 'UserPost'),
+                 ); // SETFIELDVALUE
+                 POST ('KRD_LETTER');
+               )
+             ); // IF
+           ),
+          ], {showmessage (DocType);}
+        ); // IF
+      )
+    ); // IF
+  )
+); // IF
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,16 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('TestList', Integer, StringListCreate());
+var('sFileName', string );
+SELECTFILE ('sFileName','Выбирите файл','');
+StringListLoadFromFile(TestList, sFileName);
+showmessage(STRINGLISTGETTEXT(TestList));
+
+
+STRINGLISTSAVETOFILE(TestList, 'C:\Temp\111.txt');

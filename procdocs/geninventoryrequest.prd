@@ -1,0 +1,29 @@
+// *****************************************************************************
+// Название: Генерация запроса описи документов
+// Описание: Генерация запроса описи документов
+// Кнопка вызова: 0
+// Подпись кнопки: Запрос описи
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+FORCEDIRECTORIES (sDir);
+
+//VAR ('sDir', String, INIFILE ('STS-MED', 'iin', ''));
+//IF ((sDir = '') | (SHIFTPRESSED () = 1), IF (SELECTDIRECTORY ('sDir') = 0, RAISEEXCEPTION ('Отменено пользователем')));
+
+VAR ('XmlFile', Integer, XMLDOCUMENTCREATE ());
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+VAR ('sRegNumber', String, '');
+
+XMLNODEADDCHILD (XmlRoot, 'request');
+
+FORMCREATE (frmIR, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\genInventoryRequest.cfm');
+
+IF (FORMSHOWMODAL (frmIR) = 2, RAISEEXCEPTION ('Отменено пользователем'));
+
+sRegNumber := REPLACESTR (FORMGETPROPERTY (frmIR, 'rtRegNumber.Text'), '/', '-');
+
+XMLDOCUMENTSAVE (XmlFile, INCLUDETRAILINGBACKSLASH (sDir) + 'InventoryRequest_' + sRegNumber + '.xml')

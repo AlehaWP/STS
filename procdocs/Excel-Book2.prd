@@ -1,0 +1,424 @@
+// *****************************************************************************
+// Название: Сверка данных Янино
+// Описание: Сверка данных Янино
+// Кнопка вызова: 1
+// Подпись кнопки: Сверка данных Янино
+// *****************************************************************************
+//
+Var('sDirectory', string, '');
+Var('sSQL', string, '');
+Var('sSpisokFiles', string, '');
+Var('sTmpPath', string, '');
+Var('sTmpGTD', string, '');
+Var('iCountExcel', integer, 0);
+
+Var('sNumDCD_EX', string, '');
+Var('sCodDCD_EX', string, '');
+Var('sNumDCD_STS', string, '');
+Var('sCodDCD_STS', string, '');
+Var('sTranspNo_EX', string, '');
+Var('sTranspNo_STS', string, '');
+Var('dDateGTD', DateTime);
+Var('sCodVAL', string, '');
+Var('sSTS_G33', string, '');                 
+Var('iPLACEID', integer, 0);                 
+Var('iID', integer, 0);
+Var('iG32', integer, 0);
+Var('sSTS_RG35', string, '');                  
+Var('sRelNO', string, '');                  
+Var('sNBD', string, '');                  
+Var('sG42_CUR', string, '');
+Var('sINV_EX', string, '');
+Var('sINV_STS', string, '');
+Var('sCMR_STS', string, '');
+Var('sCMR_EX', string, '');
+Var('iFind', integer, 0);
+Var('bFoundGTD', boolean, False);
+Var('bFoundDCD', boolean, False);
+Var('bFoundVAL', boolean, False);
+Var('bFoundINV', boolean, False);
+Var('iCountExWithVAL', integer, 0);
+Var('iCountExWithDCD', integer, 0);
+Var('iCountExWithINV', integer, 0);
+Var('iCountExWithCMR', integer, 0);
+Var('iNowCountCMR', integer, 1);
+Var('iNowCountDCD', integer, 1);
+Var('iNowCountVAL', integer, 1);
+Var('iNowCountINV', integer, 1);
+Var('iPeremenCount', integer, 0);
+
+Var('sListName', String);
+Var('sFileName', String);
+sTmpGTD := '10210090/010911/0022833';
+//showmessage(COPY(EXTRACTSTR (sTmpGTD, 2, '/'),3,2));//
+//showmessage(ENCODEDATE ('20' + COPY(EXTRACTSTR (sTmpGTD, 2, '/'),5,2), COPY(EXTRACTSTR (sTmpGTD, 2, '/'),3,2), COPY(EXTRACTSTR (sTmpGTD, 2, '/'),1,2)));
+//RAISEEXCEPTION ('Супер');
+//C:\Users\nerchenko.CTM\Desktop\Новая папка
+sListName := INPUTTEXT ('', 'Введите название листа:', 'Sheet1');
+sListName := '`.`'+sListName+'$';
+DELETEFILE (PROGRAMPATH() + 'DATA_TMP\tmpCOMM.DBF');
+OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ PROGRAMPATH() + 'DATA_TMP\');
+sSQL := 'CREATE TABLE '+CHAR(39)+PROGRAMPATH()+'DATA_TMP\tmpCOMM.DBF'+CHAR(39);
+  sSQL := sSQL + ' (';
+  sSQL := sSQL + 'PLACEID INTEGER, ';
+  sSQL := sSQL + 'ID INTEGER, ';
+  sSQL := sSQL + 'G32 INTEGER, ';
+  sSQL := sSQL + 'G32_EX INTEGER, ';
+  sSQL := sSQL + 'NBD CHAR(30), ';
+  sSQL := sSQL + 'RELEASE_NO CHAR(30), ';
+  sSQL := sSQL + 'DOC_NO CHAR(254), ';
+  sSQL := sSQL + 'G33 CHAR(30), ';
+  sSQL := sSQL + 'G33_EX CHAR(30), ';
+  sSQL := sSQL + 'CMR CHAR(50), ';
+  sSQL := sSQL + 'CMR_EX CHAR(50), ';
+  sSQL := sSQL + 'INV CHAR(254), ';
+  sSQL := sSQL + 'INV_EX CHAR(254), ';
+  sSQL := sSQL + 'TIR CHAR(254), ';
+  sSQL := sSQL + 'TIR_EX CHAR(100), ';
+  sSQL := sSQL + 'G35 FLOAT, ';
+  sSQL := sSQL + 'G35_EX FLOAT, ';
+  sSQL := sSQL + 'CARNO CHAR(50), ';
+  sSQL := sSQL + 'CARNO_EX CHAR(50), ';
+  sSQL := sSQL + 'G42_CODE CHAR(25), ';
+  sSQL := sSQL + 'G42_COD_EX CHAR(25), ';
+  sSQL := sSQL + 'MATCHED INT, ';
+  sSQL := sSQL + 'CAUSE CHAR(254) ';
+sSQL := sSQL + ')';
+sSQL := sSQL + '';
+EXECUTESQL ('TMP_DB', sSQL);
+
+OPENTABLE('tmpCOMM', PROGRAMPATH() + 'DATA_TMP\tmpCOMM.DBF', 'ID', 'TMP_DB', 1);
+//Открываем базу
+OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=Excel');
+
+//Получаем список файлов разделяем его, и подключаем каждый Excel. Для этого бежим по списк файлов. Отделяем строки по "|", смотрим по названию какие данные в Excel, и делаем запросы. В названия запросов введен счетчик.
+IF(SELECTDIRECTORY ('sDirectory'),
+  sSpisokFiles := GETFILELIST(sDirectory, '*.xls', '|') + '|',
+  RAISEEXCEPTION ('Каталог не указан')
+);
+
+WHILE(STRPOS ('|', sSpisokFiles)<>0,
+  BLOCK(
+    sTmpPath := REMOVECHAR(COPY (sSpisokFiles, 0, STRPOS ('|', sSpisokFiles)), '|');
+    sSpisokFiles :=DELETE (sSpisokFiles, 1, STRPOS ('|', sSpisokFiles));
+    sFileName := sDirectory + '\' + sTmpPath;
+    IF(STRPOS('вал', sTmpPath)<>0,
+       BLOCK(
+         iCountExWithVAL := iCountExWithVAL + 1;
+         VAR('sFilePathVAL' + convert(iCountExWithVAL, string), string, '');
+         LET('sFilePathVAL' + convert(iCountExWithVAL, string), sDirectory + '\' + sTmpPath);
+         //OPENTABLE ('EX_TBL_VAL' + convert(iCountExWithVAL, string), VALUE('sFilePathVAL' + convert(iCountExWithVAL, string))+sListName, '', 'EXCEL_DB'');
+         //OPENQUERY ('qEXEL_VAL'+ convert(iCountExWithVAL, string), 'select * from '+CHAR (34)+VALUE('sFilePathVAL' + convert(iCountExWithVAL, string))+sListName+CHAR (34)+' where "  номер ГТД" is not null','EXCEL_DB');
+
+       );
+    );
+    IF(STRPOS('дкд', sTmpPath)<>0,
+       BLOCK(
+         iCountExWithDCD := iCountExWithDCD + 1;
+         VAR('sFilePathDCD' + convert(iCountExWithDCD, string), string, '');
+         LET('sFilePathDCD' + convert(iCountExWithDCD, string), sDirectory + '\' + sTmpPath);
+         //OPENTABLE ('EX_TBL_VAL' + convert(iCountExWithVAL, string), sFileName+sListName, '', 'EXCEL_DB'', 1);
+         //OPENQUERY ('qEXEL_DCD'+ convert(iCountExWithDCD, string), 'select * from '+CHAR (34)+VALUE('sFilePathDCD' + convert(iCountExWithDCD, string))+sListName+CHAR (34)+' where " Номер ГТД" is not null','EXCEL_DB');
+       );
+    );
+    IF(STRPOS('инв', sTmpPath)<>0,
+       BLOCK(
+         iCountExWithINV := iCountExWithINV + 1;
+         VAR('sFilePathINV' + convert(iCountExWithINV, string), string, '');
+         LET('sFilePathINV' + convert(iCountExWithINV, string), sDirectory + '\' + sTmpPath);
+         //OPENTABLE ('EX_TBL_VAL' + convert(iCountExWithVAL, string), sFileName+sListName, '', 'EXCEL_DB'');
+         //OPENQUERY ('qEXEL_INV'+ convert(iCountExWithINV, string), 'select * from '+CHAR (34)+VALUE('sFilePathINV' + convert(iCountExWithINV, string))+sListName+CHAR (34)+' where "код ТН ВЭД" is not null','EXCEL_DB');
+       );
+    );
+    IF(STRPOS('смр', sTmpPath)<>0,
+       BLOCK(
+         iCountExWithCMR := iCountExWithCMR + 1;
+         VAR('sFilePathCMR' + convert(iCountExWithCMR, string), string, '');
+         LET('sFilePathCMR' + convert(iCountExWithCMR, string), sDirectory + '\' + sTmpPath);
+         //OPENTABLE ('EX_TBL_VAL' + convert(iCountExWithVAL, string), sFileName+sListName, '', 'EXCEL_DB'');
+         //showmessage(VALUE('sFilePathCMR' + convert(iCountExWithCMR, string)));
+         OPENQUERY ('qEXEL_CMR'+ convert(iCountExWithCMR, string), 'select * from '+CHAR (34)+VALUE('sFilePathCMR' + convert(iCountExWithCMR, string))+sListName+CHAR (34)+' where "код ТН ВЭД" is not null','EXCEL_DB');
+         //showmessage(FIELDVALUE ('qEXEL_CMR'+ convert(iCountExWithCMR, string), ' Номер ГТД'));
+       );
+    );
+  )
+);
+
+//SHOWPROGRESS ('Сверка данных...');
+WHILE(iNowCountCMR <= iCountExWithCMR,//Лезем в наши Excel накладные. Сколько у нас файлов, мы получили когда подключали таблицы. Теперь по ним бежим и заполним временную таблицу.
+  BLOCK(
+    
+    FIRST('qEXEL_CMR'+ convert(iNowCountCMR, string));
+    //showmessage(FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), ' Номер ГТД'));
+    WHILE(EOF('qEXEL_CMR'+ convert(iNowCountCMR, string)) = 0,
+      BLOCK(
+        IF((sTmpGTD <> FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), ' Номер ГТД'))*(FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), ' Номер ГТД')<>''),
+           BLOCK(
+
+             sTmpGTD := FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), ' Номер ГТД');//Запоминаем номер ГТД, потому что в Excel если строка относится к предидущей ГТД графа "Номер ГТД" не заполнена
+             IF(LOCATE('REL_MAIN_2','DOC_NO',[sTmpGTD]),
+                BLOCK(
+                  showmessage('Find');
+                  //showmessage(iCountExWithDCD);
+                  iNowCountDCD := 1;
+                  iNowCountVAL := 1;
+                  iNowCountINV := 1;
+                  bFoundDCD := False;
+                  bFoundVAL := False;
+                  bFoundINV := False;
+                  
+                  bFoundGTD := True;
+                  WHILE((iNowCountDCD <= iCountExWithDCD)*(bFoundDCD = False),
+                    BLOCK(
+                      sINV_STS := '';
+                      sNumDCD_STS := '';
+                      sTranspNo_STS := '';
+                      sNumDCD_EX :=  '';
+                      sCodDCD_EX :=  '';
+                      sTranspNo_EX:='';
+                      //showmessage(VALUE('sFilePathDCD' + convert(iNowCountDCD, string)));
+                      OPENQUERY ('qEXEL_DCD', 'select * from '+CHAR (34)+VALUE('sFilePathDCD' + convert(iNowCountDCD, string))+sListName+CHAR (34)+' where " Номер ГТД" ='+
+                                              char(39) + sTmpGTD + char(39),'EXCEL_DB');
+                      IF(RECORDCOUNT ('qEXEL_DCD')<>0,
+                        BLOCK(
+                          bFoundDCD := True;
+                          sNumDCD_EX :=  "qEXEL_DCD"."номер документа";
+                          sCodDCD_EX :=  "qEXEL_DCD"."Код документа";
+                          sTranspNo_EX:= "qEXEL_DCD"."№ транспсредства";
+                          //RAISEEXCEPTION (sTranspNo);
+                        )
+                      );
+
+                      CLOSEDATASET ('qEXEL_DCD');
+                      iNowCountDCD := iNowCountDCD + 1;
+                    )
+                  );
+                  WHILE((iNowCountVAL <= iCountExWithVAL)*(bFoundVAL = False),
+                    BLOCK(
+                    dDateGTD := ENCODEDATE ('20' + COPY(EXTRACTSTR (sTmpGTD, 2, '/'),5,2), COPY(EXTRACTSTR (sTmpGTD, 2, '/'),3,2), COPY(EXTRACTSTR (sTmpGTD, 2, '/'),1,2));
+                    sCodVAL :=  '';
+                      OPENQUERY ('qEXEL_VAL', 'select * from '+CHAR (34)+VALUE('sFilePathVAL' + convert(iNowCountVAL, string))+sListName+CHAR (34)+' where "  номер ГТД" ='+
+                                              char(39) + EXTRACTSTR (sTmpGTD, 3, '/') + char(39) +
+                                              ' and "дата регистрации ГТД" = ' + convert(dDateGTD, integer) +
+                                              ' and "код таможни"=' + char(39) + EXTRACTSTR (sTmpGTD, 1, '/') + char(39) ,'EXCEL_DB');
+                      IF(RECORDCOUNT ('qEXEL_VAL')<>0,
+                        BLOCK(
+                          bFoundVAL := True;
+                          sCodVAL :=  "qEXEL_VAL"." код валюты цены договора";
+                        )
+                      );
+                      CLOSEDATASET ('qEXEL_VAL');
+                      iNowCountVAL := iNowCountVAL + 1;
+                    )
+                  );
+                  
+
+                )//BLOCK)
+             );//IF(LOCATE('REL_MAIN
+           )//Block IF
+        );//IF((sTmpGTD <>
+        IF(bFoundGTD,
+          BLOCK(
+            {WHILE((iNowCountINV <= iCountExWithINV)*(bFoundINV = false),
+              BLOCK(
+                sINV_EX := '';
+                //showmessage(char(34) + VALUE('sFilePathINV' + convert(iNowCountINV, string))+sListName + char(34));
+                OPENTABLE ('EX_TBL_VAL', 'D:\CTM\STS\Новая папка\Номер.xls'+sListName, '', 'EXCEL_DB');
+                showmessage(1);
+                IF(LOCATE ('EX_TBL_VAL', ' Номер ГТД', [sTmpGTD]),
+                   BLOCK(
+                     bFoundINV = True;
+                     WHILE((sTmpGTD = "EX_TBL_VAL"." Номер ГТД")|("EX_TBL_VAL"." Номер ГТД"=''),
+                       BLOCK(
+                         IF("EX_TBL_VAL"."№ товара " = FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), '№ товара '),
+                            BLOCK(
+                            )
+                         );
+                         NEXT('EX_TBL_VAL');
+                       )
+
+                     );
+                   )
+                );
+              )
+            );//WHILE((iNowCountINV <= iCountExWithINV)*(bFoundINV = false)}
+            OPENQUERY('FROM_STS', 'STS_DB', ' SELECT RC.PLACEID, RC.ID, RC.G32, RC.RELEASE_G33, RC.COUNTER, RC.RELEASE_G35, '+
+                                            ' R.DOC_NO, R.RELEASE_NO, R.G082, K.NBD, K.G221, '+
+                                            ' KC.G33, KC.G42_CURRENCY, KP.PAPERNO '+
+                                            ' FROM REL_COMM RC, RELEASE R, KRD_MAIN K, KRD_COMM KC, KR_PAPER KP '+
+                                            ' WHERE '+
+                                            ' ((RC.PLACEID = R.PLACEID) AND (RC.ID = R.ID) AND (RC.COUNTER = R.COUNTER)) '+
+                                            ' AND ((RC.PLACEID = KC.PLACEID) AND (RC.ID = KC.ID) AND (RC.G32 = KC.G32)) '+
+                                            ' AND ((RC.PLACEID = K.PLACEID) AND (RC.ID = K.ID)) '+
+                                            ' AND ((RC.PLACEID = KP.PLACEID) AND (RC.ID = KP.ID) AND (KP.PAPERNAME = "CMR")) '+
+                                            ' AND (R.DOC_NO = '+char(39)+ sTmpGTD +char(39)+ ')' +
+                                            ' AND ((RC.RELEASE_G33 = ' + char(39) + FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'код ТН ВЭД') + char(39) +') OR (KC.G33 = ' + char(39) + FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'код ТН ВЭД') + char(39) +'))'
+            );
+            sSTS_G33 := '';
+            iPLACEID := 0;
+            iID := 0;
+            iG32:= 0;
+            sSTS_RG35 := '';
+            sRelNO := '';
+            sNBD := '';
+            sG42_CUR := '';
+            sCMR_STS := '';
+            if(RECORDCOUNT('FROM_STS') <> 0,
+               BLOCK(
+                 sSTS_G33 := IF(FROM_STS.RELEASE_G33 <>'', FROM_STS.RELEASE_G33, FROM_STS.G33);
+                 iPLACEID := FROM_STS.PLACEID;
+                 iID := FROM_STS.ID;
+                 iG32 := FROM_STS.G32;
+                 sSTS_RG35 := FROM_STS.RELEASE_G35;
+                 sRelNO := FROM_STS.RELEASE_NO;
+                 sNBD := FROM_STS.NBD;
+                 sG42_CUR := IF(FROM_STS.G42_CURRENCY <>'', FROM_STS.G42_CURRENCY, FROM_STS.G221);
+                 sCMR_STS := FROM_STS.PAPERNO;
+                 
+               ),
+               BLOCK(
+                 CLOSEDATASET('FROM_STS');
+                 OPENQUERY('FROM_STS', 'STS_DB', ' SELECT R.PLACEID, R.ID, '+
+                                                 ' R.DOC_NO, R.RELEASE_NO, R.G082, K.NBD, K.G221, KP.PAPERNO '+
+                                                 ' FROM  RELEASE R, KRD_MAIN K, KR_PAPER KP '+
+                                                 ' WHERE '+
+                                                 ' ((R.PLACEID = K.PLACEID) AND (R.ID = K.ID)) '+
+                                                 ' AND ((R.PLACEID = KP.PLACEID) AND (R.ID = KP.ID) AND (KP.PAPERNAME = "CMR")) '+
+                                                 ' AND (KP.PAPERNO=' + char(39) + FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'номер документа') + char(39) +') ' +
+                                                 ' AND (R.DOC_NO = '+char(39)+ sTmpGTD +char(39)+ ')'
+                 );
+                 sSTS_G33 := 'Товар с кодом' + char(39) + FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'код ТН ВЭД') + char(39) + ' не найден';
+                 iPLACEID := 0;
+                 iID := 0;
+                 iG32 := 0;
+                 sSTS_RG35 := 'Товар не найден';
+                 sRelNO := FROM_STS.RELEASE_NO;
+                 sNBD := FROM_STS.NBD;
+                 sG42_CUR := FROM_STS.G221;
+                 sCMR_STS := FROM_STS.PAPERNO;
+               )
+            );//if(RECORDCOUNT('FROM_STS') <> 0,
+            IF(FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), ' Номер ГТД')<>'',
+               BLOCK(
+                 OPENQUERY('SELECT_INV', 'STS_DB', 'SELECT PAPERNO FROM KR_PAPER WHERE PLACEID='+iPLACEID+' AND ID='+iID);
+                 sINV_STS := UNIONVALUES ('SELECT_INV', ['PAPERNO'], ',', '');
+                 CLOSEDATASET('SELECT_INV');
+                 OPENQUERY('SELECT_DCD', 'STS_DB', 'SELECT PAPERNO FROM KRD_DCD WHERE PLACEID='+iPLACEID+' AND ID='+iID);
+                 sNumDCD_STS := UNIONVALUES ('SELECT_DCD', ['PAPERNO'], ',', '');
+                 OPENQUERY('SELECT_TR', 'STS_DB', 'SELECT CARNO FROM KR_TRANS WHERE PLACEID='+iPLACEID+' AND ID='+iID);
+                 sTranspNo_STS := UNIONVALUES ('SELECT_TR', ['CARNO'], ',', '');
+                 CLOSEDATASET('SELECT_INV');
+               )
+            );
+
+            APPENDRECORD('tmpCOMM');
+            SETFIELDVALUE('tmpCOMM',
+                          'PLACEID',iPLACEID,
+                          'ID',iID,
+                          'G32', iG32,
+                          'G32_EX','',
+                          'RELEASE_NO', sRelNO,
+                          'NBD', sNBD,
+                          'DOC_NO', sTmpGTD,
+                          'G33',sSTS_RG35,
+                          'G33_EX', FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'код ТН ВЭД'),
+                          'CMR', sCMR_STS,
+                          'CMR_EX', FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'номер документа'),
+                          'INV',sINV_STS,
+                          'INV_EX','',
+                          'TIR',sNumDCD_STS,
+                          'TIR_EX',sNumDCD_EX,
+                          'G35', sSTS_RG35,
+                          'G35_EX', FIELDVALUE ('qEXEL_CMR'+ convert(iNowCountCMR, string), 'вес брутто (кг)'),
+                          'CARNO', sTranspNo_STS,
+                          'CARNO_EX', sTranspNo_EX,
+                          'G42_CODE',sG42_CUR,
+                          'G42_COD_EX',sCodVAL
+                          
+            );
+            POST('tmpCOMM');
+            CLOSEDATASET('FROM_STS');
+          )
+        );//IF(bFoundGTD,
+        
+        NEXT('qEXEL_CMR'+ convert(iNowCountCMR, string));
+      )
+    );//WHILE(EOF('qEXEL_CMR'+ convert(iNowCountCMR, string)) = 0,
+    CLOSEDATASET('qEXEL_CMR'+ convert(iNowCountCMR, string));
+    //SETPROGRESS(iNowCountCMR*100/iCountExWithCMR);
+    iNowCountCMR := iNowCountCMR + 1;
+    
+  )
+);//WHILE(iNowCountCMR <= iCountExWithCMR,
+{WHILE(iNowCountINV <= iCountExWithINV,//Лезем в наши Excel накладные. Сколько у нас файлов, мы получили когда подключали таблицы. Теперь по ним бежим и заполним временную таблицу.
+  BLOCK(
+
+    FIRST('qEXEL_INV'+ convert(iNowCountINV, string));
+    //showmessage(FIELDVALUE ('qEXEL_INV'+ convert(iNowCountINV, string), ' Номер ГТД'));
+    WHILE(EOF('qEXEL_INV'+ convert(iNowCountINV, string)) = 0,
+      BLOCK(
+        IF((sTmpGTD <> FIELDVALUE ('qEXEL_INV'+ convert(iNowCountINV, string), ' Номер ГТД'))*(FIELDVALUE ('qEXEL_INV'+ convert(iNowCountINV, string))<>''),
+           sTmpGTD := FIELDVALUE ('qEXEL_INV'+ convert(iNowCountINV, string), ' Номер ГТД');//Запоминаем номер ГТД, потому что в Excel если строка относится к предидущей ГТД графа "Номер ГТД" не заполнена
+        );
+        NEXT('qEXEL_INV'+ convert(iNowCountINV, string));
+      )
+    );
+    CLOSEDATASET('qEXEL_INV'+ convert(iNowCountINV, string));
+    SETPROGRESS((10*iCountExWithCMR) + (5*iNowCountINV));
+    iNowCountINV := iNowCountINV + 1;
+
+  )
+);}
+//sSpisokFiles := REMOVECHAR (sSpisokFiles, 'номера гтд и номера ');
+//showmessage(sSpisokFiles);
+//VAR('sFileName', String);
+
+{//SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel-файлы (*.xls)|*.xls');
+
+OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ PROGRAMPATH() + 'DATA_TMP\');
+sSQL := 'CREATE TABLE '+CHAR(39)+PROGRAMPATH()+'DATA_TMP\tmpCOMM.DBF'+CHAR(39);
+sSQL := sSQL + ' (';
+  sSQL := sSQL + 'PLACEID INTEGER, ';
+  sSQL := sSQL + 'ID INTEGER, ';
+  sSQL := sSQL + 'G32 INTEGER, ';
+  sSQL := sSQL + 'G32_EX INTEGER, ';
+  sSQL := sSQL + 'DOC_NO CHAR(254), ';
+  sSQL := sSQL + 'TNVED CHAR(254), ';
+  sSQL := sSQL + 'CMR CHAR(50), ';
+  sSQL := sSQL + 'CMR_EX CHAR(50), ';
+  sSQL := sSQL + 'INV CHAR(100), ';
+  sSQL := sSQL + 'INV_EX CHAR(100), ';
+  sSQL := sSQL + 'TIR CHAR(50), ';
+  sSQL := sSQL + 'TIR_EX CHAR(50), ';
+  sSQL := sSQL + 'G35 FLOAT, ';
+  sSQL := sSQL + 'G35_EX FLOAT, ';
+  sSQL := sSQL + 'CARNO CHAR(50), ';
+  sSQL := sSQL + 'CARNO_EX CHAR(50), ';
+  sSQL := sSQL + 'G42_CODE CHAR(25) ';
+sSQL := sSQL + ')';
+sSQL := sSQL + '';
+EXECUTESQL ('TMP_DB', sSQL);
+
+OPENTABLE('tmpCOMM', PROGRAMPATH() + 'DATA_TMP\tmpCOMM.DBF', 'ID', 'TMP_DB', 1);
+
+ OPENDATABASE ('TEST_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=Excel');//, *.xlsx, *.xlsm, *.xlsb , 'ODBC DSN=Excel'
+ OPENQUERY ('qEXEL', 'select * from '+CHAR (34)+sFileName+sListName+CHAR (34)+' where " Номер ГТД" is not null','TEST_DB');
+ iCountExcel := RECORDCOUNT('qEXEL');
+ FIRST('qEXEL');
+ showmessage(LOCATE('REL_MAIN_2','DOC_NO',['10210090/050411/0007627']));
+ showmessage("qExel"." Номер ГТД");
+ SHOWPROGRESS ('Сверка данных...');
+ While(EOF('qEXEL') = 0,
+   Block(
+     //showmessage("qExel"." Номер ГТД");
+     IF(LOCATE('REL_MAIN_2','DOC_NO', ["qExel"." Номер ГТД"]), iFind := iFind + 1);
+     SETPROGRESS(iTecCount, 100, iCountExcel);
+     iTecCount := iTecCount + 1;
+     NEXT('qEXEL');
+   )
+ );}
+//HIDEPROGRESS();
+
+CLOSEDATASET('tmpCOMM');
+CLOSEDATABASE ('TMP_DB');
+CLOSEDATABASE('EXCEL_DB');

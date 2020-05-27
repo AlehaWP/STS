@@ -1,0 +1,1072 @@
+// *****************************************************************************
+// Название: Экспорт сообщений в АСТО
+// Описание: Экспорт сообщений в АСТО
+// Кнопка вызова: 0
+// Подпись кнопки: ЭПС (ЭК)
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\check_album.prd');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\open_monitor_db.prd');
+
+VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+VAR ('sSQL', String, '');
+VAR ('sDO1DocumentID', String, '');
+VAR ('sDO2DocID', String, GENERATEUUID (1));
+VAR ('sReason', String, '');
+VAR ('DoDt', String);
+VAR ('nStores', Integer, 0);
+VAR ('vMainCounter', String, ''); // для нахождения MAIN_COUNTER DO2
+
+
+FUNC ('CountRegdocsStores', '',
+  Block(
+   VAR ('nStor', Integer, 0);
+   VAR ('allStor', Memo);
+   VAR ('sStor', String);
+   FIRST ('qryCustReg');
+   WHILE (EOF ('qryCustReg') = 0,
+     Block(
+       sStor := Convert(qryCustReg.Placeid, String);
+       //ShowMessage(sStor);
+       //ShowMessage(qryCustReg.id);
+       IF (StrPos (sStor, allStor) = 0, Block(
+         allStor := allStor+';'+sStor;
+         nStor := nStor+1;
+       ));
+       NEXT('qryCustReg');
+     )
+   );
+   nStor
+)),
+
+
+FUNC ('Make_DOCUMENTID',
+     Block(
+       '';
+     ),
+     Block(
+        VAR ('sPrevDocumentID', String, KRD_MAIN.DOCUMENTID);
+        sDO1DocumentID := GENERATEUUID (1);
+
+        sSQL := ' UPDATE KRD_MAIN '+
+                ' SET DOCUMENTID=' +char(39) + sDO1DocumentID + char(39) +
+                ', ALBUM_VERSION=NULL' +
+                ' WHERE MAIN_ID=' + KRD_MAIN.MAIN_ID +
+                ' AND PLACEID=' + KRD_MAIN.PLACEID;
+        EXECUTESQL ('STS_DB', sSQL);
+
+        sAlbumVersion := INIFILE ('XMLFormat', 'Version', '5.14.3');
+
+        IF (TRIM (sPrevDocumentID) <> '',
+          Block(
+
+            WriteEpsLog (
+                KRD_MAIN.PLACEID,
+                KRD_MAIN.MAIN_ID,
+                0,
+                sDO1DocumentID,
+                'ДО-1',
+                KRD_MAIN.NBD,
+                KRD_MAIN.BD_DATE,
+                'Присвоен новый DocumentId',
+                FDT ('DD.MM.YYYY HH:NN:SS', (Date() + Time(1))),
+                GENERATEUUID (),
+                'Предыдущее значение DocumentId= ' + sPrevDocumentID,
+                sFileName,
+                '1',
+                FDT ('DD.MM.YYYY HH:NN:SS', (Date() + Time(1))),
+                2
+            ); // WriteEpsLog
+
+         )
+       ); // IF - //
+     )
+),
+
+FUNC ('MakeDO2DocumentId',
+     Block(
+       '';
+     ),
+     Block(
+        VAR ('sPrevDocumentID', String, REL_MAIN.DOCUMENTID);
+        sDO2DocId := GENERATEUUID (1);
+
+        sSQL := ' UPDATE ' + CORRECTTABLENAME ('RELEASE') +
+                ' SET DOCUMENTID=' +char(39) + sDO2DocId + char(39) +
+                ' WHERE MAIN_ID=' + REL_MAIN.MAIN_ID +
+                ' AND MAIN_COUNTER=' + REL_MAIN.MAIN_COUNTER +
+                ' AND PLACEID=' + REL_MAIN.PLACEID;
+        EXECUTESQL ('STS_DB', sSQL);
+
+        sAlbumVersion := INIFILE ('XMLFormat', 'Version', '5.14.3');
+
+        IF (TRIM (sPrevDocumentID) <> '',
+          Block(
+            WriteEpsLog (
+              REL_MAIN.PLACEID,
+              REL_MAIN.MAIN_ID,
+              REL_MAIN.MAIN_COUNTER,
+              sDO2DocId,
+              'ДО-2',
+              REL_MAIN.RELEASE_NO,
+              REL_MAIN.OUT_DATE,
+              'Присвоен новый DocumentId',
+              FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+              GENERATEUUID (),
+              'Предыдущее значение DocumentId= ' + sPrevDocumentID,
+              sFileName,
+              '1',
+              FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+              2
+            ); // WriteEpsLog
+         )
+       ); // IF
+     )
+),  // FUNC - MakeDO2DocumentId
+
+
+
+// ФУНКЦИЯ ПРОВЕРКИ МОЖНО ЛИ ОТПРАВИТЬ ДОБ. ЛИСТ К ДО-1 (НАЧАЛО)
+
+FUNC ('CheckDopList', '',
+  Block(
+    VAR ('ireturn', Integer, 0);
+    sReason := '';
+    IF (KRD_MAIN.DOCUMENTID = '',
+      Block(
+        sReason := 'вероятно ДО-1 не передавалась через ЭПС';
+        ireturn := 0;
+      ),
+      Block(
+        sSQL := 'SELECT STATUSID, WHPROCESSID FROM LOG_WH WHERE WHID=' + KRD_MAIN.PLACEID + ' AND WHDOCID=' +char(39)+ KRD_MAIN.DOCUMENTID +char(39)+ ' AND WHDOCID2=0';;
+
+        OPENQUERY ('qProtocol', sSQL, 'dbMonitor');
+
+        IF (qProtocol.STATUSID > 0,  // временное решение
+          Block(
+            sSQL := 'SELECT ENVELOPEID FROM ED_ProcMessages WHERE WHId=' + KRD_MAIN.PLACEID +
+                    ' AND WHDocID=' +char(39)+ KRD_MAIN.DOCUMENTID + char(39)+
+                    ' AND WHDocID2=0 AND MsgId=' +char(39)+ 'CMN.13010' +char(39);
+
+            OPENQUERY ('qHasReg', sSQL, 'dbMonitor');
+            IF (FIELDISNULL ('qHasReg', 'ENVELOPEID') = 0,
+              Block(
+                IF (qProtocol.STATUSID <> '70',
+                  Block(
+
+                    VAR ('tmpXDoc', Integer, XmlDocumentCreate ());
+                    VAR ('xRepeat', Integer, XmlDocumentRoot (tmpXDoc));
+
+                    XMLNODESETVALUES (xRepeat, 'RepeatDO1Message',
+                                               'whid', KRD_MAIN.PLACEID,
+                                               'do1id', KRD_MAIN.DOCUMENTID,
+                                               'processid', qProtocol.WHPROCESSID,
+                                               'envelopeid', qHasReg.ENVELOPEID
+                    ); // XMLNODESETVALUES
+
+                    XmlDocumentSave (tmpXDoc, IncludetrailingBackSlash (ProgramPath ()) + 'STS-MED/iin/' +
+                                              IF (LENGTH (USERINFO ('', 'UserUUID')) > 0, USERINFO ('', 'UserUUID') + '/', '') +
+                                              'repeatdo1message_' + KRD_MAIN.PLACEID + '_' + KRD_MAIN.DOCUMENTID + '_' + qProtocol.WHPROCESSID + '_' + qHasReg.ENVELOPEID + '.xml');
+
+                    sReason := 'некорректный статус протокла (переотправьте акт через 5 минут: запрошен повтор регистрации)';
+                    OPENQUERY ('qryNUM1', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID, 'dbJournals');
+                    WriteEpsLog (qryCustReg.PLACEID,
+                            qryCustReg.ID,
+                            0,
+                            sDO1DocumentID,
+                            'ДО-1',
+                            qryDO1.NBD,
+                            qryDO1.BD_DATE,
+                            'Комм. акт не отправлен',
+                            FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                            qryNUM1.JOURGUID,
+                            'Некорректный статус протокола (переотправьте акт через 5 минут: запрошен повтор регистрации)',
+                            sFileName,
+                            '0',
+                            FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                            0
+                    ); // WriteEpsLog
+                    CLOSEDATASET ('qryNUM1');
+                    ireturn := 0;
+                  ),
+                  Block(
+                    OPENQUERY ('qDopReg', 'STS_DB', 'SELECT DOC_REG_NO FROM KRD_DOP WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DocSubID);
+                    IF (FIELDISNULL ('qDopReg', 'DOC_REG_NO') = 0,
+                      Block(
+                        sReason := 'документ уже зарегистрирован в таможне';
+                        ireturn := 0;
+                        ),
+                      Block(
+                        ireturn := 1;
+                      )
+                    ); // IF
+                    CLOSEDATASET ('qDopReg');
+                  )
+                ); // IF
+              ),
+              Block(
+                //showmessage ('Отправка доб. листа неовзможна, дождитесь регистрации ДО-1.');
+                sReason := 'дождитесь регистрации ДО-1';
+                ireturn := 0;
+              )
+            ); // IF
+          ),
+          Block(
+            //showmessage ('Отправка доб. листа невозможна. Вероятно ДО-1 не передавалась через ЭПС.');
+            sReason := 'вероятно ДО-1 не передавалась через ЭПС';
+            ireturn := 0;
+          )
+        ); // IF
+        CLOSEDATASET ('qProtocol');
+      )
+    ); // IF
+    ireturn;
+  )
+), // FUNC - CheckDopList
+// ФУНКЦИЯ ПРОВЕРКИ МОЖНО ЛИ ОТПРАВИТЬ ДОБ. ЛИСТ К ДО-1 (КОНЕЦ)
+
+
+// ФУНКЦИЯ ПРОВЕРКИ МОЖНО ЛИ ОТПРАВИТЬ ПИСЬМО ОБ ОШИБКАХ (НАЧАЛО)
+FUNC ('CheckLetter', '',
+  Block(
+    VAR ('ireturn', Integer, 0);
+    sReason := '';
+    IF (KRD_MAIN.DOCUMENTID = '',
+      Block(
+        sReason := 'вероятно ДО-1 не передавалась через ЭПС';
+        ireturn := 0;
+      ),
+      Block(
+        sSQL := 'SELECT WHDocID FROM [ED_ProcMessages] WHERE [WHId]=' + KRD_MAIN.PLACEID +
+                ' AND WHDocID=' +char(39)+ KRD_MAIN.DOCUMENTID +char(39)+
+                ' AND WHDocID2=0';
+
+        OPENQUERY ('qProtocol', sSQL, 'dbMonitor');
+
+        IF (FIELDISNULL ('qProtocol', 'WHDocID') = 0,
+          Block(
+            sSQL := 'SELECT WHDocID FROM ED_ProcMessages WHERE WHId=' + KRD_MAIN.PLACEID +
+                    ' AND WHDocID=' +char(39)+ KRD_MAIN.DOCUMENTID + char(39)+
+                    ' AND WHDocID2=0 AND MsgId=' +char(39)+ 'CMN.13010' +char(39);
+
+            OPENQUERY ('qHasReg', sSQL, 'dbMonitor');
+            IF (FIELDISNULL ('qHasReg', 'WHDocID') = 0,
+              Block(
+                //showmessage ('Отправляем доб. лист к ДО-1.');
+                OPENQUERY ('qDopReg', 'STS_DB', 'SELECT LETTER_REG_NO FROM KRD_LETTER WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DocSubID);
+                IF (FIELDISNULL ('qDopReg', 'LETTER_REG_NO') = 0,
+                  Block(
+                    sReason := 'документ уже зарегистрирован в таможне';
+                    ireturn := 0;
+                  ),
+                  Block(
+                    ireturn := 1;
+                  )
+                ); // IF - //
+              ),
+              Block(
+                //showmessage ('Отправка доб. листа неовзможна, дождитесь регистрации ДО-1.');
+                sReason := 'дождитесь регистрации ДО-1';
+                ireturn := 0;
+              )
+            ); // IF - //
+          ),
+          Block(
+            //showmessage ('Отправка доб. листа невозможна. Вероятно ДО-1 не передавалась через ЭПС.');
+            sReason := 'вероятно ДО-1 не передавалась через ЭПС';
+            ireturn := 0;
+          )
+        ); // IF - //
+        CLOSEDATASET ('qProtocol');
+      )
+    ); // IF - //
+    ireturn;
+  )
+), // FUNC - CheckLetter - //
+// ФУНКЦИЯ ПРОВЕРКИ МОЖНО ЛИ ОТПРАВИТЬ ПИСЬМО ОБ ОШИБКАХ (КОНЕЦ)
+
+
+IF (GETREGSELECTEDDOCS ('qSelected') = 0,
+  Block(
+
+    VAR ('iniPlaceID', String, INIFILE ('RegisterDocs', 'PlaceID', '0'));
+    IF (iniPlaceID = '0',
+      Block(
+        sSQL := 'SELECT * FROM MCUSTREG';
+        IF (USERINFO ('', 'USERUUID') <> '', sSQL := sSQL + ' WHERE USER_LOGIN=' +char(39)+ USERINFO ('', 'USERLOGIN') +char(39));
+      ),
+      Block(
+        sSQL := 'SELECT * FROM MCUSTREG WHERE PLACEID=' + iniPlaceID;
+        IF (USERINFO ('', 'USERUUID') <> '', sSQL := sSQL + ' AND USER_LOGIN=' +char(39)+ USERINFO ('', 'USERLOGIN') +char(39));
+      )
+    ); // IF - //
+
+    OPENQUERY ('qryCustReg', 'STS_DB', sSQL);
+  ),
+  Block(
+    GETREGSELECTEDDOCS ('qryCustReg');
+  )
+);
+
+
+// проверка соответствия складов и профилей Монитора, на будущее
+{nStores := CountRegdocsStores();
+IF (nStores > 1,
+  RaiseException('В списке документов для регистрации документы '+nStores+' разных складов:'+Char(13)+Char(10)+
+  '0. Включите в окне регистрации отметку "Обновление списка документов для регистрации";'+Char(13)+Char(10)+
+  '1. Выберите в Мониторе ЭД профиль одного склада;'+Char(13)+Char(10)+
+  '2. Выделите в списке документов для регистрации документы этого склада, нажмите "Выбрать", затем "Выполнить";'+Char(13)+Char(10)+
+  '3. Повторите п.1 и 2 для всех оставшихся складов в списке документов для регистрации.')
+);}
+
+
+VAR ('sLogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'eps.log');
+CREATELOGFILE (sLogFile, 1);
+
+// APPENDLOGFILE (sLogFile, '-----------------------------------------------------------------------');
+// APPENDLOGFILE (sLogFile, ' Электронное предоставление сведений: начало ' + FDT ('DD.MM.YYYY', Date()) + ' в ' + FDT ('HH:NN:SS', Time(1)));
+// APPENDLOGFILE (sLogFile, '-----------------------------------------------------------------------');
+// APPENDLOGFILE(sLogFile, '');
+
+VAR ('i', Integer, 1);
+VAR ('iRecCount', Integer, RECORDCOUNT ('qryCustReg',1));
+VAR ('iDO1', Integer, 0);
+VAR ('iDO2', Integer, 0);
+VAR ('iDO1Fail', Integer, 0);
+VAR ('iDO2Fail', Integer, 0);
+  VAR ('iCommAct', Integer, 0);
+  VAR ('iCommActFail', Integer, 0);
+VAR ('iLetter', Integer, 0);
+VAR ('iLetterFail', Integer, 0);
+VAR ('XmlFile', Integer);
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+
+FORCEDIRECTORIES(sDir+'\Errors');
+
+IF (USERINFO ('', 'USERUUID') <> '', sDir := sDir + USERINFO ('', 'USERUUID') + '\');
+IF (USERINFO ('', 'USERUUID') <> '', FORCEDIRECTORIES(sDir + 'Errors'));
+
+FORCEDIRECTORIES(sDir+'\Errors');
+
+VAR ('sFileName', String);
+VAR ('sTemporaryValidateDirectory', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS\validate\' );
+VAR ('v', Variant, CREATEOLEOBJECT('SchemaValidator.Validator'));
+VAR ('sAlbumVersion', String, INIFILE ('XmlFormat', 'Version', '5.14.3'));
+VAR ('sCustomCode', String, '');
+
+
+FUNC ('GETXMLDOCUMENT', '',
+  Block(
+    XmlFile := XMLDOCUMENTCREATE ();
+    XMLDOCUMENTROOT (XmlFile);
+  )
+), // FUNC - GETXMLDOCUMENT() //
+
+// СОХРАНЕНИЕ XML-ФАЙЛА
+FUNC ('XmlSave', '',
+  Block(
+    IF (XMLNODECHILDCOUNT (XmlRoot) > 0,
+      Block(
+        FORCEDIRECTORIES (sDir);
+        XMLDOCUMENTSAVE (XmlFile, sDir + sFileName);
+      )
+    ); // IF - //
+    XMLDESTROY (XmlFile);
+  )
+), // FUNC - XmlSave () //
+
+
+// ФУНКЦИЯ ЗАПИСИ ФАЙЛА
+FUNC ('WriteDO',
+  Block(
+    PARAM ('DOType', Integer, 0);  // тип документа: 0 - коммерч.акт к ДО-1; 1 - ДО-1/доб. лист к ДО-1; 2 - ДО-2;
+  ),
+  Block(
+    CASE (DOType, ['0', Block( // коммерч. акт к ДО-1
+                          VAR ('sDocumentId', String, GENERATEUUID (1));
+                          EXECUTESQL ('STS_DB', 'UPDATE KRD_DOP SET DOCUMENTID=' +char(39)+ sDocumentId +char(39)+
+                        ' WHERE PLACEID=' + qryCustReg.PLACEID +
+                        ' AND ID=' + qryCustReg.ID +
+                        ' AND COUNTER=' + qryCustReg.DOCSUBID);
+                          IF (GetDatabaseType ('STS_DB') = 'MSSQL', REFRESH ('KRD_DOP'));
+
+                          // Выгружаем xml-файл модулю STS-MED
+                          LOCATE ('KRD_DOP', 'PLACEID;ID;COUNTER', [qryCustReg.PLACEID, qryCustReg.ID, qryCustReg.DOCSUBID]);
+                          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sAlbumVersion + '\comm_act.exp');
+
+                          sFileName := 'do1_' + qryCustReg.PLACEID + '_' + sDO1DocumentID;
+                          IF (qCustomCode.CUSTOMS_CODE <> '',
+                            Block(
+                              sFileName := sFileName + '_' + qCustomCode.CUSTOMS_CODE + '_' + CUSTOMSNOPART (KRD_MAIN.NBD, 3, REPLACESTR (RIGHT (KRD_MAIN.NBD, 7), '/', '-')) + '_' + FDT ('DD-MM-YYYY', KRD_MAIN.BD_DATE);
+                              // умышленно проверяем наличие EPS_ID (PartisipantID) в условии когда есть код таможни
+                              // количество и порядок элементов в имени файла важен
+                              // нельзя пропустить код поста и вместо него написать PartisipantID
+                              IF (LENGTH (qCustomCode.EPS_ID) > 0,
+                                Block(
+                                  sFileName := sFileName + '_' + qCustomCode.EPS_ID;
+                                )
+                              );
+                            )
+                          );
+                          sFileName := sFileName + '.xml';
+                        ),
+                   '1', Block( // ДО-1
+                          // Выгружаем xml-файл модулю STS-MED
+                          LOCATE ('STORES', 'PLACEID', [qryCustReg.PLACEID]);
+                          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sAlbumVersion + '\do1_album.exp');
+                          sFileName := 'do1_' + qryCustReg.PLACEID + '_' + sDO1DocumentID;
+                          IF (qCustomCode.CUSTOMS_CODE <> '',
+                            Block(
+                              sFileName := sFileName + '_' + qCustomCode.CUSTOMS_CODE + '_' + CUSTOMSNOPART (KRD_MAIN.NBD, 3, REPLACESTR (RIGHT (KRD_MAIN.NBD, 7), '/', '-')) + '_' + FDT ('DD-MM-YYYY', KRD_MAIN.BD_DATE);
+                              // умышленно проверяем наличие EPS_ID (PartisipantID) в условии когда есть код таможни
+                              // количество и порядок элементов в имени файла важен
+                              // нельзя пропустить код поста и вместо него написать PartisipantID
+                              IF (LENGTH (qCustomCode.EPS_ID) > 0,
+                                Block(
+                                  sFileName := sFileName + '_' + qCustomCode.EPS_ID;
+                                )
+                              );
+                            )
+                          );
+                          sFileName := sFileName + '.xml';
+                        ),
+                   '2', Block( // ДО-2
+                          VAR ('iFirstAlbumPart', Integer, CONVERT (EXTRACTSTR(sAlbumVersion, 1, '.'), Integer));
+                          VAR ('iSecondAlbumPart', Integer, CONVERT (EXTRACTSTR(sAlbumVersion, 2, '.'), Integer));
+                          IF ((iFirstAlbumPart <= 5) * (iSecondAlbumPart < 11),
+                            Block(
+                              // старый формат, используем файл "do2_eps.exp"
+                              // Выгружаем xml-файл модулю STS-MED
+                              EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' +  sAlbumVersion + '\do2_eps.exp');
+                            ),
+                            Block(
+                              // более новый формат, используем скрипт "do2_album.exp"
+                              VAR ('iAddEDContainerToDO2', Integer, 0);  // 0 - без контейнера (ЭПС), 1 - с контейнером (обмен на флешках)
+                              // Выгружаем xml-файл модулю STS-MED
+                              EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' +  sAlbumVersion + '\do2_album.exp');
+                            )
+                          ); // IF
+{
+                          IF (REL_MAIN_3.DOCUMENTID <> '',
+                            Block(
+                              sDO2DocID := REL_MAIN_3.DOCUMENTID;
+                            )
+                          ); // IF - //
+}
+                          IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                            EXECUTESQL ('STS_DB', 'UPDATE RELEASE_ SET DOCUMENTID=' +char(39)+ sDO2DocID +char(39)+ ', DATECORR=' + SQLDate(Now(), GetBaseDriver(0)) + ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter),
+                            EXECUTESQL ('STS_DB', 'UPDATE RELEASE SET DOCUMENTID=' +char(39)+ sDO2DocID +char(39)+ ', DATECORR=' + SQLDate(Now(), GetBaseDriver(0)) + ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter)
+                          ); // IF - //
+
+                          sFileName := 'do2_' + qryCustReg.PLACEID + '_' + sDO2DocID + '_' + vMainCounter;
+                          IF (qCustomCode.CUSTOMS_CODE <> '',
+                            Block(
+                              sFileName := sFileName + '_' + qCustomCode.CUSTOMS_CODE + '_' + CUSTOMSNOPART (REL_MAIN_3.RELEASE_NO, 3, REPLACESTR (RIGHT (REL_MAIN_3.RELEASE_NO, 7), '/', '-')) + '_' + FDT ('DD-MM-YYYY', REL_MAIN_3.OUT_DATE);
+                              // умышленно проверяем наличие EPS_ID (PartisipantID) в условии когда есть код таможни
+                              // количество и порядок элементов в имени файла важен
+                              // нельзя пропустить код поста и вместо него написать PartisipantID
+                              IF (LENGTH (qCustomCode.EPS_ID) > 0,
+                                Block(
+                                  sFileName := sFileName + '_' + qCustomCode.EPS_ID;
+                                )
+                              );
+                            )
+                          );
+                          sFileName := sFileName + '.xml';
+                        ),
+                   '3', Block( // Письмо владельца СВХ о самостоятельно выявленных ошибках
+                          VAR ('sDocumentId', String, GENERATEUUID (1));
+                          EXECUTESQL ('STS_DB', 'UPDATE KRD_LETTER SET DOCUMENTID=' +char(39)+ sDocumentId +char(39)+
+                                                ' WHERE PLACEID=' + qryCustReg.PLACEID +
+                                                ' AND ID=' + qryCustReg.ID +
+                                                ' AND COUNTER=' + qryCustReg.DOCSUBID);
+                          IF (GetDatabaseType ('STS_DB') = 'MSSQL', REFRESH ('KRD_LETTER'));
+
+                          // Выгружаем xml-файл модулю STS-MED
+                          LOCATE ('KRD_LETTER', 'PLACEID;ID;COUNTER', [qryCustReg.PLACEID, qryCustReg.ID, qryCustReg.DOCSUBID]);
+                          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' +  sAlbumVersion + '\letter.exp');
+
+                          //sFileName := 'MISTAKELETTER_' + qryCustReg.PLACEID + '_' + sDO1DocumentID + IF (qCustomCode.CUSTOMS_CODE <> '', '_' + qCustomCode.CUSTOMS_CODE, '') + '.xml';
+                          sFileName := 'MISTAKELETTER_' + qryCustReg.PLACEID + '_' + sDO1DocumentID;
+                          IF (qCustomCode.CUSTOMS_CODE <> '',
+                            Block(
+                              sFileName := sFileName + '_' + qCustomCode.CUSTOMS_CODE;
+                              // умышленно проверяем наличие EPS_ID (PartisipantID) в условии когда есть код таможни
+                              // количество и порядок элементов в имени файла важен
+                              // нельзя пропустить код поста и вместо него написать PartisipantID
+                              IF (LENGTH (qCustomCode.EPS_ID) > 0,
+                                Block(
+                                  sFileName := sFileName + '_' + qCustomCode.EPS_ID;
+                                )
+                              );
+                            )
+                          );
+                          sFileName := sFileName + '.xml';
+                        )
+
+                  ],
+    ); // CASE - //
+
+    // Сохраняем файл в TEMP
+    FORCEDIRECTORIES (sTemporaryValidateDirectory);
+    XMLDOCUMENTSAVE (XmlFile, sTemporaryValidateDirectory + sFileName);
+  )
+), // FUNC - WriteDO () //
+
+
+// ФУНКЦИЯ ВАЛИДАЦИИ ПО XSD-СХЕМАМ, ВОЗВРАЩАЕТ 1 (ДОКУМЕНТ ВАЛИДЕН) ИЛИ 0 (НЕ ВАЛИДЕН)
+FUNC ('CheckDO',
+  Block(
+    '';
+  ),
+  Block(
+    VAR ('ireturn', integer, 0);
+
+    v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + sAlbumVersion + '\';
+    IF (v.ValidateFile (sTemporaryValidateDirectory + sFileName) = 'True',
+      Block(
+        ireturn := 1;
+      ),
+      Block(
+        ireturn := 0;
+      )
+    ); // IF - //
+
+    ireturn;
+  )
+), // FUNC - CheckDO
+
+
+FUNC ( 'ShowResultSendDoc', '',
+    Block(
+          // APPENDLOGFILE (sLogFile, '-----------------------------------------------------------------------');
+          // APPENDLOGFILE (sLogFile, '[Статистика]' + CENTER ('(подготовлено к отправке)', 32) + CENTER ('(не прошли проверку по xsd-схеме)', 34));
+          // APPENDLOGFILE (sLogFile, 'Формы ДО-1 :' + CENTER (iDO1, 32) + CENTER (iDO1Fail, 34));
+          // APPENDLOGFILE (sLogFile, 'Комм. акты :' + CENTER (iCommAct, 32) + CENTER (iCommActFail, 34));
+          // APPENDLOGFILE (sLogFile, 'Письма     :' + CENTER (iLetter, 32) + CENTER (iLetterFail, 34));
+          // APPENDLOGFILE (sLogFile, 'Формы ДО-2 :' + CENTER (iDO2, 32) + CENTER (iDO2Fail, 34));
+          // APPENDLOGFILE (sLogFile, '-----------------------------------------------------------------------');
+          // APPENDLOGFILE (sLogFile, '');
+          // APPENDLOGFILE (sLogFile, '-----------------------------------------------------------------------');
+          // APPENDLOGFILE (sLogFile, ' Электронное предоставление сведений: завершение ' + FDT ('DD.MM.YYYY', Date()) + ' в ' + FDT ('HH:NN:SS', Time(1)));
+          // APPENDLOGFILE (sLogFile, '-----------------------------------------------------------------------');
+        // показ формы со статистикой выгрузки
+          ExecuteProject (IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\eps_export_info\eps_export_info.ssproj', ['sLogFile', sLogFile, 'ido1', iDO1, 'ica', iCommAct, 'iml', iLetter, 'ido2', iDO2, 'ido1_fail', iDO1Fail, 'ica_fail', iCommActFail, 'iml_fail', iLetterFail, 'ido2_fail', iDO2Fail]);
+    )//end block
+);// end func ShowResultSendDoc
+
+IF ( HOSTMODE (), OPENTABLE('KRD_MAIN', 'STS_DB', 'KRD_MAIN' ,'PLACEID;ID'),);
+IF ( HOSTMODE (), OPENTABLE('KRD_COMM', 'STS_DB', 'KRD_COMM' ,'PLACEID;ID;G32'),);
+IF ( HOSTMODE (), OPENTABLE('KRD_PAPERS', 'STS_DB', 'KR_PAPER' ,'PLACEID;ID;COUNTER'),);
+IF ( HOSTMODE (), OPENTABLE('KRD_COMM_PAPERS', 'STS_DB', 'KR_C_P' ,'PLACEID;ID;G32;DOC_TYPE;DOC_COUNTER'),);
+IF ( HOSTMODE (), OPENTABLE('KRD_CONT', 'STS_DB', 'KRD_CONT' ,'PLACEID;ID;COUNTER'),);
+IF ( HOSTMODE (), OPENTABLE('KRD_TRANSP', 'STS_DB', 'KR_TRANS' ,'PLACEID;ID;COUNTER'),);
+IF ( HOSTMODE (), OPENTABLE('KRD_DCD', 'STS_DB', 'KRD_DCD' ,'PLACEID;ID;COUNTER'),);
+IF ( HOSTMODE (), OPENTABLE('STORES', 'STS_DB', 'STORES' ,'PLACEID'),);
+
+IF ( HOSTMODE (), OPENTABLE('RELEASE', 'STS_DB', 'RELEASE' ,'PLACEID;ID;COUNTER'),);
+IF ( HOSTMODE (), OPENTABLE('REL_MAIN', 'STS_DB', 'RELEASE' ,'PLACEID;ID;COUNTER'),);
+
+TRYFINALLY (
+  Block(
+    SHOWPROGRESS ('Передача документов, подождите..');
+    FIRST ('qryCustReg');
+    WHILE (EOF ('qryCustReg') = 0,
+      Block(
+        //OPENQUERY ('qryStore', 'STS_DB', 'SELECT CUSTOMS_CODE FROM STORES WHERE PLACEID=' + qryCustReg.PLACEID);
+        OPENQUERY ('qCustomCode', 'STS_DB', 'SELECT CUSTOMS_CODE, EPS_ID FROM STORES WHERE PLACEID=' + qryCustReg.PLACEID);
+        // DOCTYPE:
+        // 1 - Форма ДО-1
+        // 5 - Форма ДО-2
+        // 4 - Представление документов
+        sAlbumVersion := INIFILE ('XmlFormat', 'Version', '5.14.3');
+
+        CASE (qryCustReg.DOCTYPE, ['1',
+                                   Block(
+                                     LOCATE ('KRD_MAIN', 'PLACEID;ID', [qryCustReg.PLACEID, qryCustReg.ID]);
+                                     OPENQUERY ('qryDO1', 'STS_DB', 'SELECT NBD, ALBUM_VERSION, MAIN_ID FROM KRD_MAIN WHERE MC_STATUS_BD = ' +char(39)+ '0' +char(39)+ ' AND PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID);
+                                     OPENQUERY ('qDO1', 'STS_DB', 'SELECT PLACEID, ID, REG_NBD FROM KRD_MAIN WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID);
+
+                                     // ОПРЕДЕЛЕЯЕМ ЭТО ДО-1 ИЛИ ДОБ ЛИСТ?
+  //                                   IF (KRD_MAIN.REG_NBD <> '',
+                                     IF ( TRIM(qDO1.REG_NBD) <> '',
+                                       Block(
+
+                                         // APPENDLOGFILE (sLogFile, '[Форма ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'ДО-1 не отправлена: документ уже зарегистрирован в таможне ' + sReason);
+                                         // APPENDLOGFILE (sLogFile, '');
+
+                                         // Возвращаем ДО-1 статус "Зарегистрирован"
+                                         sSQL := 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+ '3' +char(39)+ ', STATUS_EPS=' +char(39)+ 'ДО-1 не отправлена: документ уже зарегистрирован в таможне ' + sReason +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                         EXECUTESQL ('STS_DB', sSQL);
+                                         iDO1Fail := iDO1Fail + 1;
+                                       ),
+                                       Block( // ДО-1
+                                         OPENQUERY ('qRC', 'STS_DB', 'SELECT COUNT (ID) AS RC FROM KRD_MAIN WHERE MC_STATUS_BD = ' +char(39)+ '0' +char(39)+ ' AND PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID);
+                                         IF (qRC.RC > 0,
+                                           Block( // проверка на наличие статуса "для регистрации"
+                                                 // ДО-1 не присвоен рег. номер, генерируем новый DocumentID перед посылкой
+  //!                                           sDO1DocumentID := GENERATEUUID (1);
+  //!                                           EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET DOCUMENTID=' +char(39)+ sDO1DocumentID +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID);
+                                             IF (CheckAlbum(),
+                                               Block(
+                                                 IF (qryDO1.ALBUM_VERSION = '', sAlbumVersion := qryDO1.ALBUM_VERSION);
+
+                                                   Make_DOCUMENTID ();
+
+                                                   WriteDO (1);
+
+                                                 // Ппроверяем можно ли отправить документ через ЭПС
+                                                 IF (CheckDO (),
+                                                   Block( // Документ валиден и может быть отправлен
+                                                     XmlSave ();
+                                                     // APPENDLOGFILE (sLogFile, '[Форма ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'ДО-1 подготовлена к отправке');
+                                                     // APPENDLOGFILE (sLogFile, '');
+
+                                                     // Запоминаем версию альбома форматов
+                                                     sSQL := 'UPDATE' +
+                                                             ' KRD_MAIN' +
+                                                             ' SET' +
+                                                             ' ALBUM_VERSION=' +char(39)+ sAlbumVersion +char(39)+
+                                                             ', DATECORR=' + SQLDate(Now(), GetBaseDriver(0)) +
+                                                             ', MC_STATUS_BD=' +char(39)+ 'И' +char(39)+
+                                                             ', STATUS_EPS=' +char(39)+ 'ДО-1 подготовлена к отправке' +char(39)+
+                                                             ' WHERE' +
+                                                             ' PLACEID=' + qryCustReg.PLACEID +
+                                                             ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                                     EXECUTESQL ('STS_DB', sSQL);
+
+                                                     // // Меняем статус ДО-1 на "Рассматривается"
+                                                     // sSQL := 'UPDATE ' +
+                                                     //         ' KRD_MAIN' +
+                                                     //         ' SET' +
+                                                     //         ' MC_STATUS_BD=' +char(39)+ 'И' +char(39)+
+                                                     //         ', STATUS_EPS=' +char(39)+ 'ДО-1 подготовлена к отправке' +char(39)+
+                                                     //         ' WHERE' +
+                                                     //         ' PLACEID=' + qryCustReg.PLACEID +
+                                                     //         ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                                     // EXECUTESQL ('STS_DB', sSQL);
+
+                                                     WriteEpsLog (
+                                                         KRD_MAIN.PLACEID,
+                                                         KRD_MAIN.MAIN_ID,
+                                                         0,
+                                                         sDO1DocumentID,
+                                                         'ДО-1',
+                                                         KRD_MAIN.NBD,
+                                                         KRD_MAIN.BD_DATE,
+                                                         'ДО-1 №' + KRD_MAIN.NBD + ' подготовлена к отправке',
+                                                         FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                         GENERATEUUID (),
+                                                         'DocumentId= ' + sDO1DocumentID,
+                                                         sFileName,
+                                                         '1',
+                                                         FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                         0
+                                                     ); // WriteEpsLog
+
+                                                     iDO1 := iDO1 + 1;
+                                                   ),
+                                                   Block( // Документ содержит ошибки и не будет отправлен
+                                                     // APPENDLOGFILE (sLogFile, '[Форма ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'ДО-1 содержит ошибки');
+                                                     // APPENDLOGFILE (sLogFile, '');
+
+                                                     // Меняем статус ДО-1 на "оформляется"
+                                                     sSQL := 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+char(39)+ ', STATUS_EPS=' +char(39)+ 'ДО-1 содержит ошибки и не была отправлена' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                                     EXECUTESQL ('STS_DB', sSQL);
+
+                                                     iDO1Fail := iDO1Fail + 1;
+                                                   )
+                                                 ); // IF - //
+                                               ),
+                                               Block(
+                                                 // APPENDLOGFILE (sLogFile, '[Форма ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'ДО-1 не отправлена. Не совпадают версии форматов в настройках ВЭД-Склад и Монитор ЭД.');
+                                                 // APPENDLOGFILE (sLogFile, '');
+
+                                                 // Меняем статус ДО-1 на "оформляется"
+                                                 sSQL := 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+char(39)+ ', STATUS_EPS=' +char(39)+ 'ДО-1 не отправлена. Не совпадают версии форматов ВЭД-Склад и Монитор ЭД.' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                                 EXECUTESQL ('STS_DB', sSQL);
+                                                 iDO1Fail := iDO1Fail + 1;
+                                               )
+                                             ); // IF - //
+
+                                           )
+                                         ); // IF - конец проверки по статусу //
+
+                                       )
+                                     ); // IF - //
+
+                                     // Удаляем ДО-1 из журанла регистрации
+                                     sSQL := 'DELETE FROM MCUSTREG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND DOCTYPE=' + qryCustReg.DOCTYPE;
+                                     EXECUTESQL ('STS_DB', sSQL);
+                                     CLOSEDATASET ('qDO1');
+                                   ),
+                                   '5',
+                                   Block(
+                                     // Находим для связанной ДО-1 её номер, версию альбома фотоматов и внутренние идентификаторы
+                                     OPENQUERY ('qryDO1', 'STS_DB', 'SELECT NBD, ALBUM_VERSION, MAIN_ID, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID);
+                                     IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                         OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM RELEASE_ WHERE MC_STATUS = ' +char(39)+ '0' +char(39)+ ' AND PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DOCSUBID),
+                                         OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM RELEASE WHERE MC_STATUS = ' +char(39)+ '0' +char(39)+ ' AND PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DOCSUBID)
+                                     );
+                                     vMainCounter := REL_MAIN_3.MAIN_COUNTER; // вдруг в MCUSTREG DOCSUBID - не MAIN_COUNTER, а COUNTER
+                                     OPENQUERY ('qRC', 'STS_DB', 'SELECT COUNT (ID) AS RC FROM ' + IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE MC_STATUS = ' +char(39)+ '0' +char(39)+ ' AND PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DOCSUBID);
+                                     IF(qRC.RC > 0,
+                                       Block( // проверка на наличие статуса "для регистрации"
+
+                                         LOCATE('KRD_MAIN', 'PLACEID;ID', [qryCustReg.PLACEID,qryCustReg.ID]);
+                                         LOCATE ('RELEASE', 'PLACEID;ID;COUNTER', [qryCustReg.PLACEID, qryCustReg.ID, vMainCounter]);
+
+                                         // Проверка регистрации ДО-2
+                                         IF (REL_MAIN.REG_RELEASE_NO = '',
+                                            Block( // ДО-2 не зарегистрирована, создаём  xml-файл и проверяем его по XSD-схемам
+                                              IF (CheckAlbum(),
+                                                Block(
+
+                                                MakeDO2DocumentId ();
+
+                                                WriteDO (2);
+                                                IF (CheckDO (),
+                                                  Block(
+                                                    XmlSave ();
+
+                                                    // APPENDLOGFILE (sLogFile, '[Форма ДО-2]', 'Номер: ' + REL_MAIN_3.RELEASE_NO, '№ таможенного документа: ' + REL_MAIN_3.DOC_NO, 'Результат:  ' + 'ДО-2 подготовлена к отправке');
+                                                    // APPENDLOGFILE (sLogFile, '');
+
+                                                    // Меняем статус ДО-2 на "Рассматривается"
+                                                    IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                                        sSQL := 'UPDATE RELEASE_ SET MC_STATUS=' +char(39)+ 'И' +char(39)+ ', DATECORR=' + SQLDate(Now(), GetBaseDriver(0)) + ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter,
+                                                        sSQL := 'UPDATE RELEASE SET MC_STATUS=' +char(39)+ 'И' +char(39)+ ', DATECORR=' + SQLDate(Now(), GetBaseDriver(0)) + ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter
+                                                    );
+                                                    EXECUTESQL ('STS_DB', sSQL);
+
+                                                    VAR ('sSubSQL', String, '');
+                                                    // Получаем список уникальных ID всех записей в RELEASE
+                                                    IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                                       sSubSQL := 'SELECT DISTINCT ID FROM RELEASE_ R WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DOCSUBID,
+                                                       sSubSQL := 'SELECT DISTINCT ID FROM RELEASE R WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DOCSUBID,
+                                                    ); // IF - //
+
+                                                    // Получаем список ID всех выдаваемых ДО-1 по qryCustReg.PLACEID, qryCustReg.ID
+                                                    sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-2 №' + REL_MAIN_3.RELEASE_NO +  ' подготовлена к отправке' +char(39)+
+                                                            ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID IN ' +
+                                                            '(SELECT DISTINCT R.ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' R WHERE PLACEID=' + qryCustReg.PLACEID +
+                                                            ' AND R.MAIN_ID=(SELECT R2.MAIN_ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' R2 WHERE R2.PLACEID=' + qryCustReg.PLACEID +
+                                                            ' AND R2.ID=' + qryCustReg.ID + ' AND R2.COUNTER=' + qryCustReg.DOCSUBID+ '))';
+                                                    //showmessage (sSQL);
+                                                    EXECUTESQL ('STS_DB', sSQL);
+
+                                                    OPENQUERY ('qryNUM1', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID, 'dbJournals');
+                                                    WriteEpsLog (qryCustReg.PLACEID,
+                                                            qryCustReg.ID,
+                                                            vMainCounter,
+                                                            sDO2DocID,
+                                                            'ДО-2',
+                                                            REL_MAIN_3.RELEASE_NO,
+                                                            REL_MAIN_3.OUT_DATE,
+                                                            'ДО-2 №' + REL_MAIN_3.RELEASE_NO + ' подготовлена к отправке',
+                                                            FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                            qryNUM1.JOURGUID,
+                                                            'DocumentId= ' + sDO2DocId,
+                                                            sFileName,
+                                                            '1',
+                                                            FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                            0
+                                                    ); // WriteEpsLog
+
+                                                    iDO2 := iDO2 + 1;
+                                                   ),
+                                                   Block(
+                                                     // APPENDLOGFILE (sLogFile, '[Форма ДО-2]', 'Номер: ' + REL_MAIN_3.RELEASE_NO, '№ таможенного документа: ' + REL_MAIN_3.DOC_NO, 'Результат:  ' + 'ДО-2 содержит ошибки');
+                                                     // APPENDLOGFILE (sLogFile, '');
+
+                                                     // Меняем статус ДО-2 на "Оформляется"
+                                                     IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                                       sSQL := 'UPDATE RELEASE_ SET MC_STATUS=' +char(39)+char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter,
+                                                       sSQL := 'UPDATE RELEASE SET MC_STATUS=' +char(39)+char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter
+                                                     );
+                                                     EXECUTESQL ('STS_DB', sSQL);
+                                                     sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-2 № ' + REL_MAIN_3.RELEASE_NO + ' содержит ошибки и не была отправлена' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                                     EXECUTESQL ('STS_DB', sSQL);
+
+                                                     iDO2Fail := iDO2Fail + 1;
+                                                   )
+                                                 ); // IF - //
+                                               ),
+                                               Block(
+                                                 // APPENDLOGFILE (sLogFile, '[Форма ДО-2]', 'Номер: ' + REL_MAIN_3.RELEASE_NO, '№ таможенного документа: ' + REL_MAIN_3.DOC_NO, 'Результат:  ' + 'ДО-2 не отправлена. Не совпадают версии форматов ВЭД-Склад и Монитор ЭД.');
+                                                 // APPENDLOGFILE (sLogFile, '');
+
+                                                 // Меняем статус ДО-2 на "Оформляется"
+                                                 IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                                   sSQL := 'UPDATE RELEASE_ SET MC_STATUS=' +char(39)+char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter,
+                                                   sSQL := 'UPDATE RELEASE SET MC_STATUS=' +char(39)+char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter
+                                                 );
+                                                 EXECUTESQL ('STS_DB', sSQL);
+                                                 sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-2 № ' + REL_MAIN_3.RELEASE_NO + ' не отправлена. Не совпадают версии форматов ВЭД-Склад и Монитор ЭД.' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                                 EXECUTESQL ('STS_DB', sSQL);
+
+                                                 iDO2Fail := iDO2Fail + 1;
+                                               )
+                                             ); // IF - //
+                                           ),
+                                           Block( // ДО-2 уже зарегистрирована, не отправляем
+                                             // APPENDLOGFILE (sLogFile, '[Форма ДО-2]', 'Номер: ' + REL_MAIN_3.RELEASE_NO, '№ таможенного документа: ' + REL_MAIN_3.DOC_NO, 'Результат:  ' + 'ДО-2 не отправлена: документ уже зарегистрирован в таможне');
+                                             // APPENDLOGFILE (sLogFile, '');
+
+                                             // Меняем статус ДО-2 на "Оформляется"
+                                             IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                                        sSQL := 'UPDATE RELEASE_ SET MC_STATUS=' +char(39)+ '3' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter,
+                                                        sSQL := 'UPDATE RELEASE SET MC_STATUS=' +char(39)+ '3' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryCustReg.ID + ' AND MAIN_COUNTER=' + vMainCounter
+                                             );
+                                             EXECUTESQL ('STS_DB', sSQL);
+                                             sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-2 № ' + REL_MAIN_3.RELEASE_NO + ' не отправлена: документ уже зарегистрирован в таможне' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             iDO2Fail := iDO2Fail + 1;
+                                           )
+                                         ); // IF - //
+                                       )
+                                     ); // конец проверки по статусу
+
+                                     CLOSEDATASET ('REL_MAIN_3');
+
+                                     // Удаляем ДО-2 из журнала регистрации
+                                     sSQL := 'DELETE FROM MCUSTREG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND DOCTYPE=' + qryCustReg.DOCTYPE + ' AND DOCSUBID=' + qryCustReg.DOCSUBID;
+                                     EXECUTESQL ('STS_DB', sSQL);
+                                   ),
+                                   '38',
+                                   Block(
+                                     LOCATE ('KRD_MAIN', 'PLACEID;ID', [qryCustReg.PLACEID, qryCustReg.ID]);
+                                     OPENQUERY ('qryDO1', 'STS_DB', 'SELECT NBD, ALBUM_VERSION, MAIN_ID, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID);
+                                     sDO1DocumentID := KRD_MAIN.DOCUMENTID;
+                                     sAlbumVersion := KRD_MAIN.ALBUM_VERSION;
+                                     // проверяем, больше 5.0.14 - доб.лист или комм.акт?
+                                     IF(CONVERT(EXTRACTSTR (sAlbumVersion, 1, '.'), INTEGER) >= 5,
+                                       IF(CONVERT(EXTRACTSTR (sAlbumVersion, 2, '.'), INTEGER) >= 1,
+                                         WriteDO (0), // версия >= 5.0.15 - комм акт
+                                         IF(CONVERT(EXTRACTSTR (sAlbumVersion, 3, '.'), INTEGER) >= 15,
+                                           WriteDO (0), // версия >= 5.0.15 - комм акт
+                                           WriteDO (1)  // версия < 5.0.15 - доп.лист
+                                         )
+                                       ),
+                                       WriteDO (1)  // версия < 5.0.15 - доп.лист
+                                     );
+                                     IF (CheckDopList (),
+                                       Block(
+                                         IF (CheckDO (),
+                                           Block(
+                                             XmlSave ();
+
+                                             // APPENDLOGFILE (sLogFile, '[Комм. акт к ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'Комм. акт подготовлен к отправке');
+                                             // APPENDLOGFILE (sLogFile, '');
+
+                                             // Меняем статус Комм. Акта на "Рассматривается"
+                                             sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ 'И' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND COUNTER=' + qryCustReg.DOCSUBID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             // Фиксируем отправку в "Статус ЭПС"
+                                             sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Комм. акт №' + KRD_DOP.DOC_NO + ' подготовлен к отправке' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             OPENQUERY ('qryNUM1', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID, 'dbJournals');
+                                             WriteEpsLog (qryCustReg.PLACEID,
+                                                     qryCustReg.ID,
+                                                     0,
+                                                     sDO1DocumentID,
+                                                     'ДО-1',
+                                                     qryDO1.NBD,
+                                                     qryDO1.BD_DATE,
+                                                     'Комм. акт №' + KRD_DOP.DOC_NO + ' подготовлен к отправке',
+                                                     FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                     qryNUM1.JOURGUID,
+                                                     'DocumentId= ' + KRD_DOP.DOCUMENTID,
+                                                     sFileName,
+                                                     '1',
+                                                     FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                     0
+                                             ); // WriteEpsLog
+
+                                             iCommAct := iCommAct + 1;
+                                           ),
+                                           Block(
+                                             // APPENDLOGFILE (sLogFile, '[Комм. акт к ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'Комм. акт содержит ошибки');
+                                             // APPENDLOGFILE (sLogFile, '');
+
+                                             // Сбрасываем статус "Для регистрации"
+                                             sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ 0 +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID + ' AND COUNTER=' + qryCustReg.DOCSUBID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+                                             // Фиксируем неудачу в "Статус ЭПС"
+                                             sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Комм. акт содержит ошибки и не был отправлен' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             iCommActFail := iCommActFail + 1;
+                                           )
+                                         );
+
+                                       ),
+                                       Block(
+                                         // APPENDLOGFILE (sLogFile, '[Форма ДО-1]', 'Номер: ' + qryDO1.NBD, 'Результат: ' + 'Комм. акт не отправлен: ' + sReason);
+                                         // APPENDLOGFILE (sLogFile, '');
+
+                                         // Возвращаем ДО-1 статус "Зарегистрирован"
+                                         sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Комм. акт не отправлен: ' + sReason +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+
+                                         EXECUTESQL ('STS_DB', sSQL);
+
+                                             // Сбрасываем статус "Для регистрации"
+                                             sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ 0 +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID + ' AND COUNTER=' + qryCustReg.DOCSUBID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                         iCommActFail := iCommActFail + 1;
+                                       )
+                                     ); // IF - CheckDopList () //
+
+                                     // Удаляем коммерческий акт из журанла регистрации
+                                     sSQL := 'DELETE FROM MCUSTREG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID + ' AND DOCTYPE=' + qryCustReg.DOCTYPE + ' AND DOCSUBID=' + qryCustReg.DOCSUBID;
+                                     EXECUTESQL ('STS_DB', sSQL);
+                                   ),
+                                   '39', // ПИСЬМО ВЛАДЕЛЬЦА СВХ О САМОСТОЯТЕЛЬНО ВЫЯВЛЕННЫХ ОШИБКАХ
+                                   Block(
+                                     LOCATE ('KRD_MAIN', 'PLACEID;ID', [qryCustReg.PLACEID, qryCustReg.ID]);
+                                     OPENQUERY ('qryDO1', 'STS_DB', 'SELECT NBD, ALBUM_VERSION, MAIN_ID, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryCustReg.ID);
+                                     sDO1DocumentID := KRD_MAIN.DOCUMENTID;
+                                     sAlbumVersion := KRD_MAIN.ALBUM_VERSION;
+
+                                     IF (CheckLetter (),
+                                       Block(
+                                         WriteDO(3);
+
+                                         IF (CheckDO(),
+                                           Block(
+                                             XmlSave();
+
+                                             // APPENDLOGFILE (sLogFile, '[Письмо об ошибках]', 'Номер: ' + KRD_LETTER.LETTER_NO, 'Результат: ' + 'Письмо об ошибках подготовлено к отправке');
+                                             // APPENDLOGFILE (sLogFile, '');
+
+                                             // Ставим статус "Рассматривается"
+                                             sSQL := 'UPDATE KRD_LETTER SET LETTER_REG_STATUS=' +char(39)+ 'И' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID + ' AND COUNTER=' + qryCustReg.DOCSUBID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             // Фиксируем отправку в "Статус ЭПС"
+                                             sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Письмо №' + KRD_LETTER.LETTER_NO + ' подготовлено к отправке' +char(39)+ ' WHERE PLACEID=' + qryCustReg.PLACEID + ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             OPENQUERY ('qryNUM1', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + qryCustReg.PLACEID + ' AND ID=' + qryDO1.MAIN_ID, 'dbJournals');
+                                             WriteEpsLog (qryCustReg.PLACEID,
+                                                     qryCustReg.ID,
+                                                     0,
+                                                     sDO1DocumentID,
+                                                     'ДО-1',
+                                                     qryDO1.NBD,
+                                                     qryDO1.BD_DATE,
+                                                     'Письмо №' + KRD_LETTER.LETTER_NO + ' подготовлено к отправке',
+                                                     FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                     qryNUM1.JOURGUID,
+                                                     'DocumentId= ' + KRD_LETTER.DOCUMENTID,
+                                                     sFileName,
+                                                     '1',
+                                                     FDT ('DD.MM.YYYY HH:NN:SS', (Date () + Time (1))),
+                                                     0
+                                             ); // WriteEpsLog
+
+                                             iLetter := iLetter + 1;
+                                           ),
+                                           Block(
+                                             // APPENDLOGFILE (sLogFile, '[Письмо об ошибках]', 'Номер: ' + KRD_LETTER.LETTER_NO, 'Результат: ' + 'Письмо содержит ошибки и не было отправлено' + sReason);
+                                             // APPENDLOGFILE (sLogFile, '');
+
+                                             // Сбрасываем статус "Для регистрации"
+                                             sSQL := 'UPDATE KRD_LETTER' +
+                                                     ' SET' +
+                                                     ' LETTER_REG_STATUS=' +char(39)+ 0 +char(39)+
+                                                     ' WHERE' +
+                                                     ' PLACEID=' + qryCustReg.PLACEID +
+                                                     ' AND ID=' + qryDO1.MAIN_ID +
+                                                     ' AND COUNTER=' + qryCustReg.DOCSUBID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             // Фиксируем неудачу в "Статус ЭПС"
+                                             sSQL := 'UPDATE KRD_MAIN' +
+                                                     ' SET' +
+                                                     ' STATUS_EPS=' +char(39)+ 'Письмо №' + KRD_LETTER.LETTER_NO + ' содержит ошибки и не было отправлено' +char(39)+
+                                                     ' WHERE' +
+                                                     ' PLACEID=' + qryCustReg.PLACEID +
+                                                     ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                             EXECUTESQL ('STS_DB', sSQL);
+
+                                             iLetterFail := iLetterFail + 1;
+                                           )
+                                         ); // IF - //
+
+                                       ),
+                                       Block(
+                                         // APPENDLOGFILE (sLogFile, '[Письмо об ошибках]', 'Номер: ' + KRD_LETTER.LETTER_NO, 'Результат: ' + 'Письмо об ошибках не отправлено: ' + sReason);
+                                         // APPENDLOGFILE (sLogFile, '');
+
+                                         // Сбрасываем статус "Для регистрации"
+                                         sSQL := 'UPDATE KRD_LETTER' +
+                                                 ' SET' +
+                                                 ' LETTER_REG_STATUS=' +char(39)+ 0 +char(39)+
+                                                 ' WHERE' +
+                                                 ' PLACEID=' + qryCustReg.PLACEID +
+                                                 ' AND ID=' + qryDO1.MAIN_ID +
+                                                 ' AND COUNTER=' + qryCustReg.DOCSUBID;
+                                         EXECUTESQL ('STS_DB', sSQL);
+
+                                         // Фиксируем неудачу в "Статус ЭПС"
+                                         sSQL := 'UPDATE KRD_MAIN' +
+                                                 ' SET' +
+                                                 ' STATUS_EPS=' +char(39)+ 'Письмо №' + KRD_LETTER.LETTER_NO + ' не отправлено: ' +char(39)+
+                                                 ' WHERE' +
+                                                 ' PLACEID=' + qryCustReg.PLACEID +
+                                                 ' AND MAIN_ID=' + qryDO1.MAIN_ID;
+                                         EXECUTESQL ('STS_DB', sSQL);
+
+                                         iLetterFail := iLetterFail + 1;
+                                       )
+                                     ); // IF - //
+
+                                     // Удаляем Письмо из журнала регистрации
+                                     sSQL := 'DELETE' +
+                                             ' FROM MCUSTREG' +
+                                             ' WHERE' +
+                                             ' PLACEID=' + qryCustReg.PLACEID +
+                                             ' AND ID=' + qryCustReg.ID +
+                                             ' AND DOCTYPE=' + qryCustReg.DOCTYPE +
+                                             ' AND DOCSUBID=' + qryCustReg.DOCSUBID;
+                                     EXECUTESQL ('STS_DB', sSQL);
+                                   )
+                                  ],
+        ); // CASE - //
+        SETPROGRESS (i, 100, iRecCount);
+        NEXT ('qryCustReg');
+        i := i + 1;
+        if ( CANCELPRESSED (),
+             Block(
+                   HIDEPROGRESS ();
+                   CLOSEDATASET ('qryCustReg');
+                   CLOSEDATABASE ('dbMonitor');
+                   ShowResultSendDoc();
+                   RAISEEXCEPTION ('Обработка остановлена');
+             ),//block
+          ); //if
+      )
+    ); // WHILE
+  ),
+  Block(
+    HIDEPROGRESS ();
+    CLOSEDATASET ('qryCustReg');
+    CLOSEDATABASE ('dbMonitor');
+    IF (LENGTH (EXCEPTIONMESSAGE()) > 0,
+      SHOWMESSAGE (EXCEPTIONMESSAGE(), 2, 'Экспорт сообщений в АСТО')
+    ); // IF
+  )
+); // TRYFINALLY
+
+ShowResultSendDoc();

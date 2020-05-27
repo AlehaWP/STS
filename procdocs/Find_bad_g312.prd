@@ -1,0 +1,28 @@
+// *****************************************************************************
+// Название: Find_bad_g312
+// Описание: Find_bad_g312
+// Кнопка вызова: 0
+// Подпись кнопки: Find_bad_g312
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('sBad', string);
+VAR('sFilterCrit', string);
+OPENQUERY('GET_BAD_G312', 'STS_DB', 'SELECT DISTINCT ID FROM KRD_COMM WHERE G312 IS NULL');
+FIRST('GET_BAD_G312');
+//sFilterCrit:='ID='+GET_BAD_G312.ID;
+OPENQUERY('NB', 'STS_DB', 'SELECT NBD FROM KRD_MAIN WHERE ID='+GET_BAD_G312.ID);
+      sFilterCrit:='NBD='+char(39)+NB.NBD+char(39);
+NEXT('GET_BAD_G312');
+WHILE(EOF('GET_BAD_G312')=0,
+      BLOCK(
+        OPENQUERY('NB', 'STS_DB', 'SELECT NBD FROM KRD_MAIN WHERE ID='+GET_BAD_G312.ID);
+        //sBad := sBad + ', ' + NB.NBD;
+        //sFilterCrit:=sFilterCrit+ ' OR ID='+GET_BAD_G312.ID;
+        sFilterCrit:=sFilterCrit+ ' OR NBD='+char(39)+NB.NBD+char(39);
+        NEXT('GET_BAD_G312');
+      )
+);
+showmessage(sFilterCrit);
+SETFILTER('KRD_MAIN', sFilterCrit);
+//showmessage(sBAD);

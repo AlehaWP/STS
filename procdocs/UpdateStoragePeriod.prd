@@ -1,0 +1,20 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+{FIRST('FIND_NULL');
+WHILE(EOF('FIND_NULL')=0,
+      BLOCK(
+          OPENQUERY('GET_DATE', 'STS_DB', 'SELECT BEG_KEEP FROM KRD_MAIN WHERE ID='+FIND_NULL.ID);
+          VAR('iPeriod', integer, FIND_NULL.STORAGE_DATE-GET_DATE.BEG_KEEP);
+          EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET LEG_PERIOD ='+iPeriod+' WHERE ID='+FIND_NULL.ID+' AND LEG_PERIOD IS NULL');
+          NEXT('FIND_NULL');
+      )
+);
+}
+//EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET STORE_PERIOD =LEG_PERIOD WHERE STORE_PERIOD IS NULL');
+//EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET STORAGE_TYPE ="НОР" WHERE STORAGE_TYPE IS NULL');

@@ -1,0 +1,41 @@
+// *****************************************************************************
+// Название: ЭКСПОРТ представления документов  в формате СВХ.Альбом
+// Описание: ЭКСПОРТ представления документов  в формате СВХ.Альбом
+// Кнопка вызова: 1
+// Подпись кнопки: NTF.exp
+// *****************************************************************************
+//
+
+VAR ('sScriptPath', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\');
+VAR ('sXmlVersion', String, INIFILE ('XMLFormat', 'Version', ''));
+
+CASE (sXmlVersion, ['5.0.3', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.exp'),
+                    '5.0.5', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.exp'),
+		    '5.0.7', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.exp'),
+		    '5.0.8', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.exp'),
+		    '5.0.9', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.exp')
+                   ],
+                   //выбираем формат автоматически, по датам
+                   Block(
+                     IF (Date () < STRTODATE ('01.02.2012', 'DD.MM.YYYY', '.'),
+                       sXmlVersion := '5.0.3',
+					   Block(
+                         IF (Date () < STRTODATE ('01.07.2012', 'DD.MM.YYYY', '.'),
+                           sXmlVersion := '5.0.5',
+                           sXmlVersion := '5.0.7'
+                         );
+                         IF (Date () < STRTODATE ('01.09.2012', 'DD.MM.YYYY', '.'),
+                           sXmlVersion := '5.0.7',
+                           sXmlVersion := '5.0.8'
+                         );
+                         IF (Date () < STRTODATE ('01.11.2012', 'DD.MM.YYYY', '.'),
+                           sXmlVersion := '5.0.8',
+                           sXmlVersion := '5.0.9'
+                         );
+
+					   )					   
+                     );
+		     //WRITEINIFILE ('XmlFormat', 'Version', sXmlVersion);     //документ удален из альбома форматов - не меняем текущую настройку
+                     EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.exp');                      
+                   ) // автомат - //                   
+);

@@ -1,0 +1,443 @@
+// *****************************************************************************
+// Название: Перед удалением документа
+// Описание:
+// Кнопка вызова: 0
+// Подпись кнопки:
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('bJustCreated', Integer, INIFILE ('JUSTCREATED', IF (LENGTH (USERINFO ('', 'USERUUID')) > 0, USERINFO ('', 'USERUUID'), 'ADMIN'), 0));
+VAR ('sSQL', String, '');
+
+IF (bJustCreated = 0,
+  Block(
+    // DocType: 1 - DO1, 5 - DO2, 38 -  CommAct, 39 - Letter
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\writelog.prd');
+
+    //VAR ('sDBName', String, 'dbJournals');
+    VAR ('sDBName', String, 'STS_DB');
+
+    FUNC ('FileToBase64',
+      Block(
+        PARAM ('sInputFile', String, 0)
+      ),
+      Block(
+        VAR ('sZipFileName', String, '');
+        VAR ('sFullPathZipFileName', String,'');
+        VAR ('sStrToTable', Memo, "");
+        sZipFileName := GENERATEUUID () + '.zip';
+        sFullPathZipFileName := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + sZipFileName;
+        ZipAddFile (sFullPathZipFileName, sInputFile);
+        sStrToTable := Base64Encode (StringFromFile (sFullPathZipFileName) );
+        DELETEFILE (sFullPathZipFileName);
+        sStrToTable
+      )
+    ); // FUNC FileToBase64
+
+    VAR ('o', Variant, 0);
+    VAR ('sFileToTable', String, '');
+    VAR ('sJRSQL', String, '');
+    VAR ('iJOURNAL_MASTER_ID', Integer, 0);
+    VAR ('sJOURNAL_UUID',      String,  '');
+    VAR ('iDOCPLACEID',        Integer, 0);
+    VAR ('iDOCID',             Integer, 0);
+    VAR ('iDOCSUBID',          Integer, 0);
+    VAR ('iDOCTYPE',           Integer, 0);
+    VAR ('sDOCNAME',           String, '');
+    VAR ('sOPERTYPE',          String, '');
+    VAR ('sDOCNO',             String, '');
+    VAR ('dDOCDATE',           DateTime, DATE()+TIME(1));
+    VAR ('iDOCCOUNTER',        Integer, 0);
+    VAR ('sDOCREMARK',         String, '');
+    VAR ('sSTSUSERNAME',       String, '');
+    VAR ('sUSERNAME',          String, '');
+    VAR ('sUSERCOMPUTER',      String, '');
+    VAR ('dOPERDATE',          DateTime, DATE()+TIME(1));
+    VAR ('mDOCBODY',           Memo, '');
+    VAR ('sDOCSTATUS',         String, '');
+    VAR ('sDocumentId',        String, '');
+
+    TRYEXCEPT ( o := CREATEOLEOBJECT ('svh.Extention'), WriteLog ('EventLog', EXCEPTIONMESSAGE()) );
+    TRYEXCEPT ( sUSERNAME := o.CurrentUser(),  WriteLog ('EventLog', EXCEPTIONMESSAGE()) );
+    TRYEXCEPT ( sUSERCOMPUTER := o.ComputerName(), WriteLog ('EventLog', EXCEPTIONMESSAGE()) );
+
+    VAR ('XmlDocument', Integer, XMLDOCUMENTCREATE ());
+    VAR ('sBkpDocument', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) +
+                                  CASE (DocType,
+                                  [1, 'do1-' + KRD_MAIN.NBD,
+                                  5, 'do2-' + RELEASE.RELEASE_NO,
+                                  38, 'ca-' + KRD_DOP.DOC_NO,
+                                  39, 'ml-' + KRD_LETTER.LETTER_NO],) + '_backup.xml');
+
+    FUNC ('GetXMLDocument', '',
+      Block(
+        XmlDocument := XMLDOCUMENTCREATE ();
+        XMLDOCUMENTENCODING (XmlDocument, 'windows-1251');
+        XMLDOCUMENTROOT (XmlDocument);
+      )
+    ), // FUNC
+
+
+    TRYEXCEPT (
+      Block(
+        CASE (DocType,
+          [1,
+          Block(
+            // LOCATE ('KRD_MAIN', 'PLACEID;ID', [DocPlaceID, DocDocId]);
+            // EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\do1_album.exp');
+          ),
+          5,
+          Block(
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [DocPlaceID, DocDocId]);
+            LOCATE ('RELEASE', 'PLACEID;ID;COUNTER', [DocPlaceID, DocDocId, DocSubID]);
+            sSQL := 'SELECT * FROM ' + CorrectTableName ('RELEASE') +
+                    ' WHERE PLACEID=' + DocPlaceID +
+                    ' AND MAIN_ID=' + DocDocId +
+                    ' AND COUNTER=' + DocSubID;
+            OPENQUERY ('REL_MAIN_3', 'STS_DB', sSQL, 1);
+            EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\do2_album.exp');
+            CLOSEDATASET ('REL_MAIN_3');
+          ),
+          38,
+          Block(
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [DocPlaceID, DocDocId]);
+            LOCATE ('KRD_DOP', 'PLACEID;ID;COUNTER', [DocPlaceID, DocDocId, DocSubID]);
+            EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\comm_act.exp');
+            //WriteLog ('EventLog', 'Отлокейтили KRD_MAIN, KRD_DOP, выполнили формирование XML-файла Комм. акта');
+          ),
+          39,
+          Block(
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [DocPlaceID, DocDocId]);
+            LOCATE ('KRD_LETTER', 'PLACEID;ID;COUNTER', [DocPlaceID, DocDocId, DocSubID]);
+            EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\letter.exp')
+          )],
+        ); // CASE
+
+        // поскольку ДО-1 мы восстанавливаем только из резервной копии Монитор ЭД
+        // выполняем следующий код только для других типов документов
+        IF (DocType <> 1,
+          Block(
+            XmlDocumentSave (XmlDocument, sBkpDocument, 1);
+            XMLDESTROY (XmlDocument);
+            IF (FILEEXISTS (sBkpDocument),
+              Block(
+                VAR ('v', Variant, CREATEOLEOBJECT ('Schemavalidator.Validator'));
+                v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + INIFILE ('XmlFormat', 'Version', '5.13.3') + '\';
+                IF (v.ValidateFile (sBkpDocument) = 'True',
+                  sFileToTable := sBkpDocument,
+                  sFileToTable := ''
+                ); // IF
+              ),
+              sFileToTable := ''
+            ); // IF
+            //WriteLog ('EventLog', 'Сохранили файл и валидировали его.');
+          )
+        ); // IF
+      ),
+      Block(
+        WriteLog ('EventLog', EXCEPTIONMESSAGE ());
+      )
+    );
+
+
+    FUNC ('WriteJREVENTLOG', '',
+      Block(
+        sJRSQL := '';
+        // ----------------------------------------------------------------------------------------------
+        OPENQUERY ('Q_MAX', 'SELECT MAX(JOURNAL_MASTER_ID) AS MAXID FROM JREVENTLOG', sDBName);
+        IF (FIELDISNULL ('Q_MAX', 'MAXID'), iJOURNAL_MASTER_ID :=1, iJOURNAL_MASTER_ID := Q_MAX.maxid+1);
+        CLOSEDATASET ('Q_MAX');
+        // ----------------------------------------------------------------------------------------------
+
+        sSTSUSERNAME := USERINFO ('', 'UserLogin');
+        dOPERDATE := DATE() + TIME(1);
+        sJOURNAL_UUID := GENERATEUUID ();
+        IF (FILEEXISTS (sFileToTable),
+          Block (
+            //mDOCBODY := StringFromFile (sFileToTable);
+            mDOCBODY := FileToBase64 (sFileToTable);
+            DELETEFILE (sFileToTable);
+          ),
+          Block(
+            mDOCBODY := '';
+            sFileToTable := '';
+          )
+        ); // IF
+        sOPERTYPE := 'Удаление';
+
+        sJRSQL := sJRSQL + 'INSERT INTO JREVENTLOG (';
+        sJRSQL := sJRSQL + ' JOURNAL_MASTER_ID';
+        sJRSQL := sJRSQL + ' ,JOURNAL_UUID';
+        sJRSQL := sJRSQL + ' ,DOCPLACEID';
+        sJRSQL := sJRSQL + ' ,DOCID';
+        sJRSQL := sJRSQL + ' ,DOCSUBID';
+        sJRSQL := sJRSQL + ' ,DOCTYPE';
+        sJRSQL := sJRSQL + ' ,DOCNAME';
+        sJRSQL := sJRSQL + ' ,OPERTYPE';
+        sJRSQL := sJRSQL + ' ,DOCNO';
+        sJRSQL := sJRSQL + ' ,DOCDATE';
+        sJRSQL := sJRSQL + ' ,DOCCOUNTER';
+        sJRSQL := sJRSQL + ' ,DOCREMARK';
+        sJRSQL := sJRSQL + ' ,STSUSERNAME';
+        sJRSQL := sJRSQL + ' ,USERNAME';
+        sJRSQL := sJRSQL + ' ,USERCOMPUTER';
+        sJRSQL := sJRSQL + ' ,OPERDATE';
+        sJRSQL := sJRSQL + ' ,DOCBODY';
+        sJRSQL := sJRSQL + ' ,DOCSTATUS';
+        sJRSQL := sJRSQL + ' ,DOCUMENTID';
+        sJRSQL := sJRSQL + ' ,CREATED_AT';
+        sJRSQL := sJRSQL + ' ) VALUES (';
+        sJRSQL := sJRSQL + ' ' + iJOURNAL_MASTER_ID;
+        sJRSQL := sJRSQL + ' ,' +char(39)+ COPY (sJOURNAL_UUID,1 , 32) +char(39);
+        sJRSQL := sJRSQL + ' ,' + iDOCPLACEID;
+        sJRSQL := sJRSQL + ' ,' + iDOCID;
+        sJRSQL := sJRSQL + ' ,' + iDOCSUBID;
+        sJRSQL := sJRSQL + ' ,' + iDOCTYPE;
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sDOCNAME,  1, 20), char(39)) +char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sOPERTYPE, 1, 20), char(39)) +char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sDOCNO,    1, 50), char(39)) +char(39);
+        sJRSQL := sJRSQL + ' ,' + DBFORMATDATETIME (dDOCDATE, GetDatabaseType (sDBName), 1,0);
+        sJRSQL := sJRSQL + ' ,' + iDOCCOUNTER;
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sDOCREMARK,    1, 250), char(39))  +char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sSTSUSERNAME,  1, 50), char(39))  +char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sUSERNAME,     1, 50), char(39))  +char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR( COPY (sUSERCOMPUTER, 1, 50), char(39))  +char(39);
+        sJRSQL := sJRSQL + ' ,' + DBFORMATDATETIME (dOPERDATE, GetDatabaseType (sDBName), 1,0);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ mDOCBODY  + char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ REMOVECHAR (COPY (sDOCSTATUS, 1, 1), char(39)) +char(39);
+        sJRSQL := sJRSQL + ' ,' +char(39)+ sDocumentId + char(39);
+        sJRSQL := sJRSQL + ' ,' + DBFORMATDATETIME (Date()+Time(1), GetDatabaseType (sDBName), 1,0);
+        sJRSQL := sJRSQL + ' )';
+        // showmessage (sJRSQL);
+        // WriteLog ('EventLog', sJRSQL);
+        TRYEXCEPT (
+          EXECUTESQL (sDBName, sJRSQL),
+          Block(
+            WriteLog ('EventLog', EXCEPTIONMESSAGE());
+          )
+        ); // TRYEXCEPT
+      )
+    );//FUNC WriteJREVENTLOG
+
+    FUNC ('CheckChildDocuments',
+      Block(
+        PARAM ('pPlaceId', Integer, 0);
+        PARAM ('pId', Integer, 1);
+      ),
+      Block(
+        // ДО-2
+        sSQL := 'SELECT PLACEID, ID, COUNTER, RELEASE_NO, OUT_DATE, MC_STATUS, DOCUMENTID FROM ' + CorrectTablename ('RELEASE') +
+                ' WHERE PLACEID=' + pPlaceId + ' AND ID=' + pId;
+        OPENQUERY ('qLDO2', 'STS_DB', sSQL, 1);
+        IF (BOF ('qLDO2') = 0, FIRST ('qLDO2'));
+        WHILE (EOF ('qLDO2') = 0,
+          Block(
+             sDOCNAME    := 'ДО-2';
+             sDOCNO      := qLDO2.RELEASE_NO;
+             dDOCDATE    := qLDO2.OUT_DATE;
+             iDOCPLACEID := qLDO2.PLACEID;
+             iDOCID      := qLDO2.ID;
+             iDOCSUBID   := qLDO2.COUNTER;
+             iDOCTYPE    := 5;
+             sDOCREMARK  := 'вместе с ДО1 №' + qKM.NBD + ' от ' + qKM.BD_DATE;
+             sDOCSTATUS  := qLDO2.MC_STATUS;
+             sDocumentId := qLDO2.DOCUMENTID;
+
+            //  LOCATE ('KRD_MAIN', 'PLACEID;ID', [qLDO2.PLACEID, qLDO2.ID]);
+             LOCATE ('RELEASE', 'PLACEID;ID;COUNTER', [qLDO2.PLACEID, qLDO2.ID, qLDO2.COUNTER]);
+             sSQL := 'SELECT * FROM ' + CorrectTableName ('RELEASE') +
+                     ' WHERE PLACEID=' + qLDO2.PLACEID +
+                     ' AND MAIN_ID=' + qLDO2.ID +
+                     ' AND COUNTER=' + qLDO2.COUNTER;
+             OPENQUERY ('REL_MAIN_3', 'STS_DB', sSQL, 1);
+             EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\do2_album.exp');
+             CLOSEDATASET ('REL_MAIN_3');
+             sBkpDocument := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'do2-' + qLDO2.RELEASE_NO + '_backup.xml';
+             XmlDocumentSave (XmlDocument, sBkpDocument, 1);
+             XMLDESTROY (XmlDocument);
+
+             IF (FILEEXISTS (sBkpDocument),
+               Block(
+                 VAR ('v', Variant, CREATEOLEOBJECT ('Schemavalidator.Validator'));
+                 v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + INIFILE ('XmlFormat', 'Version', '5.13.3') + '\';
+                 IF (v.ValidateFile (sBkpDocument) = 'True',
+                   sFileToTable := sBkpDocument,
+                   Block(
+                     //v.ShowResult();
+                     sFileToTable := '';
+                   )
+                 ); // IF
+               ),
+               sFileToTable := ''
+             ); // IF
+
+             WriteJREVENTLOG();
+            NEXT ('qLDO2');
+          )
+        ); // WHILE
+        CLOSEDATASET ('qLDO2');
+
+        // Комм. акты
+        sSQL := 'SELECT PLACEID, ID, COUNTER, DOC_NO, DOC_DATETIME, DOC_REG_STATUS FROM KRD_DOP' +
+                ' WHERE PLACEID=' + pPlaceId + ' AND ID=' + pId;
+        OPENQUERY ('qLDop', 'STS_DB', sSQL, 1);
+        IF (BOF ('qLDop') = 0, FIRST ('qLDop'));
+        WHILE (EOF ('qLDop') = 0,
+          Block(
+             sDOCNAME    := 'Коммерческий акт';
+             sDOCNO      := qLDop.DOC_NO;
+             dDOCDATE    := qLDop.DOC_DATETIME;
+             iDOCPLACEID := qLDop.PLACEID;
+             iDOCID      := qLDop.ID;
+             iDOCSUBID   := qLDop.COUNTER;
+             iDOCTYPE    := 38;
+             iDOCCOUNTER := qLDop.COUNTER;
+             sDOCREMARK   := 'вместе с ДО1 №' + qKM.NBD + ' от ' + qKM.BD_DATE;
+             sDOCSTATUS := qLDop.DOC_REG_STATUS;
+
+             LOCATE ('KRD_MAIN', 'PLACEID;ID', [qLDop.PLACEID, qLDop.ID]);
+             LOCATE ('KRD_DOP', 'PLACEID;ID;COUNTER', [qLDop.PLACEID, qLDop.ID, qLDop.COUNTER]);
+             EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\comm_act.exp');
+             sBkpDocument := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'ca-' + qLDop.DOC_NO + '_backup.xml';
+             XmlDocumentSave (XmlDocument, sBkpDocument, 1);
+             XMLDESTROY (XmlDocument);
+
+             IF (FILEEXISTS (sBkpDocument),
+               Block(
+                 VAR ('v', Variant, CREATEOLEOBJECT ('Schemavalidator.Validator'));
+                 v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + INIFILE ('XmlFormat', 'Version', '5.13.3') + '\';
+                 IF (v.ValidateFile (sBkpDocument) = 'True',
+                   sFileToTable := sBkpDocument,
+                   sFileToTable := ''
+                 ); // IF
+               ),
+               sFileToTable := ''
+             ); // IF
+
+             WriteJREVENTLOG();
+            NEXT ('qLDop');
+          )
+        ); // WHILE
+        CLOSEDATASET ('qLDop');
+
+        // Письма об ошибках
+        sSQL := 'SELECT PLACEID, ID, COUNTER, LETTER_NO, LETTER_DATETIME, LETTER_REG_STATUS FROM KRD_LETTER' +
+                ' WHERE PLACEID=' + pPlaceId + ' AND ID=' + pId;
+        OPENQUERY ('qLLetter', 'STS_DB', sSQL, 1);
+        IF (BOF ('qLLetter') = 0, FIRST ('qLLetter'));
+        WHILE (EOF ('qLLetter') = 0,
+          Block(
+             sDOCNAME    := 'Письмо владельца СВХ';
+             sDOCNO      := qLLetter.LETTER_NO;
+             dDOCDATE    := qLLetter.LETTER_DATETIME;
+             iDOCPLACEID := qLLetter.PLACEID;
+             iDOCID      := qLLetter.ID;
+             iDOCSUBID   := qLLetter.COUNTER;
+             iDOCTYPE    := 39;
+             sDOCREMARK   := 'вместе с ДО1 №' + qKM.NBD + ' от ' + qKM.BD_DATE;
+             sDOCSTATUS := qLLetter.LETTER_REG_STATUS;
+
+            //  LOCATE ('KRD_MAIN', 'PLACEID;ID', [qLLetter.PLACEID, qLLetter.ID]);
+             LOCATE ('KRD_LETTER', 'PLACEID;ID;COUNTER', [qLLetter.PLACEID, qLLetter.ID, qLLetter.COUNTER]);
+             EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\Scripts\' + INIFILE ('XMLFormat', 'Version', '5.13.3') + '\letter.exp');
+             sBkpDocument := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'ml-' + qLLetter.LETTER_NO + '_backup.xml';
+             XmlDocumentSave (XmlDocument, sBkpDocument, 1);
+             XMLDESTROY (XmlDocument);
+
+             IF (FILEEXISTS (sBkpDocument),
+               Block(
+                 VAR ('v', Variant, CREATEOLEOBJECT ('Schemavalidator.Validator'));
+                 v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + INIFILE ('XmlFormat', 'Version', '5.13.3') + '\';
+                 IF (v.ValidateFile (sBkpDocument) = 'True',
+                   sFileToTable := sBkpDocument,
+                   sFileToTable := ''
+                 ); // IF
+               ),
+               sFileToTable := ''
+             ); // IF
+
+             WriteJREVENTLOG();
+            NEXT ('qLLetter');
+          )
+        ); // WHILE
+        CLOSEDATASET ('qLLetter');
+
+      )
+    ), // FUNC - CheckChildDocuments
+
+
+    CASE (DocType, [1,
+       Block(
+         sSQL := 'SELECT PLACEID, ID, NBD, BD_DATE, PART_NO, MC_STATUS_BD, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + DocPlaceID + ' AND ID=' + DocDocID;
+         OPENQUERY ('qKM', 'STS_DB', sSQL, 1);
+         sDOCNAME := 'ДО-1';
+         sDOCNO := qKM.NBD;
+         dDOCDATE := qKM.BD_DATE;
+         iDOCPLACEID := qKM.PLACEID;
+         iDOCID      := qKM.ID;
+         iDOCSUBID   := 0;
+         iDOCTYPE := 1;
+         iDOCCOUNTER := qKM.PART_NO;
+         sDOCSTATUS := qKM.MC_STATUS_BD;
+         sDocumentId := qKM.DOCUMENTID;
+         WriteJREVENTLOG();
+         CheckChildDocuments (qKM.PLACEID, qKM.ID);
+         CLOSEDATASET ('qKM');
+       ),
+       5,
+       Block(
+         sSQL := 'SELECT PLACEID, ID, COUNTER, RELEASE_NO, OUT_DATE, MC_STATUS, DOCUMENTID FROM ' + CorrectTablename('RELEASE') +
+                  ' WHERE PLACEID=' + DocPlaceID + ' AND ID=' + DocDocID + ' AND COUNTER=' + DocSubID;
+         OPENQUERY ('qRM', 'STS_DB', sSQL, 1);
+         sDOCNAME := 'ДО-2';
+         sDOCNO := qRM.RELEASE_NO;
+         dDOCDATE := qRM.OUT_DATE;
+         iDOCPLACEID := qRM.PLACEID;
+         iDOCID      := qRM.ID;
+         iDOCSUBID   := qRM.COUNTER;
+         iDOCTYPE := 5;
+         sDOCSTATUS := qRM.MC_STATUS;
+         sDocumentId := qRM.DOCUMENTID;
+         WriteJREVENTLOG();
+         CLOSEDATASET ('qRM')
+       ),
+       38,
+       Block(
+         sSQL := 'SELECT PLACEID, ID, COUNTER, DOC_NO, DOC_DATETIME, DOC_REG_STATUS FROM KRD_DOP' +
+                  ' WHERE PLACEID=' + DocPlaceID + ' AND ID=' + DocDocID + ' AND COUNTER=' + DocSubID;
+         OPENQUERY ('qKD', 'STS_DB', sSQL, 1);
+         sDOCNAME := 'Коммерческий акт';
+         sDOCNO := qKD.DOC_NO ;
+         dDOCDATE := qKD.DOC_DATETIME;
+         iDOCPLACEID := qKD.PLACEID;
+         iDOCID      := qKD.ID;
+         iDOCSUBID   := qKD.COUNTER;
+         iDOCTYPE := 38;
+         sDOCSTATUS := qKD.DOC_REG_STATUS;
+         iDOCCOUNTER := qKD.COUNTER;
+         WriteJREVENTLOG();
+         CLOSEDATASET ('qKD');
+         //WriteLog ('EventLog', 'Зафиксировали удаление в журнале событий');
+       ),
+       39,
+       Block(
+         sSQL := 'SELECT PLACEID, ID, COUNTER, LETTER_NO, LETTER_DATETIME, LETTER_REG_STATUS FROM KRD_LETTER' +
+                  ' WHERE PLACEID=' + DocPlaceID + ' AND ID=' + DocDocID + ' AND COUNTER=' + DocSubID;
+         OPENQUERY ('qKL', 'STS_DB', sSQL, 1);
+         sDOCNAME := 'Письмо владельца СВХ';
+         sDOCNO := qKL.LETTER_NO ;
+         dDOCDATE := qKL.LETTER_DATETIME;
+         iDOCPLACEID := qKL.PLACEID;
+         iDOCID      := qKL.ID;
+         iDOCSUBID   := qKL.COUNTER;
+         iDOCTYPE := 39;
+         sDOCSTATUS := qKL.LETTER_REG_STATUS;
+         CLOSEDATASET ('qKL');
+         WriteJREVENTLOG();
+       )],); // CASE
+
+  )
+); // IF - bJustCreated

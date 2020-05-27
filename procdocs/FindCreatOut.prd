@@ -1,0 +1,344 @@
+// *****************************************************************************
+// Название: создание актов выдачи
+// Описание: Скрипт автоматического создания актов выдачи. Для СЕБ-ВОСТОК.
+// Кнопка вызова: 1
+// Подпись кнопки: созд. акт выд old
+// *****************************************************************************
+//
+{
+[RepList_1_Params]
+DAO VERSION=3.6
+DATABASE TYPE=Excel 8.0
+DATABASE NAME=C:\CTM\vr\now\test.xls
+NOEXCELHEADERS=0
+USER NAME=Admin
+PASSWORDCHECK=0
+Driver Name=Data Access Objects (DAO)
+}
+
+FUNC ('AddOut',
+      Param('iTypeOutDoc', Integer,0), // 1- новый Документ выдачи, 2- добавление товаров
+      Block(
+      //showmessage(i);
+          if ( iTypeOutDoc = 1,
+           Block(
+            SETFILTER ('KRD_TRANSP_2', '');
+            SETFILTER ('KRD_TRANSP_2', '(PLACEID ='+ iTekPlaceId + ') AND (ID=' + iTekId + ')');
+            SETFILTER ('KRD_CONT_2', '');
+            SETFILTER ('KRD_CONT_2', '(PLACEID ='+ iTekPlaceId + ') AND (ID=' + iTekId + ')');
+            //SHOWMESSAGE(UNIONVALUES ('KRD_CONT_2', 'PLOMB', ',', ';'));
+            //SHOWMESSAGE( RECORDCOUNT('KRD_CONT_2'));
+            EDITRECORD ( 'OUT_MAIN_2' );
+            APPENDRECORD ( 'OUT_MAIN_2' );
+            SETFIELDVALUE ( 'OUT_MAIN_2' , 'PLACEID', iTekPlaceId ,
+                                           'ID', iTekId ,
+                                           'ACTOUTID', iTekActOutId,
+                                           //'NDA', SOLVE (INIFILE ('Docs', 'MakeAO_No', ''))
+                                           'MAIN_ID' , iTekId ,
+                                           'MAIN_ACTOUTID' , iTekActOutId ,
+                                           'MAIN_COUNTER' , 1 ,
+                                           'NDA',  IN_MAIN_2.NRA + '/' + iTekActOutId,
+                                           'G081', KRD_MAIN_3.G081,
+                                           'G082', KRD_MAIN_3.G082,
+                                           'G083', KRD_MAIN_3.G083,
+                                           'G084A', KRD_MAIN_3.G084A,
+                                           'G084B', KRD_MAIN_3.G084B,
+                                           'G084C', KRD_MAIN_3.G084C,
+                                           'G08_C', KRD_MAIN_3.G17A,
+                                           'G080', KRD_MAIN_3.G080,
+                                           'G080P', KRD_MAIN_3.G080P,
+                                           'MOTOR_DESCR', KRD_TRANSP_2.CARNO,
+                                           'MOTOR_TYPE', KRD_MAIN_3.G261,
+                                           'SEAL_LIST', KRD_CONT_2.PLOMB,
+                                           'ACCOUNTNO','1',
+                                           //'MC_STATUS', '0',
+                                           'G542', Convert(FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)), DateTime)
+
+            );
+            POSTRECORD ( 'OUT_MAIN_2' );
+            AppendLogFile(sLogFile, '*********************************************************************************************************************' );
+            AppendLogFile(sLogFile, 'Создан Документ Выдачи № '+ OUT_MAIN_2.NDA +' товар № '+KRD_COMM_3.G32+' с артикулом: '+ XLS_QUERY.SAPcode );
+    //        AppendLogFile(sLogFile, '======================================================================================================================================' );
+
+            EDITRECORD ( 'OUT_COMM_2' );
+            APPENDRECORD ( 'OUT_COMM_2' );
+            SETFIELDVALUE ( 'OUT_COMM_2' , 'PLACEID', iTekPlaceId ,
+                                           'ID', iTekId ,
+                                           'ACTOUTID', iTekActOutId,
+                                           'G32' , KRD_COMM_3.G32,
+                                           'DOC_TYPE', 'ГТД',
+                                           'ND_GTD', SND,
+                                           'OUT_G33' , KRD_COMM_3.G33,
+                                           'OUT_G311', FloatRound(fost_G311*fkoff, 2),
+                                           'OUT_G35', FloatRound(fost_G35*fkoff, 2),
+                                           'OUT_G38', FloatRound(fost_G38*fkoff, 2),
+                                           'OUT_G42', FloatRound(fost_G42*fkoff, 2),
+                                           'OUT_G46', FloatRound(fost_G46*fkoff, 2),
+                                           'OUT_G315A', XLS_QUERY.sumQntPC
+            );
+            POSTRECORD ( 'OUT_COMM_2' );
+            REFRESH ('OUT_COMM_2');
+            //refresh out_comm_2 для лога
+            {IF(EOF ('OUT_COMM_2'),
+              block(
+                PRIOR ('OUT_COMM_2');
+                NEXT ('OUT_COMM_2');
+              ),
+              block(
+                NEXT ('OUT_COMM_2');
+                PRIOR ('OUT_COMM_2');
+              )
+            );}
+            AppendLogFile(sLogFile, 'В нем создан товар №' + KRD_COMM_3.G32 + ' номер ГТД ' + SND + '  OUT_G311= '+OUT_COMM_2.OUT_G311+' OUT_G35='+OUT_COMM_2.OUT_G35+ ' OUT_G38='+OUT_COMM_2.OUT_G38+' OUT_G42='+OUT_COMM_2.OUT_G42+' OUT_G46='+OUT_COMM_2.OUT_G46);
+            ),
+            ); //if iTypeOutDoc=1
+          if ( iTypeOutDoc = 2,
+           Block(
+            SETFILTER ( 'OUT_COMM_2' , '');
+            SETFILTER ( 'OUT_MAIN_2' , '');
+            SETFILTER ( 'OUT_MAIN_2' , '(PLACEID = '+iTekPlaceId+') AND (ID='+iTekId+') AND (ACTOUTID='+ iTekActOutId +')');
+            SETFILTER ( 'OUT_COMM_2' , '(PLACEID = '+iTekPlaceId+') AND (ID='+iTekId+') AND (G32='+KRD_COMM_3.G32+')');
+
+            IF ( RECORDCOUNT ( 'OUT_COMM_2' )=0,
+            Block(
+                  EDITRECORD ( 'OUT_COMM_2' );
+                  APPENDRECORD ( 'OUT_COMM_2' );
+                  SETFIELDVALUE ( 'OUT_COMM_2' , 'PLACEID', iTekPlaceId ,
+                                                 'ID', iTekId ,
+                                                 'ACTOUTID', iTekActOutId,
+                                                 'G32' , KRD_COMM_3.G32,
+                                                 'DOC_TYPE', 'ГТД',
+                                                 'ND_GTD', SND,
+                                                 'OUT_G33' , KRD_COMM_3.G33,
+                                                 'OUT_G311', FloatRound(fost_G311*fkoff, 2),
+                                                 'OUT_G35', FloatRound(fost_G35*fkoff, 2),
+                                                 'OUT_G38', FloatRound(fost_G38*fkoff, 2),
+                                                 'OUT_G42', FloatRound(fost_G42*fkoff, 2),
+                                                 'OUT_G46', FloatRound(fost_G46*fkoff, 2),
+                                                 'OUT_G315A', XLS_QUERY.sumQntPC
+                  );
+                  POSTRECORD ( 'OUT_COMM_2' );
+                  REFRESH ('OUT_COMM_2');
+                  AppendLogFile(sLogFile, 'Добавлен в СУЩЕСТВУЮЩИЙ документ выдачи №'+ OUT_MAIN_2.NDA +'товар №' + KRD_COMM_3.G32 + ' номер ГТД ' + SND + '  OUT_G311= '+OUT_COMM_2.OUT_G311+' OUT_G35='+OUT_COMM_2.OUT_G35+ ' OUT_G38='+OUT_COMM_2.OUT_G38+' OUT_G42='+OUT_COMM_2.OUT_G42+' OUT_G46='+OUT_COMM_2.OUT_G46);
+                  ), //block
+             Block(
+                  EDITRECORD ( 'OUT_COMM_2' );
+                  SETFIELDVALUE ( 'OUT_COMM_2' , {'PLACEID', iTekPlaceId ,
+                                                 'ID', iTekId ,
+                                                 'ACTOUTID', iTekActOutId,}
+                                                 'G32' , KRD_COMM_3.G32,
+                                                 'DOC_TYPE', 'ГТД',
+                                                 'ND_GTD', SND,
+                                                 'OUT_G33' , KRD_COMM_3.G33,
+                                                 'OUT_G311', OUT_COMM_2.OUT_G311 + FloatRound(fost_G311*fkoff, 2),
+                                                 'OUT_G35', OUT_COMM_2.OUT_G35 + FloatRound(fost_G35*fkoff, 2),
+                                                 'OUT_G38', OUT_COMM_2.OUT_G38 + FloatRound(fost_G38*fkoff, 2),
+                                                 'OUT_G42', OUT_COMM_2.OUT_G42 + FloatRound(fost_G42*fkoff, 2),
+                                                 'OUT_G46', OUT_COMM_2.OUT_G46 + FloatRound(fost_G46*fkoff, 2),
+                                                 'OUT_G315A', OUT_COMM_2.OUT_G315A+XLS_QUERY.sumQntPC
+                  );
+                  POSTRECORD ( 'OUT_COMM_2' );
+                  AppendLogFile(sLogFile, 'В Документе выдачи № '+ OUT_MAIN_2.NDA +' обновлен (добавлена выдача в) товар № '+KRD_COMM_3.G32+' номер ГТД ' + SND + '  OUT_G311= '+OUT_COMM_2.OUT_G311+' OUT_G35='+OUT_COMM_2.OUT_G35+ ' OUT_G38='+OUT_COMM_2.OUT_G38+' OUT_G42='+OUT_COMM_2.OUT_G42+' OUT_G46='+OUT_COMM_2.OUT_G46);
+             )// block
+             )//if FINDKEY
+            ),
+            ); //if iTypeOutDoc=2
+
+      ) // block
+); // FUNC ('AddOut'
+
+Var( 'iTekPlaceId' , Integer, 0);
+Var( 'iTekId' ,      Integer, 0);
+Var( 'iTekActOutId' ,      Integer, 0);
+Var( 'sFileName' , String, '');
+Var( 'sFileNameDBF' , String, '');
+Var( 'sListName' , String, 'файл для СТМ');
+Var( 'nGTD',  String, '');
+Var( 'fkoff' , Float, 0);
+Var( 'fSUM_OUT_G315A' , Float, 0);
+Var( 'fSUM_OUT_G311' , Float, 0);
+Var( 'fSUM_OUT_G35' , Float, 0);
+Var( 'fSUM_OUT_G38' , Float, 0);
+Var( 'fSUM_OUT_G42' , Float, 0);
+Var( 'fSUM_OUT_G46' , Float, 0);
+Var( 'fost_G315A' , Float, 0);
+Var( 'fost_G311' , Float, 0);
+Var( 'fost_G35' , Float, 0);
+Var( 'fost_G38' , Float, 0);
+Var( 'fost_G42' , Float, 0);
+Var( 'fost_G46' , Float, 0);
+Var( 'fS' , Float, 0);
+Var( 'fkolvoExcel' , Float, 0);
+Var( 'sSUM_OUT_G315A' , String, '');
+Var( 'sSQL' , String, '');
+VAR ('SG071', String, '');
+VAR ('SG072', DateTime);
+VAR ('SG073', String, '');
+VAR ('SND', String, '');
+VAR ('sNGTD', String, '');
+VAR ('sLogFile', String, TempDirectory() + 'FindCreatOut.log');  { имя файла журнала }
+
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\xls_prop.cfm');
+FORMSETPROPERTY(frmDialog, 'rtFilenameEdit1.Text', INIFILE ('FindCreatOut', 'sFileName', ''));
+FORMSETPROPERTY(frmDialog, 'rtFilenameEdit2.Text', INIFILE ('FindCreatOut', 'sFileNameDBF', ''));
+FORMSETPROPERTY(frmDialog, 'rtEdit1.Text', INIFILE ('FindCreatOut', 'sListName', ''));
+
+if( FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено') );
+
+CreateLogFile(sLogFile);                                    { создание журнала }
+AppendLogFile(sLogFile, 'Начало обработки документов: '+FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------');
+
+sFileName := FORMGETPROPERTY(frmDialog, 'rtFilenameEdit1.Text');
+sFileNameDBF := FORMGETPROPERTY(frmDialog, 'rtFilenameEdit2.Text');
+sListName := '`.`'+ FORMGETPROPERTY(frmDialog, 'rtEdit1.Text') +'$';
+
+WRITEINIFILE ('FindCreatOut', 'sFileName', sFileName);
+WRITEINIFILE ('FindCreatOut', 'sFileNameDBF', sFileNameDBF);
+WRITEINIFILE ('FindCreatOut', 'sListName', FORMGETPROPERTY(frmDialog, 'rtEdit1.Text'));
+
+IF (sFileName,
+     Block(
+            // База ГТД DBF
+            OPENDATABASE ('STANDARD_2', 'STANDARD', 'PATH=C:\');
+            // Excel файл
+            //OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=EXCEL_DB1');
+             OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls)', 'ODBC DSN=EXCEL_DB');
+            OPENQUERY ( 'DBRTOVG_2' , ' SELECT G31_15 FROM '+ CHAR (34)+sFileNameDBF+ CHAR (34)+' GROUP BY G31_15 ',  'STANDARD_2');
+            //showmessage(' SELECT G31_15 FROM '+ CHAR (34)+sFileNameDBF+ CHAR (34)+' GROUP BY G31_15 ');
+            //showmessage(recordcount('DBRTOVG_2'));
+           // OPENTABLE ( 'XLS_TBL' , sFileName+sListName, '', 'EXCEL_DB');
+            //showmessage(sFileName+sListName);
+            //showmessage(recordcount('XLS_TBL'));
+
+                FIRST( 'DBRTOVG_2' );
+                WHILE( EOF( 'DBRTOVG_2' )=0 ,
+                     Block(
+                           OPENQUERY ( 'XLS_QUERY' , 'select GTD, SAPcode, SUM(QntPC) as sumQntPC from ' + CHAR (34)+ sFileName+sListName +CHAR (34) + ' where SAPcode = ' + CHAR (39) + REMOVECHAR (DBRTOVG_2.G31_15, '"') + CHAR (39) + ' group by GTD, SAPcode' , 'EXCEL_DB' );
+                           //SHOWMESSAGE (RECORDCOUNT ('XLS_QUERY'));
+                           
+                           IF( RECORDCOUNT('XLS_QUERY') <> 0,
+                               Block(
+                                      //SETFILTER('KRD_MAIN_2', '');
+                                      //SETFILTER('KRD_MAIN_2', '(GTD_NO='+XLS_QUERY.GTD+')');
+                                     OPENQUERY ( 'KRD_MAIN_3' , 'STS_DB' , 'select * from krd_main where GTD_NO = '  + CHAR (39)+ XLS_QUERY.GTD + CHAR (39));
+                                     if (  RECORDCOUNT('KRD_MAIN_3') <> 0 , // ищем пономеру ГТД из Excel в ДО1 по экспортной ГТД
+                                         Block(
+                                               iTekPlaceId := KRD_MAIN_3.PLACEID;
+                                               iTekId := KRD_MAIN_3.ID;
+                                         //FINDKEY ('IN_MAIN_2', [ iTekPlaceId , iTekId ])
+                                          if ( SETFILTER ( 'IN_MAIN_2', '(PLACEID ='+ iTekPlaceId + ') AND (ID=' + iTekId + ')')=0, // проверка на создание документа принятия
+                                              AppendLogFile(sLogFile, '!!!!!!!!!!! Документ принятия не создан для  ДО1 № '+ KRD_MAIN_3.NBD +' !!!!!!!!!!!');
+                                              Block(
+                                               //ShowMessage(iTekPlaceId);
+                                               //ShowMessage(iTekId);
+                                               sSQL := 'select * from krd_comm where (PLACEID =' + KRD_MAIN_3.PLACEID + ') AND (ID=' +  KRD_MAIN_3.ID + ') AND (G312 LIKE '+ CHAR (39)+ '%' + XLS_QUERY.SAPcode + '%' + CHAR (39)+')';
+                                               OPENQUERY ( 'KRD_COMM_3' , 'STS_DB', sSQL  );  // поиск товара с нужным артикулом
+                                               IF ( RECORDCOUNT('KRD_COMM_3') <> 0,
+                                                   Block(
+                                                         //AppendLogFile(sLogFile, 'В  ДО1 № '+KRD_MAIN_2.NBD +' Найден товар под номером: ' + KRD_COMM_3.G32 +' содержащий артикул: '+ XLS_QUERY.SAPcode + ' В количестве =' + XLS_QUERY.sumQntPC);
+                                                         OPENQUERY ( 'IN_COMM_3' ,  'STS_DB',  'SELECT * FROM IN_COMM WHERE (PLACEID ='+ KRD_COMM_3.PLACEID + ') AND (ID=' + KRD_COMM_3.ID + ') AND (G32=' + KRD_COMM_3.G32 + ')');
+                                                         OPENQUERY ( 'OUT_COMM_3' , 'STS_DB',  'SELECT SUM(OUT_G315A) AS SUM_OUT_G315A, SUM(OUT_G311) AS SUM_OUT_G311, SUM(OUT_G35) AS SUM_OUT_G35, SUM(OUT_G38) AS SUM_OUT_G38,SUM(OUT_G42) AS SUM_OUT_G42, SUM(OUT_G46) AS SUM_OUT_G46 FROM OUT_COMM WHERE (PLACEID ='+ KRD_COMM_3.PLACEID + ') AND (ID=' + KRD_COMM_3.ID + ') AND (G32=' + KRD_COMM_3.G32 + ')');
+                                                         
+                                                         sSUM_OUT_G315A := Convert(OUT_COMM_3.SUM_OUT_G315A, String);
+                                                         
+                                                         fSUM_OUT_G315A := Convert(OUT_COMM_3.SUM_OUT_G315A, Float);
+                                                         fSUM_OUT_G311 := Convert(OUT_COMM_3.SUM_OUT_G311, Float);
+                                                         fSUM_OUT_G35 := Convert(OUT_COMM_3.SUM_OUT_G35, Float);
+                                                         fSUM_OUT_G38 := Convert(OUT_COMM_3.SUM_OUT_G38, Float);
+                                                         fSUM_OUT_G42 := Convert(OUT_COMM_3.SUM_OUT_G42, Float);
+                                                         fSUM_OUT_G46 := Convert(OUT_COMM_3.SUM_OUT_G46, Float);
+                                                         fS :=IN_COMM_3.G315A - fSUM_OUT_G315A; // уже выпущено. остатки
+
+                                                          // вычисляем остатки
+                                                         fost_G315A := IN_COMM_3.G315A - fSUM_OUT_G315A;
+                                                         fost_G311 := IN_COMM_3.G311 - fSUM_OUT_G311;
+                                                         fost_G35 := IN_COMM_3.G35 - fSUM_OUT_G35;
+                                                         fost_G38 := IN_COMM_3.G38 - fSUM_OUT_G38;
+                                                         fost_G42 := IN_COMM_3.G42 - fSUM_OUT_G42;
+                                                         fost_G46 := IN_COMM_3.G46 - fSUM_OUT_G46;
+
+                                                         fkolvoExcel := XLS_QUERY.sumQntPC; // кол-во выдаваемого товара. взято из Excel
+                                                         fkoff := fkolvoExcel / fost_G315A; // коэф. выдачи
+                                                         IF (  fS-fkolvoExcel < 0 , // проверка, можно ли выдать больше, чем остатки
+                                                               Block(
+                                                               AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------');
+                                                               AppendLogFile(sLogFile, 'Выдача товара не состоялась.');
+                                                               AppendLogFile(sLogFile, 'В ДО1 № '+ KRD_MAIN_3.NBD +' товар № '+KRD_COMM_3.G32+' с артикулом: '+ XLS_QUERY.SAPcode );
+                                                               AppendLogFile(sLogFile, 'принято на склад : '+ IN_COMM_3.G315A +' выдано со склада : ' + fSUM_OUT_G315A + ' остаток на складе : ' + fS + ' попытка выдачи из Excel : '+ fkolvoExcel + '  разница : '+ (fS-fkolvoExcel));
+                                                               AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------');
+                                                               ),
+                                                               Block(
+                                                               SND := '';
+                                                               // выбор выпускающей ГТД
+                                                                      OPENQUERY ('DBRTOVG_3', 'SELECT G071, G072, G073 FROM '+ CHAR (34)+sFileNameDBF+ CHAR (34)+' where G31_15='+CHAR (39)+REMOVECHAR (DBRTOVG_2.G31_15, '"')+CHAR (39),  'STANDARD_2' );
+                                                                      SELECTVALUES ('Выбор выпускающей ГТД для товара с арт.' + XLS_QUERY.SAPcode, 'DBRTOVG_3', [['G071', 'Код таможни', 20],
+                                                                                                                    ['G072', 'Дата регистрации', 20],
+                                                                                                                    ['G073', 'Порядковый номер', 20],
+                                                                                                                    ['ND', 'ND', 30]],
+                                                                                                                    [['G071', 'SG071'],
+                                                                                                                     ['G072', 'SG072'],
+                                                                                                                     ['G073', 'SG073']
+                                                                                                                      ], '', 'STANDARD_2');
+                                                                      SND := SG071 + '/'+FORMATDATETIME ('ddmmyy', SG072)+'/'+SG073;
+                                                                      CLOSEDATASET ('DBRTOVG_3');
+                                                                if (SND ='//', // проверка на пустую ГТД (нажатие кнопки "Закрыть")
+                                                                      Block(
+                                                                             AppendLogFile(sLogFile, 'НЕ ВЫБРАНА выпускающая ГТД Для  ДО1 № '+ KRD_MAIN_3.NBD +' товар № '+KRD_COMM_3.G32+' с артикулом: '+ XLS_QUERY.SAPcode  );
+                                                                      ), // block
+                                                                      Block(
+                                                                            SETFILTER ( 'OUT_MAIN_2' , '');
+                                                                            SETFILTER ( 'OUT_MAIN_2' , '(PLACEID = '+iTekPlaceId+') AND (ID='+iTekId+') AND (ACCOUNTNO='+CHAR (39)+ '1' +CHAR (39)+')');
+                                                                            IF ( RECORDCOUNT ( 'OUT_MAIN_2' )<>0,
+                                                                                 AddOut(2), // добавляем товары в существующай акт выдачи
+                                                                                Block(
+                                                                                //showmessage(' товар № '+KRD_COMM_3.G32+'  fS='+fS+'    XLS_QUERY.SAPcode='+fkolvoExcel+' IN_COMM_3.G315A='+ IN_COMM_3.G315A+'  fSUM_OUT_G315A='+fSUM_OUT_G315A);
+                                                                                 SETFILTER ( 'OUT_MAIN_2' , '');
+                                                                                 // создание нового Документа выдачи. Новый ACTOUTID
+                                                                                 iTekActOutId := GENFIELDVALUE('OUT_MAIN_2.ACTOUTID', 'PLACEID;ID', [iTekPlaceId,iTekId]);
+                                                                                 AddOut(1) // создание НОВОГО Документа выдачи
+                                                                                )// block
+                                                                            ); //IF RECORDCOUNT ( 'OUT_MAIN_2' )<>0,
+                                                                      ) // block
+                                                                ); // if (SND ='',
+                                                                SETFILTER ( 'OUT_MAIN_2' , '');
+                                                                SETFILTER ( 'OUT_MAIN_2' , '(PLACEID = '+iTekPlaceId+') AND (ID='+iTekId+') AND (ACCOUNTNO='+CHAR (39)+ '1' +CHAR (39)+')');
+                                                                )
+                                                         );//IF (IN_COMM_3.G315A - OUT_COMM_3.SUM_OUT_G315A) <= 0,
+                                                   CLOSEDATASET  ( 'IN_COMM_3' );
+                                                   CLOSEDATASET  ( 'OUT_COMM_3' );
+                                                   CLOSEDATASET  ( 'KRD_COMM_3' );
+
+                                                   ),
+                                               ); // IF RECORDCOUNT('KRD_COMM_3') <> 0,
+                                         ), //block
+
+                                     ); // if (  KRD_MAIN_3.GTD_NO = XLS_QUERY.GTD ,
+                               ), //block
+{                               Block(
+                               
+                               ) }//block
+                           ); //if RECORDCOUNT('XLS_QUERY') <> 0
+                          ) //block
+                      ); // if FINDKEY ('IN_MAIN_2', [KRD_MAIN.PLACEID,KRD_MAIN.ID])=0,
+                           NEXT( 'DBRTOVG_2' );
+                     )//block
+                ); // while 'DBRTOVG_2'
+            //NEXT( 'KRD_MAIN_3' );
+            CLOSEDATASET  ( 'DBRTOVG_2' );
+         //   CLOSEDATASET  ( 'XLS_TBL' );
+            CLOSEDATABASE ( 'STANDARD_2' );
+            CLOSEDATABASE ( 'EXCEL_DB' );
+        ) // BLOCK
+        ,
+); // IF SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel-файлы (*.xls)|*.xls')
+SETFILTER ('KRD_TRANSP_2', '');
+SETFILTER ('KRD_CONT_2', '');
+SETFILTER ( 'IN_MAIN_2' , '');
+SETFILTER ( 'OUT_MAIN_2' , '');
+SETFILTER ( 'OUT_COMM_2' , '');
+GLOBALREFRESH ();
+AppendLogFile(sLogFile,  CHAR (13)+'---------------------------------------------------------------------------------------------------------------------');
+AppendLogFile(sLogFile, 'Окончание обработки документов: '+FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1))),
+ShowLogFile(sLogFile, 'Создания документов выдачи');
+EXECUTESQL ('STS_DB', 'UPDATE OUT_MAIN SET ACCOUNTNO=""');

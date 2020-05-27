@@ -1,0 +1,335 @@
+// *****************************************************************************
+// Название: Импорт из ЕАД(XML)
+// Описание: Импорт из ЕАД (XML)
+// Кнопка вызова: 0
+// Подпись кнопки: EAD(XML)->DO
+// *****************************************************************************
+//
+Func('CopyFirm',
+  Block(
+    Param('vNode', Integer, 0),
+    Param('sField', String, 1),
+  ),
+  Block(
+    Var('vNodeAddress', Integer, XMLNODEFIND (vNode, 'catESAD_ru:Address'));
+    Var('vNodeCard', Integer, XMLNODEFIND (vNode, 'catESAD_ru:IdentityCard'));
+    EDITRECORD('KRD_MAIN');
+    CASE (sField, ['G04',
+      SetFieldValue('KRD_Main',
+        'G042',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OrganizationName')),
+        'G04_OGRN',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OGRN')),
+        'G044C',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:INN')),
+        'G04_KPP',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:KPP')),
+        'G043',  XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:StreetHouse')),
+        'G04_COUNTRY', REFERENCE('OKSMT', 'KRNAIM', XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:CountryName')), 'KOD')
+      ),
+      'G08',
+      SetFieldValue('KRD_Main',
+        'G082',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OrganizationName')),
+        'G08_OGRN',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OGRN')),
+        'G084C',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:INN')),
+        'G08_KPP',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:KPP')),
+        'G083',  XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:StreetHouse')),
+        'G08_DOC_KIND',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardCode')),
+        'G08_DOC_ABBR',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardName')),
+        'G08_DOC_Series',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardSeries')),
+        'G08_DOC_NUMBER',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardNumber')),
+        'G17A', REFERENCE('OKSMT', 'KRNAIM', XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:CountryName')), 'KOD')
+      ),
+      'G09',
+      SetFieldValue('KRD_Main',
+        'G092',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OrganizationName')),
+        'G09_OGRN',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OGRN')),
+        'G094C',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:INN')),
+        'G09_KPP',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:KPP')),
+        'G093',  XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:StreetHouse')),
+        'G09_COUNTRY', REFERENCE('OKSMT', 'KRNAIM', XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:CountryName')), 'KOD')
+      )],
+      SetFieldValue('KRD_Main',
+        'G022',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OrganizationName')),
+        'G02_OGRN',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:OGRN')),
+        'G024C',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:INN')),
+        'G02_KPP',  XMLNODEVALUE (XMLNODEFIND (vNode, 'cat_ru:KPP')),
+        'G023',  XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:StreetHouse')),
+        'G02_DOC_KIND',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardCode')),
+        'G02_DOC_ABBR',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardName')),
+        'G02_DOC_Series',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardSeries')),
+        'G02_DOC_NUMBER',  XMLNODEVALUE (XMLNODEFIND (vNodeCard, 'cat_ru:IdentityCardNumber')),
+        'G15A', REFERENCE('OKSMT', 'KRNAIM', XMLNODEVALUE (XMLNODEFIND (vNodeAddress, 'cat_ru:CountryName')), 'KOD')
+      )
+    );
+    POSTRECORD('KRD_MAIN');
+  )
+),
+{************начало основного цикла загрузки***************}
+VAR('sFileDir', String);
+VAR('sFileName', String);
+VAR('iFileNum', Integer, 1);
+Var('sPaperName', String, '');  {тип документа}
+
+IF (SelectFile('sFileName', 'Выбор файла', 'XML-файлы (*.xml)|*.xml'),
+Block(
+  if ((STRPOS('.XML',UPPERSTR(sFileName))='0')+(STRPOS('.XML',UPPERSTR(sFileName))=0),
+       Let('sFileName', sFileName+'.xml')
+	);
+  var('vPlaceId', Integer, 0);  // идентификатор складской площадки
+  var('vId', Integer, 0);  // идентификатор документа
+  var('vG32', Integer, 0);  // номер товара
+  var('vCounter', Integer);  //
+  var('vPaperName', String);  // 
+  var('vPaperNo', String);  //
+  var ('xmlDoc', Integer, XMLDOCUMENTCREATE());
+  XMLDOCUMENTLOAD(xmlDoc, sFileName);
+  var('xmlRoot', Integer, XMLDOCUMENTROOT(xmlDoc));
+  // документы
+  var('Docs', Integer); 
+  var('Doc', Integer);
+  var('BaseDoc', Integer);
+  var('iDocsCount', Integer, 0);
+  var('iDocIndex', Integer, 0);
+  // товары
+  var('Goods', Integer);
+  var('Good', Integer);
+  var('iGoodsCount', Integer, 0);
+  var('iGoodIndex', Integer, 0);
+    // документы
+  var('Papers', Integer);
+  var('Paper', Integer);
+  var('iPapersCount', Integer, 0);
+  var('iPaperIndex', Integer, 0);
+    // контейнеры
+  var('Conts', Integer);
+  var('Cont', Integer);
+  var('iContsCount', Integer, 0);
+  var('iContIndex', Integer, 0);
+    // транспорт
+  var('Transps', Integer);
+  var('Transp', Integer);
+  var('iTranspsCount', Integer, 0);
+  var('iTranspIndex', Integer, 0);
+
+  var('Consignment', Integer);
+  // получатель
+  var('Consignee', Integer);  
+  // отправитель
+  var('Consignor', Integer);
+  // перевозчик
+  var('Carrier', Integer);
+  // плательщик
+  var('Financial', Integer);
+
+  //Docs := XmlNodeFind(xmlRoot, 'ESADout');
+  Docs := xmlRoot;
+  if(Docs, iDocsCount := XMLNodeChildCount(Docs));
+  if(iDocsCount > 0,
+    block(
+      OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES Order By PlaceId');
+      if(RECORDCOUNT ('Stors') <= 0, RAISEEXCEPTION ('В складской базе нет складских площадок.'),
+        if(RECORDCOUNT ('Stors') = 1,
+          Let('vPlaceId', FieldValue('Stors.PlaceId')),
+          SelectValues ('Выбор склада, на который будут созданы документы', 'Stors',
+                          [
+                           ['NAME',   'Название склада', 30],
+                           ['LICENCENO',   'Номер лицензии', 15],
+                           ['LICENCENO_EXT',   ' ', 1],
+                           ['STORE_NO',   'Номер склада', 15],
+                           ['PZTK_CODE',  'Код ПЗТК', 15],
+                           ['PlaceId',   '', 10]
+                          ],
+                          [ ['PlaceId', 'vPlaceId'],
+                          ],
+                     '', 'STS_DB')
+      ));
+      If(vPlaceId = 0, Block(
+        First('Stors');
+        Let('vPlaceId', FieldValue('Stors.PlaceId'));
+      ));
+    ),
+    RAISEEXCEPTION ('В файле '+sFileName+ ' нет документов.')
+  );
+  while(Docs & (iDocIndex < iDocsCount) & (iDocsCount > 0), Block(
+        Doc := XmlNodeChild(Docs, iDocIndex);  // ESADout (документ)
+        BaseDoc := XMLNODEFIND (Doc, 'ESADoutGoodsShipment');  //  основная часть документа
+        Consignee := XMLNODEFIND (BaseDoc, 'ESADoutConsignee');
+        Consignor := XMLNODEFIND (BaseDoc, 'ESADoutConsignor');
+        Carrier := XMLNODEFIND (BaseDoc, 'ESADoutCarrier');
+        Financial := XMLNODEFIND (BaseDoc, 'ESADoutFinancialAdjustingResponsiblePerson');
+        Consignment := XMLNODEFIND (BaseDoc, 'ESADoutConsigment');
+        // добавление документа
+        FindKey('STORES_2', vPlaceId);
+        AppendRecord('KRD_MAIN');
+        EDITRECORD('KRD_MAIN');
+        SetFieldValue('KRD_Main',
+           'PLACEID', vPlaceId,
+           //'NBD',  XMLNODEVALUE (XMLNODEFIND (Doc, 'cat_ru:DocumentID')),// номер ДО
+           'BD_DATE', NOW(), // дата ДО
+           'A_MODE', 6, // вид документа
+           'G011', XMLNODEVALUE (XMLNODEFIND (Doc, 'CustomsProcedure')),
+           'G012', IF(XMLNODEVALUE (XMLNODEFIND (Doc, 'CustomsModeCode'))='4', '40', '10'),
+           'G05', XMLNODEVALUE (XMLNODEFIND (BaseDoc, 'catESAD_ru:TotalGoodsNumber')),
+           'G06', XMLNODEVALUE (XMLNODEFIND (BaseDoc, 'catESAD_ru:TotalPackageNumber')),
+           'G19', XMLNODEVALUE (XMLNODEFIND (Consignment, 'catESAD_ru:ContainerIndicator')),
+           'TRANSP_COUNTRY', REFERENCE('OKSMT', 'KRNAIM', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Consignment, 'ESADoutDepartureArrivalTransport'), 'TransportNationalityCode')), 'KOD'),
+           'G261', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Consignment, 'ESADoutDepartureArrivalTransport'), 'TransportModeCode')),
+           'G221', XMLNODEVALUE (XMLNODEFIND (BaseDoc, 'catESAD_ru:CustCostCurrencyCode')),
+           'G222', XMLNODEVALUE (XMLNODEFIND (BaseDoc, 'catESAD_ru:TotalCustCost')),
+           'G142', STORES_2.G142,
+           'G143', STORES_2.G143,
+           'G1440', Case (STORES_2.Store_Type, ['СП', '3', 'ПЗТК', '4', 'ЗТК', '5'], '2'),
+           'G144', STORES_2.LICENCENO,
+           'G145', STORES_2.LICENCEDATE
+        );
+        PostRecord('KRD_MAIN');
+        EDITRECORD('KRD_MAIN');
+        PostRecord('KRD_MAIN');
+        Let('vId', FieldValue('KRD_MAIN.ID'));
+        CopyFirm(Consignor, 'G02');
+        CopyFirm(Consignee, 'G08');
+        CopyFirm(Carrier, 'G04');
+        CopyFirm(Financial, 'G09');
+        EDITRECORD('KRD_MAIN');
+        PostRecord('KRD_MAIN');
+        // транспорт
+        Transps := XmlNodeFind(Consignment, 'ESADoutDepartureArrivalTransport');
+        iTranspIndex := 0;
+        vCounter := 0;
+        if(Transps, iTranspsCount := XMLNodeChildCount(Transps));
+        while(Transps & (iTranspIndex < iTranspsCount) & (iTranspsCount > 0), Block(
+          Transp := XmlNodeChild(Transps, iTranspIndex);
+          IF(XMLNODENAME (Transp) = 'TransportMeans', Block(
+              APPENDRECORD('KRD_TRANSP_2');
+              EDIT('KRD_TRANSP_2');
+              SetFieldValue('KRD_TRANSP_2',
+                            'PLACEID', vPLaceId,
+                            'Id', vId,
+                            'Counter', vCounter,
+                            'CARNO', XMLNODEVALUE(XMLNODEFIND (Transp, 'catESAD_ru:TransportIdentifier')),
+                            'NTRAILER',  XMLNODEVALUE(XMLNODEFIND (Transp, 'catESAD_ru:TrailerIdentifier')),
+                            'TRANSP_CODE',  XMLNODEVALUE(XMLNODEFIND (Transp, 'catESAD_ru:TransportModeCode')),
+                            'TRANSP_COUNTRY', REFERENCE('OKSMT', 'ABC2', XMLNODEVALUE(XMLNODEFIND (Transp, 'catESAD_ru:TransportMeansNationalityCode')), 'KOD'),
+              );
+              POST('KRD_TRANSP_2');
+              vCounter := vCounter + 1;
+          ));
+          iTranspIndex := iTranspIndex + 1;
+        ));
+        
+        // добавление товаров
+        Let('vG32',1);
+        Goods := XmlNodeFind(Doc, 'ESADoutGoodsShipment');
+        iGoodIndex := 0;
+        if(Goods, iGoodsCount := XMLNodeChildCount(Goods));
+        while(Goods & (iGoodIndex < iGoodsCount) & (iGoodsCount > 0), Block(
+          Good := XmlNodeChild(Goods, iGoodIndex);
+          IF(XMLNODENAME (Good) = 'ESADoutGoods', Block(
+              APPENDRECORD('KRD_COMM_2');
+              EDIT('KRD_COMM_2');
+              SetFieldValue('KRD_COMM_2',
+                            'PLACEID', vPLaceId,
+                            'Id', vId,
+                            'G32', vG32,
+                            'AcceptDate', KRD_MAIN.BD_DATE,
+                            'G33',  XMLNODEVALUE(XMLNODEFIND (Good, 'catESAD_ru:GoodsTNVEDCode')),
+                            'G312', XMLNODEVALUE(XMLNODEFIND (Good, 'catESAD_ru:GoodsDescription')),
+                            'G35',  XMLNODEVALUE(XMLNODEFIND (Good, 'catESAD_ru:GrossWeightQuantity')),
+                            'G38', XMLNODEVALUE(XMLNODEFIND (Good, 'catESAD_ru:NetWeightQuantity')),
+                            'G42',  XMLNODEVALUE(XMLNODEFIND (Good, 'catESAD_ru:InvoicedCost')),
+                            'G46', XMLNODEVALUE(XMLNODEFIND (Good, 'catESAD_ru:StatisticalCost')),
+                            'G34', REFERENCE('OKSMT', 'KRNAIM', XMLNODEVALUE (XMLNODEFIND (Good, 'catESAD_ru:OriginCountryName')), 'KOD'),
+                            'G311', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Good, 'catESAD_ru:ESADGoodsPackaging'), 'catESAD_ru:PakageQuantity')),
+                            'G31_4', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Good, 'catESAD_ru:ESADExcise'), 'catESAD_ru:ExciseSerieses')),
+                            'G315A', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Good, 'catESAD_ru:SupplementaryGoodsQuantity'), 'catESAD_ru:GoodsQuantity')),
+                            'G315', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Good, 'catESAD_ru:SupplementaryGoodsQuantity'), 'catESAD_ru:MeasureUnitQualifierName')),
+                            'G41A', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND(Good, 'catESAD_ru:SupplementaryGoodsQuantity'), 'catESAD_ru:MeasureUnitQualifierCode')),
+              );
+              Post('KRD_COMM_2');
+              // контейнера
+              Conts := XmlNodeFind(Good, 'catESAD_ru:ESADContainer');
+              iContIndex := 0;
+              if(Conts, iContsCount := XMLNodeChildCount(Conts));
+              while(Conts & (iContIndex < iContsCount) & (iContsCount > 0), Block(
+                Cont := XmlNodeChild(Conts, iContIndex);
+                IF(XMLNODENAME (Cont) = 'catESAD_ru:ContainerNumber', Block(
+                  OPENQUERY ('ContMax', 'STS_DB',
+                    'Select Max(Counter) as MaxCounter from KRD_CONT where (Placeid='+vPlaceId+') and (Id='+vId+') ');
+                  If(FIELDISNULL ('ContMax', 'MaxCounter'),
+                    vCounter := 1,
+                    vCounter := FieldValue('ContMax.MaxCounter')+1
+                  );
+                  IF(Locate('KRD_CONT', 'CONTNO', XMLNODEVALUE(XMLNODEFIND(Cont, 'catESAD_ru:ContainerIdentificaror'))) = 0, Block(
+                    APPENDRECORD('KRD_CONT_2');
+                    EDIT('KRD_CONT_2');
+                    //SHOWMESSAGE(vCounter);
+                    SetFieldValue('KRD_CONT_2',
+                      'PLACEID', vPlaceId,
+                      'ID', vId,
+                      'Counter', vCounter,
+                      'ContNo', XMLNODEVALUE(XMLNODEFIND(Cont, 'catESAD_ru:ContainerIdentificaror'))
+                    );
+                    POST('KRD_CONT_2');
+                  ));
+                  IF(Locate('KRD_CONT', 'CONTNO', XMLNODEVALUE(XMLNODEFIND(Cont, 'catESAD_ru:ContainerIdentificaror'))), Block(
+                    APPENDRECORD('KRD_COMM_PAPERS_2');
+                    EDIT('KRD_COMM_PAPERS_2');
+                    SetFieldValue('KRD_COMM_PAPERS_2', 'PLACEID', vPlaceId, 'Id', vId, 'G32', vG32, 'DOC_TYPE', 11, 'DOC_COUNTER', KRD_CONT.COUNTER);
+                  ));
+                  POST('KRD_COMM_PAPERS_2');
+                ));
+                iContIndex := iContIndex + 1;
+              ));
+              
+              // документы
+              Papers := XmlNodeFind(Good, 'ESADoutPresentedDocument');
+              iPaperIndex := 0;
+              if(Papers, iPapersCount := XMLNodeChildCount(Papers));
+              while(Papers & (iPaperIndex < iPapersCount) & (iPapersCount > 0), Block(
+                Paper := XmlNodeChild(Papers, iPaperIndex);
+                vPaperNo := XMLNODEVALUE(XMLNODEFIND(Paper, 'cat_ru:PrDocumentNumber'));
+                //vPaperName := XMLNODEVALUE(XMLNODEFIND(Paper, 'cat_ru:PrDocumentName'));
+                vPaperName := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', XMLNODEVALUE(XMLNODEFIND(Paper, 'catESAD_ru:PresentedDocumentModeCode')), 'PAPERNAME');
+                if((vPaperName <> '') & (vPaperNo <> ''), Block(
+                  //ShowMessage(vPaperName+ ' // '+ vPaperNo);
+                  OPENQUERY ('PaperMax', 'STS_DB',
+                    'Select Max(Counter) as MaxCounter from KR_PAPER where (Placeid='+vPlaceId+') and (Id='+vId+') ');
+                  If(FIELDISNULL ('PaperMax', 'MaxCounter'),
+                    vCounter := 1,
+                    vCounter := FieldValue('PaperMax.MaxCounter')+1
+                  );
+                  IF(Locate('KRD_PAPERS', 'PAPERNO;PAPERNAME', [vPaperNo, vPaperName]) = 0, Block(
+                    APPENDRECORD('KRD_PAPERS_2');
+                    EDIT('KRD_PAPERS_2');
+                    SetFieldValue('KRD_PAPERS_2',
+                      'PLACEID', vPlaceId,
+                      'ID', vId,
+                      'Counter', vCounter,
+                      'PAPERNAME', vPaperName,
+                      'PAPERNO', vPaperNo,
+                      'PAPERCODE', XMLNODEVALUE(XMLNODEFIND(Paper, 'catESAD_ru:PresentedDocumentModeCode')),
+                      'PAPERDATE', StrToDate(XMLNODEVALUE(XMLNODEFIND(Paper, 'cat_ru:PrDocumentDate')), 'YYYY-MM-DD', '-'),
+                      'PAPERDEND', StrToDate(XMLNODEVALUE(XMLNODEFIND(Paper, 'catESAD_ru:DocumentEndActionsDate')), 'YYYY-MM-DD', '-')
+                    );
+                    POST('KRD_PAPERS_2');
+                  ))
+                ));
+                //SHOWMESSAGE(vCounter);
+                IF((vPaperName <> '') & (vPaperNo <> '') & Locate('KRD_PAPERS', 'PAPERNO;PAPERNAME', [vPaperNo, vPaperName]), Block(
+                  APPENDRECORD('KRD_COMM_PAPERS_2');
+                  EDIT('KRD_COMM_PAPERS_2');
+                  SetFieldValue('KRD_COMM_PAPERS_2', 'PLACEID', vPlaceId, 'Id', vId, 'G32', vG32, 'DOC_TYPE', 13, 'DOC_COUNTER', KRD_PAPERS.COUNTER);
+                  POST('KRD_COMM_PAPERS_2');
+                ));
+                iPaperIndex := iPaperIndex + 1;
+              ));
+              vG32 := vG32 + 1
+          ));
+          iGoodIndex := iGoodIndex + 1;
+          ) // конец добавления товара
+        );
+        iDocIndex := iDocIndex + 1
+      ) //end block добавления документа
+    );  //end while
+    GLOBALREFRESH ();
+    SHOWMESSAGE('Обработка документов завершена.')
+  ),
+SHOWMESSAGE ('XML-файл не выбран!', 2)
+);

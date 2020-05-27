@@ -1,0 +1,15 @@
+// *****************************************************************************
+// Название: Информация о регистрации ДО-1
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: DORegInfo
+// *****************************************************************************
+//
+
+EXECUTESQL('STS_DB', ' UPDATE KRD_MAIN SET REG_NBD = ' + char(39) + XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD (XmlRoot, 0), 'regnumber')) + char(39) + ', ' +
+                     ' MC_STATUS_BD = "3" ' +
+                     ' WHERE PLACEID = '+XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD (XmlRoot, 0), 'WHId'))+
+                     ' AND MAIN_ID ='+ XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD (XmlRoot, 0), 'DO1Id')) );
+                     
+REFRESH ('KRD_MAIN');
+

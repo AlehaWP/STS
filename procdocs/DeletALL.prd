@@ -1,0 +1,31 @@
+// *****************************************************************************
+// Название: Полная очистка БД
+// Описание: Полная очистка БД
+// Кнопка вызова: 0
+// Подпись кнопки: Полная очистка БД
+// Вызов по событию: 
+// *****************************************************************************
+//
+DELETERECORDS ('KRD_MAIN_2');
+DELETERECORDS ('KRD_COMM_2');
+DELETERECORDS ('KRD_PAPERS_2');
+DELETERECORDS ('KRD_COMM_PAPERS_2');
+DELETERECORDS ('KRD_CONT_2');
+DELETERECORDS ('KRD_TRANSP_2');
+DELETERECORDS ('KRD_DCD_2');
+DELETERECORDS ('KRD_PROL_2');
+DELETERECORDS ('KRD_CSDM_2');
+DELETERECORDS ('KRD_DOP_2');
+DELETERECORDS ('REL_MAIN_2');
+DELETERECORDS ('REL_COMM_2');
+
+DELETERECORDS ('IN_MAIN_2');
+DELETERECORDS ('IN_COMM_2');
+DELETERECORDS ('OUT_MAIN_2');
+DELETERECORDS ('OUT_COMM_2');
+DELETERECORDS ('OUT_CMAP_2');
+
+//DELETERECORDS ('STORES_2');
+
+GLOBALREFRESH();
+

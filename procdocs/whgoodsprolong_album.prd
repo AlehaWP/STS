@@ -1,0 +1,47 @@
+// *****************************************************************************
+// Название: Информация о ЗПСХ
+// Описание: Информация о ЗПСХ
+// Кнопка вызова: 1
+// Подпись кнопки: Информация о ЗПСХ
+// *****************************************************************************
+//
+VAR('XmlNodeDescript', integer, XMLNODECHILD (XmlRoot, 0));
+VAR('Icounter', integer, 0);
+VAR('iCount', integer, 0);
+VAR('sComment', string, '');
+FORMCREATE (frmWHGD, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\GoodsProlongIn.cfm');
+FORMSETPROPERTY (frmWHGD, 'rtZPSH.Text',  XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'RegNumber')));
+FORMSETPROPERTY (frmWHGD, 'rtDateOUT.Text', convert (STRTODATE (XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'SendDate')), 'YYYY-MM-DD', '-'), string) + ' ' + COPY(XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'SendTime')), 1, 5));
+FORMSETPROPERTY (frmWHGD, 'rtEndDate.Text', convert(STRTODATE(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND(XmlNodeDescript, 'GoodsDecision'), 'ReqPeriod')), 'YYYY-MM-DD', '-'), string));
+iCounter := XMLNODECHILDCOUNT (XmlNodeDescript);
+While(  iCount < iCounter,
+      BLOCK(
+        IF(XMLNODENAME (XMLNODECHILD(XmlNodeDescript, iCount)) = 'GoodsDecision',
+          BLOCK(
+            VAR('XMLGoods', integer, XMLNODECHILD(XmlNodeDescript, iCount));
+            Var('iCounterInGood', integer, XMLNODECHILDCOUNT (XMLGoods));
+            Var('i', integer, 0);
+            WHILE( i < iCounterInGood,
+              BLOCK(
+                IF (XMLNODENAME (XMLNODECHILD(XmlGoods, i)) = 'GoodsNumeric',
+                   sComment := sComment + IF(sComment <> '',';'+ char(13)) + 'Товар №' + XMLNODEVALUE (XMLNODECHILD(XmlGoods, i)) + ': '
+                );
+                IF (XMLNODENAME (XMLNODECHILD(XmlGoods, i)) = 'Reason',
+                   sComment := sComment + XMLNODEVALUE (XMLNODECHILD(XmlGoods, i))
+                );
+                i:= i + 1;
+                
+              )
+            );
+          )
+        );
+        iCount := iCount + 1;
+      )
+);
+sComment := sComment + ';';
+//showmessage(sComment);
+FORMSETPROPERTY (frmWHGD, 'Comment.Lines',  sComment);
+FORMSHOWMODAL (frmWHGD);
+
+                     
+

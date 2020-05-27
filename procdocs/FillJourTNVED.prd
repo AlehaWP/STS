@@ -1,0 +1,53 @@
+// *****************************************************************************
+// Название: FillJourTNVED
+// Описание: FillJourTNVED
+// Кнопка вызова: 0
+// Подпись кнопки: FillJourTNVED
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC('GETTEXTFROMTXT', ,
+     BLOCK(
+          
+          //VAR('ChangeCod', variant, CREATEOLEOBJECT('svh.Extention'));
+          VAR('sFileName', string, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'COMMNAME.txt');
+         // sFileName := ChangeCod.EncodeFile('ISO-8859-5', 'Windows-1251', sFileName);
+          VAR ('EncodedList', Integer, StringListCreate());
+          StringListLoadFromFile(EncodedList, sFileName);
+          VAR('iStringCount', integer, STRINGLISTGETCOUNT(EncodedList));
+          VAR('iStringCounter', integer, 1);
+          WHILE(iStringCounter<=iStringCount,
+                BLOCK(
+                  LOADSTRINGINTNVED();
+                  iStringCounter:=iStringCounter+1;
+                )
+          );
+     )
+),
+
+FUNC('LOADSTRINGINTNVED',,
+     BLOCK(
+        VAR('sString', string, STRINGLISTGETITEM(EncodedList, iStringCounter));
+        VAR('sStr1', string,'');
+        VAR('sStr2', string,'');
+        VAR('Probel', integer, STRPOS (' ', sString));
+        sStr1:= COPY (sString, 1, Probel);
+        sStr2:= DELETE (sString, 1, Probel);
+        APPENDRECORD ('TNVED');
+        EDIT('TNVED');
+        SETFIELDVALUE('TNVED',
+                      'JOURNAL_MASTER_ID',iStringCounter,
+                      'JOURNAL_UUID',GENERATEUUID (),
+                      'KOD', sStr1,
+                      'G312',sStr2
+        );
+        POST('TNVED');
+     )
+),
+
+
+OPENTABLE('TNVED', 'TNVED', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+
+EXECUTESQL('dbJournals', 'DELETE FROM TNVED');
+// Файл COMMNAME.rbc при помощи нотепад открываем с кодировкой OEM 866 и перекодируем в ANSI
+GETTEXTFROMTXT();

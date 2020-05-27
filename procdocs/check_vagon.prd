@@ -1,0 +1,51 @@
+// *****************************************************************************
+// Название: check_vagon
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: check_vagon
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+FUNC ('CheckNumVagon',
+  Block(
+    PARAM ('sNumVagom', String, 0),
+  ),
+  Block(
+    VAR('sContrDidg', String, '');
+    VAR('iSum', Integer, 0);
+    VAR('iTekPos', Integer, 0);
+
+    iSum := 0;
+    sContrDidg := '';
+    iTekPos :=0;
+
+    IF (LENGTH (sNumVagom) = 8,
+      Block(
+        sContrDidg := COPY(sNumVagom,8,1);
+        WHILE (LENGTH (sNumVagom) >0,
+          Block(
+            iTekPos := 0;
+            IF (MOD (LENGTH (sNumVagom),2) = 0,
+              iTekPos := Convert(COPY(sNumVagom,1,1), Integer) * 2,
+              iTekPos := Convert(COPY(sNumVagom,1,1), Integer) * 1
+            ); // IF
+            IF (iTekPos >= 10,
+              iTekPos := CONVERT( COPY( CONVERT (iTekPos, String), 1,1), Integer) + CONVERT( COPY( CONVERT (iTekPos, String), 2,1), Integer),
+            ); // IF
+            iSum := iSum + iTekPos;
+            sNumVagom := DELETE (sNumVagom, 1, 1);
+          )
+        ); // WHILE
+        IF ( FRAC (iSum/10.0)=0 , 1,
+          IF (FRAC ((iSum+Convert(sContrDidg,Integer))/10.0) = 0, 1, 0) // IF
+        ) // IF
+      ), // Block IF
+      Block(
+        0
+      )
+    ); // IF
+  ) //Block
+), // FUNC - CheckNumVagon
+

@@ -1,0 +1,874 @@
+// *****************************************************************************
+// Название: Импорт ДО1 в формате СВХ.XML
+// Описание: Импорт ДО1 в формате СВХ.XML
+// Кнопка вызова: 1
+// Подпись кнопки: ДО1 (им)
+// *****************************************************************************
+//
+var ('Report', Integer, GetCurrentReportNode());
+var ('iDocPlaceID', Integer, DocPlaceID());
+var ('bImportDoc', Boolean, ImportMode() = 'ImportDoc');      
+var ('bCreateDoc', Boolean, bImportDoc | (ImportMode() = 'CreateDoc'));  
+var ('bImportData', Boolean, False);    
+var ('iMainID', Integer, 0);    
+VAR ('vPlaceID', String);
+VAR ('vID', String);
+VAR ('strTemp', String); 
+VAR('tmpGrossNumber', String);
+VAR('tmpTrimGrossNumber', String);
+var('iContainerOrderNo', Integer, 1);
+var('iGoodOrderNo', Integer, 1);
+
+OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN', 'PLACEID;ID');
+OPENTABLE ('KRD_COMM_3', 'STS_DB', 'KRD_COMM', 'PLACEID;ID');
+OPENTABLE ('KRD_PAPERS_3', 'STS_DB', 'KR_PAPER', 'PLACEID;ID');  
+OPENTABLE ('PAPERS_3', 'STS_DB', 'PAPERS', 'PAPERNAME');
+OPENTABLE ('KR_C_P_3', 'STS_DB', 'KR_C_P', 'PLACEID;ID');
+OPENTABLE ('KRD_CONT_3', 'STS_DB', 'KRD_CONT', 'PLACEID;ID');
+OPENTABLE ('KR_TRANS_3', 'STS_DB', 'KR_TRANS', 'PLACEID;ID');
+
+//импорт\чтение информации о продлении сроков хранения (ЗПСХ)
+func ('ImportZPSH', ,
+  block(
+    VAR ('CustomsControls', Integer, XMLNodeFind(Good, 'CustomsControls'));
+    VAR ('iCustomsControlIndex', Integer, 0);
+//==============================================================================
+      If (CustomsControls,
+        Block(
+          VAR ('iCustomsControlCount', Integer, XMLNodeChildCount(CustomsControls));
+          If (iCustomsControlCount > 0,
+            Block(
+              VAR ('iCustomsControl', Integer);
+              While ((iCustomsControlIndex < iCustomsControlCount),
+                Block(
+                  iCustomsControl := XmlNodeChild(CustomsControls, iCustomsControlIndex);
+                  OPENQUERY('qryKRPaper', 'STS_DB', 'SELECT PLACEID, ID, PAPERNAME, PAPERNO, COUNTER FROM KR_PAPER WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND PAPERNAME='+CHAR(39)+'ЗПСХ'+CHAR(39)+' AND PAPERNO='+CHAR(39)+iCustomsControl.Reason+CHAR(39));
+                  If (FIELDISNULL ('qryKRPaper', 'PLACEID'),
+                  //ЗПСХ нет в базе, добавляем новую
+                    Block(
+                      APPENDRECORD ('KR_PAPER');
+                      EDIT('KR_PAPER');
+                      SetFieldValue('KR_PAPER', 'PAPERNAME', 'ЗПСХ',
+                                                'PAPERNO', iCustomsControl.Reason,
+                                                'PAPERDATE', iCustomsControl.Date,
+                                                'PAPERDEND', iCustomsControl.KeepingLimit
+                      );
+                      POST('KR_PAPER');
+                    //проставляем связь товар-ЗПСХ
+                      APPENDRECORD ('KRD_COMM_PAPERS');
+                      EDIT ('KRD_COMM_PAPERS');
+                      SetFieldValue('KRD_COMM_PAPERS', 'G32', KRD_COMM.GN,
+                                              'DOC_TYPE', '13',
+                                              'DOC_COUNTER', KR_PAPER.Counter
+                      );
+                      POST ('KRD_COMM_PAPERS');
+                    ),
+                  //ЗПСХ есть в базе, проверяем есть ли связь товар-ЗПСХ
+                    Block(
+                      OPENQUERY('qryLinkKRCP', 'STS_DB', 'SELECT * FROM KR_C_P WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND G32='+KRD_COMM.GN+' AND DOC_TYPE='+CHAR(39)+'13'+CHAR(39)+' AND DOC_COUNTER='+FIELDVALUE('qryKRPaper', 'Counter'));
+                      If (FIELDISNULL ('qryLinkKRCP', 'PLACEID'),
+                        Block(
+                        //проставляем связь товар-ЗПСХ
+                          APPENDRECORD ('KRD_COMM_PAPERS');
+                          EDIT ('KRD_COMM_PAPERS');
+                          SetFieldValue('KRD_COMM_PAPERS', 'G32', KRD_COMM.GN,
+                                                  'DOC_TYPE', '13',
+                                                  'DOC_COUNTER', FIELDVALUE('qryKRPaper', 'Counter')
+                          );
+                          POST ('KRD_COMM_PAPERS');
+                        )
+                      );
+                      CLOSEDATASET('qryLinkKRCP');
+                    )
+                  );
+                  CLOSEDATASET('qryKRPaper');
+                  iCustomsControlIndex := iCustomsControlIndex + 1;
+                )
+              ); {цикл по ЗПСХ}
+              iCustomsControlIndex := 0;
+            )
+          );
+        )
+      );
+//==============================================================================
+  )
+),
+
+func ('IsMultiPartReport', Block(
+  param('aByRecipient', String, 0),  
+  param('aByTsDoc', String, 1),
+  ),
+  block (
+    var ('Bills', Integer, XMLNodeFind(Report, 'Bills'));
+    var ('bByRecipient', Boolean);    
+    var ('bByDate', Boolean);    
+    var ('bByTsDoc', Boolean);    
+    var ('bChanged', Boolean, 0);    
+    if (Bills,
+      block (
+        var ('iBillCount', Integer, XMLNodeChildCount(Bills));  
+        if (iBillCount > 0,
+          block (
+            var ('iBillIndex', Integer, 0);  
+            var ('sRecipient', String, '');
+            var ('sTsDoc', String, ''); 
+	    var ('sDate', DateTime); 
+
+            var ('Bill', Integer);  
+            while ((iBillIndex < iBillCount) & (bChanged = 0),
+              block (
+                Bill := XmlNodeChild(Bills, iBillIndex);
+                if(iBillIndex = 0, 
+                  block (  
+                    sRecipient := Bill.Russian.Name;  
+                    If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+                      strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+                      If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+                        strTemp := Bill.Name,
+                        strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+                    ));
+                    sTsDoc := Bill.Code + '|' + strTemp + '|' + Bill.Date + '|' + Bill.Number;
+		    sDate := StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-') + IF(Trim(Report.DeclarantNumber.Time) <> '', ' ' +  Report.DeclarantNumber.Time, Frac(KRD_MAIN.BD_DATE));
+        IF(INIFILE('XMLKPS', 'LoadIgnoreRecipient', '0') = '1',
+                      bByRecipient := False,
+                      bByRecipient := sRecipient <> ''
+		    );
+                    bByTsDoc := (sTSDoc <> '') & (STRPOS(Report.PrimaryTransport, '20|23|30|31|39') = 0);
+                  ),    
+                  block(
+                    if(bByRecipient, bChanged := sRecipient <> Bill.Russian.Name);
+                    If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+                      strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+                      If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+                        strTemp := Bill.Name,
+                        strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+                    ));
+		    if((bChanged = 0) & bByTsDoc, bChanged := sTsDoc <> Bill.Code + '|' + strTemp + '|' + Bill.Date + '|' + Bill.Number),
+                    if(XMLNodeChildCount(XmlNodeFind(Bill, 'Goods')) = 0, bChanged := 0);
+                    IF(INIFILE('XMLKPS', 'DO1LoadAll', '0') = '1', bByTsDoc := False);
+                  )
+		),  
+                iBillIndex := iBillIndex + 1;    
+              )
+            )    
+          )
+        )
+      )
+    ),
+    let(aByRecipient, bByRecipient);  
+    let(aByTsDoc, bByTsDoc);
+    bChanged
+  )
+),    
+
+func ('ImportKrdMain', ,
+  block (
+
+    Var('iPlaceId', Integer, 0);
+    Var('iId', Integer, 0);
+    Var('bFound', Boolean, 0);
+    Var('sFilterCrit', String, '');
+    IF(bByTsDoc, Block(
+        If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+          strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+          If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+            strTemp := Bill.Name,
+            strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+        ));
+        sFilterCrit := 'PLACEID = ' + CONVERT(iDocPlaceID, String) + ' AND PAPERCODE = ' + CHAR(39) + Bill.Code + CHAR(39) + 
+                          ' AND PAPERNO = ' + CHAR(39) + Bill.Number + CHAR(39) + ' AND PAPERNAME = ' + CHAR(39) + strTemp + CHAR(39);
+
+        if(XmlNodeFind(Bill, 'Date') & (Bill.Date <> '')&(StrToDate (Bill.Date, 'YYYY-MM-DD', '-') <> ''),
+          sFilterCrit := sFilterCrit + ' AND PAPERDATE = ' + FDT('DD.MM.YYYY', StrToDate(Bill.Date, 'YYYY-MM-DD', '-'))
+        );
+        //Проверим, есть ли такой документ в базе
+        SETFILTER('KRD_PAPERS_3', sFilterCrit);
+        FIRST('KRD_PAPERS_3');
+        WHILE(EOF('KRD_PAPERS_3') = 0, Block(
+          tmpGrossNumber := Report.DeclarantNumber.Custom+'/'+FDT('DDMMYYYY', StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-'))+'/'+Report.DeclarantNumber.GrossNumber;
+          tmpTrimGrossNumber := Report.DeclarantNumber.Custom+'/'+FDT('DDMMYYYY', StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-'))+'/'+TrimLeft(Report.DeclarantNumber.GrossNumber, ['0']);
+          IF(bFound = 0,
+            IF(bByRecipient,
+              Block(
+                bFound := (Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;G082;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, Report.DeclarantNumber.GrossNumber, Bill.Russian.Name, sDate])|
+                           Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;G082;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, TrimLeft(Report.DeclarantNumber.GrossNumber, ['0']), Bill.Russian.Name, sDate]));
+                If(bFound = 0,
+                block(
+                  bFound := (Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;G082;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, tmpGrossNumber, Bill.Russian.Name, sDate])|
+                           Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;G082;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, tmpTrimGrossNumber, Bill.Russian.Name, sDate]));
+                )
+                );
+              ),
+              Block(
+                bFound := (Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, Report.DeclarantNumber.GrossNumber, sDate])|
+                           Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, TrimLeft(Report.DeclarantNumber.GrossNumber, ['0']), sDate]));
+                If(bFound = 0,
+                  bFound := (Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, tmpGrossNumber, sDate])|
+                             Locate('KRD_MAIN_3', 'PLACEID;ID;NBD;BD_DATE', [KRD_PAPERS_3.PLACEID, KRD_PAPERS_3.ID, tmpTrimGrossNumber, sDate]))
+                );
+              )
+            );
+          );
+          NEXT('KRD_PAPERS_3');
+        ));
+        SETFILTER('KRD_PAPERS_3', '');
+        
+    ), Block(
+      tmpGrossNumber := Report.DeclarantNumber.Custom+'/'+FDT('DDMMYYYY', StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-'))+'/'+Report.DeclarantNumber.GrossNumber;
+      tmpTrimGrossNumber := Report.DeclarantNumber.Custom+'/'+FDT('DDMMYYYY', StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-'))+'/'+TrimLeft(Report.DeclarantNumber.GrossNumber, ['0']);
+      IF(bByRecipient,
+        Block(
+          bFound := (Locate('KRD_MAIN_3', 'PLACEID;NBD;G082;BD_DATE', [iDocPlaceID, Report.DeclarantNumber.GrossNumber, Bill.Russian.Name, sDate])|
+                     Locate('KRD_MAIN_3', 'PLACEID;NBD;G082;BD_DATE', [iDocPlaceID, TrimLeft(Report.DeclarantNumber.GrossNumber, ['0']), Bill.Russian.Name, sDate]));
+          If(bFound = 0,
+          block(
+            bFound := (Locate('KRD_MAIN_3', 'PLACEID;NBD;G082;BD_DATE', [iDocPlaceID, tmpGrossNumber, Bill.Russian.Name, sDate])|
+                     Locate('KRD_MAIN_3', 'PLACEID;NBD;G082;BD_DATE', [iDocPlaceID, tmpTrimGrossNumber, Bill.Russian.Name, sDate]));
+          )
+          );
+        ),
+        Block(
+          bFound := (Locate('KRD_MAIN_3', 'PLACEID;NBD;BD_DATE', [iDocPlaceID, Report.DeclarantNumber.GrossNumber, sDate])|
+                     Locate('KRD_MAIN_3', 'PLACEID;NBD;BD_DATE', [iDocPlaceID, TrimLeft(Report.DeclarantNumber.GrossNumber, ['0']), sDate]));
+          If(bFound = 0,
+            bFound := (Locate('KRD_MAIN_3', 'PLACEID;NBD;BD_DATE', [iDocPlaceID, tmpGrossNumber, sDate])|
+                       Locate('KRD_MAIN_3', 'PLACEID;NBD;BD_DATE', [iDocPlaceID, tmpTrimGrossNumber, sDate]))
+          );
+        )
+      );
+    ));
+
+          If(bFound = 1,
+            If(INIFILE('XMLKPS', 'DO1LoadAll', '0') = '1',
+              Block(
+                SETFILTER('KRD_COMM_3','PLACEID='+FIELDVALUE('KRD_MAIN_3','PLACEID')+' AND ID='+FIELDVALUE('KRD_MAIN_3','ID'));
+                IF(FIELDISNULL ('KRD_COMM_3', 'PLACEID') = 0,
+                  Block(
+                    DELETERECORDS ('KRD_COMM_3');
+                    POST('KRD_COMM_3');
+                  )
+                );
+                SETFILTER('KRD_COMM_3', '');
+                SETFILTER('KRD_PAPERS_3','PLACEID='+FIELDVALUE('KRD_MAIN_3','PLACEID')+' AND ID='+FIELDVALUE('KRD_MAIN_3','ID'));
+                IF(FIELDISNULL ('KRD_PAPERS_3', 'PLACEID') = 0,
+                  Block(
+                    DELETERECORDS ('KRD_PAPERS_3');
+                    POST('KRD_PAPERS_3');
+                  )
+                );
+                SETFILTER('KRD_PAPERS_3', '');
+                SETFILTER('KR_C_P_3','PLACEID='+FIELDVALUE('KRD_MAIN_3','PLACEID')+' AND ID='+FIELDVALUE('KRD_MAIN_3','ID'));
+                IF(FIELDISNULL ('KR_C_P_3', 'PLACEID') = 0,
+                  Block(
+                    DELETERECORDS ('KR_C_P_3');
+                    POST('KR_C_P_3');
+                  )
+                );
+                SETFILTER('KR_C_P_3', '');
+                // загружать ли информацию о контейнерах или оставлять старые? в XML нет информации о пломбах, и если загружать контейнера из файла, то теряем пломбы
+                If(INIFILE('XMLKPS', 'DO1LoadContAll', '0') = '1',
+                Block(
+                  SETFILTER('KRD_CONT_3','PLACEID='+FIELDVALUE('KRD_MAIN_3','PLACEID')+' AND ID='+FIELDVALUE('KRD_MAIN_3','ID'));
+                  IF(FIELDISNULL ('KRD_CONT_3', 'PLACEID') = 0,
+                    Block(
+                      DELETERECORDS ('KRD_CONT_3');
+                      POST('KRD_CONT_3');
+                    )
+                  );
+                ));
+                SETFILTER('KRD_CONT_3', '');
+                SETFILTER('KR_TRANS_3','PLACEID='+FIELDVALUE('KRD_MAIN_3','PLACEID')+' AND ID='+FIELDVALUE('KRD_MAIN_3','ID'));
+                IF(FIELDISNULL ('KR_TRANS_3', 'PLACEID') = 0,
+                  Block(
+                    DELETERECORDS ('KR_TRANS_3');
+                    POST('KR_TRANS_3');
+                  )
+                );
+                SETFILTER('KR_TRANS_3', '');
+              )
+            )
+          );
+
+    if ((bCreateDoc = False) & bFound,  
+      block(    
+        if(FindKey('KRD_MAIN_3', [iDocPlaceID, KRD_MAIN_3.ID]) & FindKey('KRD_MAIN', [KRD_MAIN_3.SHOW_NBD, KRD_MAIN_3.PLACEID, KRD_MAIN_3.ID]), , 
+          RaiseException('Внутренняя ошибка - Документ отчета не найден')
+        );    
+        iMainID := KRD_MAIN.MAIN_ID;  
+        Case(OverwriteMode(), [
+           0, bImportData := True, 
+           1, block (
+                bImportData := KRD_MAIN.MC_STATUS_BD <> '3';
+                if (bImportData = False, SetCurItemStatus('4'));  
+              ),    
+           2, block (  
+                bImportData := False;
+                SetCurItemStatus('7')  
+              )]
+        );
+        EditRecord('KRD_MAIN');             
+      ),    
+      block(  
+        if (bImportDoc,  
+          block (   
+            bImportDoc := False;
+            EditRecord ('KRD_MAIN');    
+          ),    
+          AppendRecord ('KRD_MAIN');
+        ),    
+        if (bCreateDoc = 0,
+          block (
+            SetFieldValue ('KRD_MAIN', 'PLACEID', iDocPlaceID, 
+				       'ID', GetNewKrdMainID(iDocPlaceID));    
+            IF(STRPOS(Report.PrimaryTransport, '10|12|16|40|43') <> 0, 
+              SetFieldValue ('KRD_MAIN', 'MAIN_ID', KRD_MAIN.ID, 'A_MODE', 7),  
+              SetFieldValue ('KRD_MAIN', 'MAIN_ID', KRD_MAIN.ID, 'A_MODE', 6)
+	    );  
+            SetIsNewDoc()    
+          )  
+        ),  
+        if (bMultiPart,
+          block (
+            if (iMainID = 0, iMainID := KRD_MAIN.MAIN_ID, SetFieldValue('KRD_MAIN', 'MAIN_ID', iMainID));    
+            SetFieldValue('KRD_MAIN', 'PART_NO', GetNewKrdMainPartNo (KRD_MAIN.PLACEID, KRD_MAIN.MAIN_ID),   
+                          	      'PART_MODE', 1, 
+				      'A_MODE', 7);    
+          )
+        ),
+        bImportData := True;  
+      )    
+    ); 
+ 
+    IF(KRD_MAIN.A_MODE = 7, Block(
+      dSumG311 := 0; 
+      dSumG35 := 0; 
+      dSumG315C := 0; 
+      dSumG42 := 0
+    ));
+
+    if(bImportData,  
+      Block ( 
+        vPlaceID := FIELDVALUE('KRD_MAIN', 'PLACEID');
+        vID := FIELDVALUE('KRD_MAIN', 'ID');
+        SetFieldValue('KRD_MAIN',  
+           'NBD',  Report.DeclarantNumber.GrossNumber,
+           'BD_DATE', StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-') + IF(Trim(Report.DeclarantNumber.Time) <> '', ' ' +  Report.DeclarantNumber.Time, Frac(KRD_MAIN.BD_DATE)), 
+           'BEG_KEEP', IF(FIELDISNULL('KRD_MAIN', 'BEG_KEEP'), StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-') + IF(Trim(Report.DeclarantNumber.Time) <> '', ' ' +  Report.DeclarantNumber.Time, Frac(KRD_MAIN.BEG_KEEP)),KRD_MAIN.BEG_KEEP),
+           'G042', IF(Trim(Report.Carrier.Name) <> '', Report.Carrier.Name, KRD_MAIN.G042),
+           'G043', IF(Trim(Report.Carrier.Address) <> '', Report.Carrier.Address, KRD_MAIN.G043),
+           'G044C', IF(Trim(Report.Carrier.Inn) <> '', Report.Carrier.Inn, KRD_MAIN.G044C),
+           'G04_KPP', IF(Trim(Report.Carrier.Kpp) <> '', Report.Carrier.Kpp, KRD_MAIN.G04_KPP),
+           'G04_OGRN', IF(Trim(Report.Carrier.Ogrn) <> '', Report.Carrier.Ogrn, KRD_MAIN.G04_OGRN),
+           'G04_COUNTRY', IF(Trim(Report.Carrier.Country.Code) <> '', Report.Carrier.Country.Code, KRD_MAIN.G04_COUNTRY),
+           'G040',  IF(Trim(Report.Carrier.Ambassador.Name) <> '', Report.Carrier.Ambassador.Name, KRD_MAIN.G040),
+           'G040P', IF(Trim(Report.Carrier.Ambassador.Post) <> '', Report.Carrier.Ambassador.Post, KRD_MAIN.G040P),
+           'G142', IF(Trim(Report.Svh.Name) <> '', Report.Svh.Name, KRD_MAIN.G142),
+           'G143', IF(Trim(Report.Svh.Address) <> '', Report.Svh.Address, KRD_MAIN.G143),
+           'G144', IF(Trim(Report.Svh.Licence.Number) <> '', Report.Svh.Licence.Number, KRD_MAIN.G144),
+           'G145', IF(Trim(Report.Svh.Licence.BeginDate) <> '', Report.Svh.Licence.BeginDate, KRD_MAIN.G145),
+           'G1440', case (Report.Svh.Licence.Kind, ['lic_Certificate', '1', 
+						    'lic_Licence', '2', 
+						    'lic_Permition', '3',
+						    'lic_PermZtk', '4',
+						    'lic_TempZtk', '5'], '1'),
+           'AUTHOR', if(Trim(Report.Author.Name) <> '', Report.Author.Name, Report.SvhPerson.Name),
+           'AUTHOR_POST', if(Trim(Report.Author.Name) <> '', Report.Author.Post, Report.SvhPerson.Post),
+           'AUTHOR_PHONE', IF(Trim(Report.Author.Phone) <> '', Report.Author.Phone, KRD_MAIN.AUTHOR_PHONE),
+           'G261', IF(Trim(Report.PrimaryTransport) <> '', Report.PrimaryTransport, KRD_MAIN.G261),
+//           'G06',  Report.CargoPlacesCount,
+           'G022', IF(Trim(Bill.Foreign.Name) <> '', Bill.Foreign.Name, KRD_MAIN.G022),
+           'G023', IF(Trim(Bill.Foreign.Address) <> '', Bill.Foreign.Address, KRD_MAIN.G023),
+           'G15A', IF(Trim(Bill.Foreign.Country.Code) <> '', Bill.Foreign.Country.Code, KRD_MAIN.G15A),
+           'G082', IF(Trim(Bill.Russian.Name) <> '', Bill.Russian.Name, KRD_MAIN.G082),
+           'G083', IF(Trim(Bill.Russian.Address) <> '', Bill.Russian.Address, KRD_MAIN.G083),
+           'G084C', IF(Trim(Bill.Russian.Inn) <> '', Bill.Russian.Inn, KRD_MAIN.G084C),
+           'G08_KPP', IF(Trim(Bill.Russian.Kpp) <> '', Bill.Russian.Kpp, KRD_MAIN.G08_KPP),
+           'G08_OGRN', IF(Trim(Bill.Russian.Ogrn) <> '', Bill.Russian.Ogrn, KRD_MAIN.G08_OGRN),
+           'G08_DOC_KIND', IF(Trim(Bill.RussianPersonIdentityCard.Code) <> '', Bill.RussianPersonIdentityCard.Code, KRD_MAIN.G08_DOC_KIND),
+           'G08_DOC_ABBR', IF(Trim(Bill.RussianPersonIdentityCard.Abbreviation) <> '', Bill.RussianPersonIdentityCard.Abbreviation, KRD_MAIN.G08_DOC_ABBR),
+           'G08_DOC_SERIES', IF(Trim(Bill.RussianPersonIdentityCard.Serial) <> '', Bill.RussianPersonIdentityCard.Serial, KRD_MAIN.G08_DOC_SERIES),
+           'G08_DOC_NUMBER', IF(Trim(Bill.RussianPersonIdentityCard.Number) <> '', Bill.RussianPersonIdentityCard.Number, KRD_MAIN.G08_DOC_NUMBER),
+           'G17A', '643',
+	   'GD2', Report.Inspector.Lnp,
+	   'FIO_INSPECTOR', Report.Inspector.Name);
+        if(XmlNodeFind(Report, 'CustomNumber'),
+          Block(
+            SetFieldValue ('KRD_MAIN', 'REG_NBD',
+              Report.CustomNumber.Custom + '/' +
+              FDT('DDMMYYYY', StrToDate(Report.DeclarantNumber.Date, 'YYYY-MM-DD', '-')) + '/' +
+              Report.CustomNumber.GrossNumber);
+            //ShowMessage(Trim(Report.CustomNumber.Time) <> '')
+            SetFieldValue ('KRD_MAIN', 'GD1', StrToDate(Report.CustomNumber.Date, 'YYYY-MM-DD', '-') + IF(Trim(Report.CustomNumber.Time) <> '', ' ' +  Report.CustomNumber.Time))
+          )
+        ),
+        if(XmlNodeFind(Report, 'PrimaryTransport')&XmlNodeFind(Report, 'Transports'), 
+          IF(STRPOS(Report.PrimaryTransport, '10|12|16|40|43') <> 0, Block(
+            var('Transports', Integer);  
+            var('Transport', Integer);  	    
+            Transports := XmlNodeFind(Report, 'Transports');
+	    Transport := XmlNodeChild(Transports, 0);
+	    SetFieldValue('KRD_MAIN', 'SHIP_NAME', Transport.Number),
+	
+	  ))
+	);
+        if(XmlNodeFind(Report, 'State'),
+           SetFieldValue ('KRD_MAIN', 'MC_STATUS_BD',
+             CASE(Report.State, ['ds_Editing', '0', 'ds_Rebuilding', '1', 'ds_OnInspect', 'И', 'ds_Registered', '3'], ''))
+        ),
+        PostRecord('KRD_MAIN');
+      )    
+    );
+    bImportCommDocs := ((INIFILE('XMLKPS', 'DO1LoadAll', '0') = '0') & (bCreateDoc = False) & bFound) <> 1;
+  )    
+),  
+
+func('ImportKrdComm', , Block (    
+  var('Goods', Integer);  
+  var('Good', Integer);  
+  var('iGoodsCount', Integer, 0);
+  var('iGoodIndex', Integer, 0);
+
+  var('GoodContLinks', Integer);
+  var('GoodContLink', Integer);
+
+  var('iGoodContLinksCount', Integer, 0);
+  var('iGoodContLinkIndex', Integer, 0);
+
+  Goods := XmlNodeFind(Bill, 'Goods');
+  if(Goods, iGoodsCount := XMLNodeChildCount(Goods));
+
+  GoodContLinks := XmlNodeFind(Bill, 'GoodContLinks');
+  if(GoodContLinks, iGoodContLinksCount := XMLNodeChildCount(GoodContLinks));
+
+  while(Goods & (iGoodIndex < iGoodsCount) & (iGoodsCount > 0), Block(
+
+    Good := XmlNodeChild(Goods, iGoodIndex);
+
+    APPENDRECORD('KRD_COMM');
+    EDIT('KRD_COMM');
+    SetFieldValue('KRD_COMM',
+                  'G33',  Good.Code,  
+                  'G312', Good.Name,
+                  'G311', Good.CargoPlacesCount,
+                  'G313', Good.CargoPlaces,
+                  'G35',  Good.Weights.Brutto,
+                  'G38',  Good.Weights.Netto,
+
+                  'G41A',  Good.AddUnits.Code;
+                  'G315',  if(Good.AddUnits.Name <> '', Good.AddUnits.Name, 
+                           if(Good.AddUnits.Code <> '', REFERENCE('UNITS', 'UNITCODE', Good.AddUnits.Code, 'UNITNAME'))),  
+                  'G315A', Good.AddUnits.Amount,
+ 
+                  'G42', Good.Cost,  
+
+                  'REMARK', Good.Comment,
+
+                  'SVHCOMMENT', Good.KeepingPlace.Comment,
+                  'SVHAREA', Good.KeepingPlace.Area,  
+                  'SVHHANGAR', Good.KeepingPlace.Hangar,  
+                  'SVHRACK',  Good.KeepingPlace.Rack,  
+                  'SVHCELL', Good.KeepingPlace.Cell,  
+                  'SQUARE',  Good.KeepingPlace.Square,
+                                   
+                  'ACCEPTDATE', if ((Good.KeepingLimit.AcceptDate <> '') , 
+                              StrToDate(Good.KeepingLimit.AcceptDate, 'YYYY-MM-DD', '-') + if(CONVERT(Good.KeepingLimit.AcceptTime, STRING) <> '', ' ' + Good.KeepingLimit.AcceptTime, ''), ''),
+                  'STORAGE_TYPE', Good.KeepingLimit.LimitType,
+                  'STORAGE_DATE', StrToDate(Good.KeepingLimit.LimitDate, 'YYYY-MM-DD', '-'),
+                                
+                  'G42_CURRENCY', Good.Valuta.Code,
+                  'GN', iGoodIndex + iGoodNumber + 1
+    );
+
+    // загружаем складской номер для всех, кто не включил в инишнике параметр NotLoadSkladNumberForContainers
+    // если параметр включен, то складской номер для ДО с контейнерами удаляем
+    // не забываем, что работает эта конструкция только для новых документов и
+    // при включенном параметре DO1LoadAll
+    IF(INIFILE('XMLKPS', 'NotLoadSkladNumberForContainers', '0') = '0',
+        SetFieldValue('KRD_COMM', 'BOXNO', Good.SkladNumber),
+        If(XmlNodeFind(Bill, 'Containers'),
+          SetFieldValue('KRD_COMM', 'BOXNO', ''),
+          SetFieldValue('KRD_COMM', 'BOXNO', Good.SkladNumber)
+        )
+    );
+
+
+    //Если в доп. единицы записан объем - прочитаем его
+    if((Good.AddUnits.Code = '111')|(Good.AddUnits.Code = '112')|(Good.AddUnits.Code = '113'), 
+      SetFieldValue('KRD_COMM',
+		  'G31_82', Good.AddUnits.Code, 
+                  'G315CN', if(Good.AddUnits.Name <> '', Good.AddUnits.Name, 
+                            if(Good.AddUnits.Code <> '', REFERENCE('UNITS', 'UNITCODE', Good.AddUnits.Code, 'UNITNAME'))),
+                  'G315C', Good.AddUnits.Amount,)
+    );
+
+    DeleteRecords('KRD_COMM_PAPERS');
+
+    //Связь товаров с накладными
+    SetFieldValue('KRD_COMM', 'N_TTN', iBillN_TTN, 'N_TTN_G32', iGoodIndex + 1);
+    If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+      strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+      If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+        strTemp := Bill.Name,
+        strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+    ));
+    IF(Locate('KRD_PAPERS', 'PAPERNO;PAPERNAME', [Bill.Number, strTemp]), Block(
+      APPENDRECORD('KRD_COMM_PAPERS');
+      EDIT('KRD_COMM_PAPERS');
+      SetFieldValue('KRD_COMM_PAPERS', 'DOC_TYPE', 13, 'DOC_COUNTER', KRD_PAPERS.COUNTER);
+      POST('KRD_COMM_PAPERS');
+    ));
+
+    //Привязка товара к таможенному документу
+    if(Bill.CustomDoc.DocNumber <> '', Block(
+      FIRST('KRD_DCD');
+      while(EOF('KRD_DCD')=0, Block(
+        if(KRD_DCD.PAPERNO = Bill.CustomDoc.DocNumber, Block(
+          APPENDRECORD('KRD_COMM_PAPERS');
+          EDIT('KRD_COMM_PAPERS');
+          SetFieldValue('KRD_COMM_PAPERS', 'DOC_TYPE', 12, 'DOC_COUNTER', KRD_DCD.COUNTER);
+          POST('KRD_COMM_PAPERS');
+        ));
+        NEXT('KRD_DCD'); 
+      ));
+    ));
+
+    POST('KRD_COMM');
+
+    //Считаем суммы по документу/партии
+    dSumG311 := dSumG311 + KRD_COMM.G311;
+    dSumG35 := dSumG35 + KRD_COMM.G35;
+    dSumG315C := dSumG315C + KRD_COMM.G315C;
+    dSumG42 := dSumG42 + KRD_COMM.G42;
+
+//импорт ЗПСХ
+    ImportZPSH();
+    iGoodIndex := iGoodIndex + 1;
+  ));
+  iGoodNumber := iGoodNumber + iGoodsCount;
+)),
+
+func ('ImportKrdDcd', Param('CustomDocNumber', String, 0),
+  block (  
+    var('CustomDocs', Integer);
+    var('CustomDoc', Integer);
+    var('iCustomDocIndex', Integer, 0);
+    var('iCustomDocsCount', Integer, 0);
+
+    CustomDocs := XmlNodeFind(Report, 'CustomDocs');
+
+    IF(CustomDocs, Block(
+      iCustomDocsCount := XMLNodeChildCount(CustomDocs);
+      while(iCustomDocIndex < iCustomDocsCount, Block(
+        CustomDoc := XmlNodeChild(CustomDocs, iCustomDocIndex);
+	IF(STRPOS(CustomDoc.Code + CustomDoc.Number, wCustomDoc) = 0, Block(
+        //IF(CustomDoc.Number = CustomDocNumber, Block(
+          if(wCustomDoc <> '', wCustomDoc := wCustomDoc + '|');
+          wCustomDoc := wCustomDoc + CustomDoc.Code + CustomDoc.Number;     
+          APPENDRECORD('KRD_DCD');
+          EDIT('KRD_DCD');
+          SetFieldValue('KRD_DCD', 
+                        'PAPERCODE', CustomDoc.Code,   
+                        'PAPERNAME', CustomDoc.Name,
+                        'PAPERCLOSE', StrToDate(CustomDoc.Date, 'YYYY-MM-DD', '-'),
+                        'PAPERNO',   CustomDoc.Number,
+                        'CUSTOMS_CODE', CustomDoc.VttCustom);
+          POST('KRD_DCD');
+        ));
+        iCustomDocIndex := iCustomDocIndex + 1;
+      ));
+    ));
+  )
+),    
+
+func ('ImportKrdTransp', ,        
+  block (
+    var('DuTransport', Integer);
+
+    CopyRecordsFromXmlNode('KRD_TRANSP', XmlNodeFind(Report, 'Transports'), 'DuTransport',  
+                           'TRANSP_CODE',    DuTransport.Code,
+                           'CARNO',          DuTransport.Number,
+                           'SVHCOMMENT',     DuTransport.Keeping.Comment,
+                           'SVHAREA',        DuTransport.Keeping.Area,
+                           'SVHPARKING',     DuTransport.Keeping.Parking,
+                           'SVHSQR',         DuTransport.Keeping.Square,
+                           'TRANSP_BRUTTO',  DuTransport.Weights.Brutto,
+                           'TRANSP_NETTO',   DuTransport.Weights.Netto,
+                           'TRANSP_COUNTRY', IF(DuTransport.Code = '10', DuTransport.Sea.Country.Code), 
+			   'NTRAILER',       IF(DuTransport.Code = '10', DuTransport.Sea.EntryNumber, 
+					     IF(STRPOS(DuTransport.Code, '12|20')<>0, DuTransport.RailRoad.RailStation.Code,
+					     IF(DuTransport.Code = '40', DuTransport.Avia.FlightNumber,
+					     IF(STRPOS(DuTransport.Code, '16|23|30|31|39|43|55')<>0, DuTransport.Avto.Trailer))))
+    );
+  )
+),
+
+func ('ImportKrdPapers', Param('aCommerseDocs', Boolean, 0),
+  block (  
+    if (aCommerseDocs,
+      block (
+        var('CommerceDocument', Integer);  
+        CopyRecordsFromXmlNode('KRD_PAPERS', XmlNodeFind(Report, 'CommerceDocs'), 'CommerceDocument',  
+                               'PAPERCODE', CommerceDocument.Code,   
+			       'PAPERNAME', If(XmlNodeChild(CommerceDocument, 'CODE')*(CommerceDocument.Code <> ''),
+				  If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [CommerceDocument.Code]),
+			            REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', CommerceDocument.Code, 'PAPERNAME')
+ 	                          ),
+			          If(Locate('PAPERS_3', 'PAPERNAME', [CommerceDocument.Name]),
+			            CommerceDocument.Name,
+  			            REFERENCE('PAPERS', 'PAPERFULLNAME', CommerceDocument.Name, 'PAPERNAME')
+  			          )				  
+				),
+                               'PAPERDATE', StrToDate(CommerceDocument.Date, 'YYYY-MM-DD', '-'),  
+                               'PAPERNO',   CommerceDocument.Number)
+      ),  
+      block(
+        AppendRecord('KRD_PAPERS');
+        If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+          strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+          If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+            strTemp := Bill.Name,
+            strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+        ));    
+        SetFieldValue('KRD_PAPERS',    
+                      'PAPERCODE', Bill.Code,   
+                      'PAPERNAME', strTemp,
+                      'PAPERDATE', StrToDate(Bill.Date, 'YYYY-MM-DD', '-'),  
+                      'PAPERNO',   Bill.Number,
+                      'PAPER_REG_NO', 
+                          if (Trim(Bill.CustomNumber.Custom) <> '', 
+                                Bill.CustomNumber.Custom + '/' + 
+                                FDT('DDMMYY', StrToDate(Bill.CustomNumber.Date, 'YYYY-MM-DD', '-')) + '/' +
+                               Bill.CustomNumber.GrossNumber + '/' + Bill.CustomNumber.OrderNumber
+                           )
+        );
+        PostRecord('KRD_PAPERS');
+      )
+    );
+  KRD_PAPERS.COUNTER
+  )
+),    
+                  
+
+func ('ImportKrdCont', ,  
+  block (  
+    var('Containers', Integer);      
+    var('Container', Integer);      
+    var('iContainerIndex', Integer, 0);
+    var('iContainersCount', Integer, 0);
+//==================================================================
+var('sCurrentFilter', String);
+var('sGoodsFilter', String);
+  var('Goods2', Integer);
+  var('Good2', Integer);
+  var('iGoodsCount2', Integer, 0);
+  var('iGoodIndex2', Integer, 0);
+  var('GoodContLinks', Integer);
+  var('GoodContLink', Integer);
+  var('iGoodContLinksCount', Integer, 0);
+  var('iGoodContLinkIndex', Integer, 0);
+//==================================================================
+    Containers := XmlNodeFind(Bill, 'Containers');
+
+    IF(Containers, Block(
+      iContainersCount := XMLNodeChildCount(Containers);
+      while(iContainerIndex < iContainersCount, Block(
+        Container := XmlNodeChild(Containers, iContainerIndex);
+        APPENDRECORD('KRD_CONT');
+        EDIT('KRD_CONT');
+        SetFieldValue('KRD_CONT', 
+                      'CONTNO',      Container.Number,   
+                      'G35',         Container.Weights.Brutto,  
+                      'G38',         Container.Weights.Netto,  
+                      'SVHCOMMENT',  Container.KeepingPlace.Comment,  
+                      'SVHAREA',     Container.KeepingPlace.Area,  
+                      'SVHHANGAR',   Container.KeepingPlace.Hangar,  
+                      'SVHPARKING',  Container.KeepingPlace.Parking, 
+                      'SVHSQR',      Container.KeepingPlace.Square,  
+                      'N_TTN',       iBillN_TTN,
+                      'N_CONT',      iContainerIndex + 1);
+        POST('KRD_CONT');
+        //добавить цикл по GoodContLinks
+        
+//Цикл по GoodContLinks
+                            GoodContLinks := XmlNodeFind(Bill, 'GoodContLinks');
+                            if(GoodContLinks, Block(
+                              if(GoodContLinks, iGoodContLinksCount := XMLNodeChildCount(GoodContLinks));
+                              while((iGoodContLinkIndex < iGoodContLinksCount) & (iGoodContLinksCount > 0), Block(
+                                GoodContLink := XmlNodeChild(GoodContLinks, iGoodContLinkIndex);
+                                if((iContainerIndex+1) = GoodContLink.ContainerNumber, Block(
+//Цикл по товарам (Goods)
+                                  Goods2 := XmlNodeFind(Bill, 'Goods');
+                                  if(Goods2, iGoodsCount2 := XMLNodeChildCount(Goods2));
+                                    while((iGoodIndex2 < iGoodsCount2) & (iGoodsCount2 > 0), Block(
+                                      Good2 := XmlNodeChild(Goods2, iGoodIndex2);
+                                          if((iGoodIndex2+1) = GoodContLink.GoodNumber, Block(
+//==============================================================================
+OPENQUERY ('qryKC', 'STS_DB', 'SELECT PLACEID, ID, G32, N_TTN, N_TTN_G32 FROM KRD_COMM WHERE PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND N_TTN_G32='+CHAR(39)+GoodContLink.GoodNumber+CHAR(39)+' AND N_TTN='+CHAR(39)+(iBillIndex+1)+CHAR(39));
+OPENQUERY ('qryKCP', 'STS_DB', 'SELECT * FROM KR_C_P WHERE PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND G32='+CHAR(39)+FIELDVALUE('qryKC', 'G32')+CHAR(39)+' AND DOC_TYPE=11 AND DOC_COUNTER='+CHAR(39)+iContainerOrderNo+CHAR(39));
+If (FIELDISNULL ('qryKCP', 'PLACEOD') = 0,
+  Block(
+    //showmessage('Связь уже существует!');
+  ),
+  Block(
+    If(FIELDISNULL ('qryKC', 'PLACEID') = 0,
+      Block(
+          sCurrentFilter := GETFILTER ('KRD_COMM');
+          sGoodsFilter := 'PLACEID='+CHAR(39)+vPlaceID+CHAR(39)+' AND ID='+CHAR(39)+vID+CHAR(39)+' AND N_TTN_G32='+CHAR(39)+GoodContLink.GoodNumber+CHAR(39)+' AND N_TTN='+CHAR(39)+(iBillIndex+1)+CHAR(39);
+          SETFILTER ('KRD_COMM', sGoodsFilter);
+          EDIT ('KRD_COMM');
+          SetFieldValue('KRD_COMM', 'N_CONT', iContainerOrderNo);
+          POST('KRD_COMM');
+          SETFILTER ('KRD_COMM', sCurrentFilter);
+          APPENDRECORD('KRD_COMM_PAPERS');
+          EDIT('KRD_COMM_PAPERS');
+          SetFieldValue('KRD_COMM_PAPERS', 'PLACEID', vPlaceID, 'ID', vID, 'G32', FIELDVALUE('qryKC', 'G32'), 'DOC_TYPE', 11, 'DOC_COUNTER', iContainerOrderNo);
+          POST('KRD_COMM_PAPERS');
+      )
+    );
+  ));
+CLOSEDATASET ('qryKCP');
+CLOSEDATASET ('qryKC');
+//==============================================================================
+                                  )
+                                  );
+                                  iGoodIndex2 := iGoodIndex2 + 1;
+                                )); {Цикл по товарам}
+                              )
+                              );
+                              iGoodIndex2 := 0;
+                              iGoodOrderNo := iGoodOrderNo + iGoodsCount2;
+                              iGoodContLinkIndex := iGoodContLinkIndex + 1;
+                            )); {Цикл по GoodContLinks}
+));
+          //добавить проверку совпадения номера контейнера с номером из GoodContLinks
+            //добавить цикл по товарам, Goods
+            //закрываем цикл по товарам, Goods
+        //закрываем цикл по GoodContLinls
+        iGoodContLinkIndex := 0;
+        iContainerOrderNo := iContainerOrderNo + 1;
+        
+
+        
+        iContainerIndex := iContainerIndex + 1;
+      ));
+    ));
+
+  )
+),    
+
+var ('bByRecipient', Boolean, 0);
+var ('bByTsDoc', Boolean, 0);  
+var ('bMultiPart', Boolean, IsMultiPartReport('bByRecipient', 'bByTsDoc'));  
+var ('sRecipient', String, '');
+var ('sTsDoc', String, '');
+var ('Bills', Integer, XMLNodeFind(Report, 'Bills'));
+Var('wCustomDoc', String, '');
+
+if (Bills,  
+  block ( 
+    var ('iBillCount', Integer, XMLNodeChildCount(Bills));  
+     
+    if (iBillCount > 0,
+      block (
+        var ('iBillIndex', Integer, 0);  
+        var ('sRecipient', String, '');
+        var ('sTsDoc', String, '');
+        var ('bChanged', Boolean, 0);   
+        var ('bImportCommDocs', Boolean, 0);   
+            
+        var ('Bill', Integer);  
+        var ('iGoodNumber', Integer, 0);
+
+	var ('dSumG311', Float, 0);
+	var ('dSumG35', Float, 0);
+	var ('dSumG315C', Float, 0);
+	var ('dSumG42', Float, 0);
+         
+	var ('iBillN_TTN', Integer, 0);
+  
+        var ('iLoadDataForRailPapers', Boolean);
+        var ('iLoadDataForRailConts', Boolean);
+        var ('iLoadDataForRailComms', Boolean);
+
+        iContainerOrderNo := 1;
+        iGoodOrderNo := 1;
+        while ((iBillIndex < iBillCount) & (bChanged = False),
+          block (       	
+            Bill := XmlNodeChild(Bills, iBillIndex);
+            if(iBillIndex = 0, Block(  
+              bChanged := True;      
+            ),Block(
+                if(bByRecipient, bChanged := sRecipient <> Bill.Russian.Name);
+		If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+          	  strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+          	  If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+            	    strTemp := Bill.Name,
+            	    strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+        	));                    
+                if((bChanged = 0) & bByTsDoc, bChanged := sTsDoc <> Bill.Code + '|' + strTemp + '|' + Bill.Date + '|' + Bill.Number);
+                if(XMLNodeChildCount(XmlNodeFind(Bill, 'Goods')) = 0, bChanged := 0);                
+            ));
+
+            if(bByRecipient, sRecipient := Bill.Russian.Name);
+	          If(Locate('PAPERS_3', 'PAPER_DOCG44_CODE', [Bill.Code]),
+              strTemp := REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', Bill.Code, 'PAPERNAME'),
+              If(Locate('PAPERS_3', 'PAPERNAME', [Bill.Name]),
+                strTemp := Bill.Name,
+                strTemp := REFERENCE('PAPERS', 'PAPERFULLNAME', Bill.Name, 'PAPERNAME')
+            ));                    
+            if(bByTsDoc, sTsDoc := Bill.Code + '|' + strTemp + '|' + Bill.Date + '|' + Bill.Number);
+            if(bChanged, Block(
+              ImportKrdMain();
+              if(bImportData, Block(  
+		            IF(FIELDISNULL ('KRD_TRANSP', 'PLACEID'), ImportKrdTransp());
+                IF(FIELDISNULL ('KRD_DCD', 'PLACEID'), ImportKrdDcd(Bill.CustomDoc.DocNumber));
+              ));
+            ));
+
+	    if(iBillIndex = 0, Block(
+	      iLoadDataForRailPapers := FIELDISNULL ('KRD_PAPERS', 'PLACEID');
+              iLoadDataForRailConts :=  FIELDISNULL ('KRD_CONT', 'PLACEID');
+              iLoadDataForRailComms :=  FIELDISNULL ('KRD_COMM', 'PLACEID');
+            ));
+	    	
+            if(bImportData, Block (  
+              // Если ж/д транспорт - ипортируем все накладные, в одну партию (bByTSDoc = 0)
+              IF((FIELDISNULL ('KRD_PAPERS', 'PLACEID'))|iLoadDataForRailPapers, 
+                Block(		   
+                   iBillN_TTN := ImportKrdPapers(0);
+                )
+              );
+	      //Делаем ImportKrdComm() обязательно после ImportKrdPapers, ImportKrdTransp, ImportKrdDcd, т.к. здесь устанавливаются связи
+              IF((FIELDISNULL ('KRD_COMM', 'PLACEID'))|iLoadDataForRailComms, Block(
+                ImportKrdComm();    
+      	        Edit('KRD_MAIN');
+                SetFieldValue('KRD_MAIN',  
+                        		  'G06', if(dSumG311 > 0, dSumG311, 0),
+                        		  'TOTAL_WEIGHT', if(dSumG35 > 0, dSumG35, 0),
+                        		  'TOTAL_G315C', if(dSumG315C > 0, dSumG315C, 0),
+                        		  'G222', if(dSumG42 > 0, dSumG42, 0),
+      	        );
+      	        Post('KRD_MAIN');
+              ));
+              
+              IF((FIELDISNULL ('KRD_CONT', 'PLACEID'))|iLoadDataForRailConts,
+                Block(
+                  ImportKrdCont();
+                )
+              );
+	      //Коммерческие документы читаем в первую партию, т.к. в XML-формате нет связи товаров(накладных) c коммерческими документами
+	      if((iBillIndex = 0)& bImportData, 
+		 if (bImportCommDocs, ImportKrdPapers(1))
+	      );
+	      //Коммерческие документы не читаем, т.к. в XML-формате нет связи товаров(накладных) c коммерческими документами
+              //if (bChanged, ImportKrdPapers(1))
+	    ));    
+            bChanged := False;      
+            iBillIndex := iBillIndex + 1;
+          )
+        )
+      ),
+      RaiseException('Ошибка загрузки - Список накладных пуст')
+    )
+  )
+);

@@ -1,0 +1,33 @@
+// *****************************************************************************
+// Название: Исправление даты
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+SETFILTER ('KRD_COMM_2', 'STORE_Period > 70');
+showmessage(RecordCount('KRD_COMM_2'));
+SHOWPROGRESS (RecordCount('KRD_COMM_2'));
+VAR('vCount', integer, RecordCount('KRD_COMM_2'));
+VAR('iCount', integer, 0);
+FIRST('KRD_COMM_2');
+WHILE(EOF('KRD_COMM_2')=0,
+  BLOCK(
+    VAR('vDate', datetime);
+    VAR('vPeriod', integer, 0);
+   iCount := iCount + 1;
+    vDate := KRD_COMM_2.STORAGE_DATE;
+    vPeriod := KRD_COMM_2.Store_Period;
+    EDIT('KRD_COMM_2');
+    SETFIELDVALUE('KRD_COMM_2',
+                  'STORAGE_DATE', vDate - 365,
+                  'STORE_PERIOD', vPeriod - 365
+    );
+    POST('KRD_COMM_2');
+    NEXT('KRD_COMM_2');
+    SETPROGRESS (100*(iCount/vCount));
+  )
+);
+HIDEPROGRESS();
+SETFILTER('KRD_COMM_2', '');

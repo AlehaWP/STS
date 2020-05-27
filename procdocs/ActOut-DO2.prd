@@ -1,0 +1,97 @@
+// *****************************************************************************
+// Название: Создание ДО2 из Актов Выдачи
+// Описание: Создание ДО2 из Актов Выдачи
+// Кнопка вызова: 0
+// Подпись кнопки: Создание ДО2 из Актов Выдачи
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('i', integer, 0);
+VAR('ic', integer, 0);
+EXECUTESQL ('STS_DB', 'Delete  from  REL_COMM WHERE REL_COMM.ID IN ( SELECT RELEASE.ID FROM RELEASE WHERE RELEASE.RELEASE_DATE < "31.12.2011")');
+EXECUTESQL ('STS_DB', 'Delete  from  RELEASE WHERE RELEASE.RELEASE_DATE < "31.12.2011" ');
+ic := RECORDCOUNT('OUT_MAIN_2');
+FIRST('OUT_MAIN_2');
+SHOWPROGRESS ('Создание документов ДО2. Пожалуйста, подождите..');
+//showmessage(OUT_MAIN_2.ID);
+WHILE(EOF('OUT_MAIN_2') = 0,
+      Block(
+        VAR('vCMR', string, '');
+        SETFILTER ('OUT_COMM_2', 'PLACEID='+OUT_MAIN_2.PLACEID+' AND ID='+OUT_MAIN_2.ID+' AND ACTOUTID='+OUT_MAIN_2.ACTOUTID);
+        FIRST('OUT_COMM_2');
+        OPENQUERY ('CMR', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID = ' +char(39)+  OUT_MAIN_2.PLACEID +char(39)+ ' AND ID = ' +char(39)+  OUT_MAIN_2.ID +char(39));
+        FIRST('CMR');
+        WHILE(EOF('CMR')=0,
+              BLOCK(
+              if( vCMR <> '', vCMR := vCMR + ', ');
+              vCMR := vCMR + CMR.PAPERNAME + ' ' + CMR.PAPERNO + IF( CMR.PAPERDATE <> '', ' от ' + CMR.PAPERDATE);
+              NEXT('CMR');
+              )
+        );
+        APPENDRECORD('REL_MAIN_2');
+        EDIT('REL_MAIN_2');
+        SETFIELDVALUE('REL_MAIN_2',
+                      'PLACEID', OUT_MAIN_2.PLACEID,
+                      'ID', OUT_MAIN_2.ID,
+                      'COUNTER', OUT_MAIN_2.ACTOUTID,
+                      'MAIN_ID', OUT_MAIN_2.ID,
+                      'MAIN_NO', 1,
+                      'MAIN_COUNTER', OUT_MAIN_2.ACTOUTID,
+                      'RELEASE_NO', OUT_MAIN_2.NDA,
+                      'DOC_TYPE', OUT_COMM_2.DOC_TYPE,
+                      'DOC_NO', OUT_COMM_2.ND_GTD,
+                      'RELEASE_DATE', OUT_MAIN_2.G542,
+                      'OUT_DATE', OUT_MAIN_2.G542,
+                      'OUT_DOC_DATE', OUT_MAIN_2.DATELOAD,
+                      'TRANSPDOCS', vCMR,
+                      'TRANSPNO', OUT_MAIN_2.MOTOR_DESCR,
+                      'G082', OUT_MAIN_2.G082,
+                      'G083', OUT_MAIN_2.G083,
+                      'G08_COUNTRY', OUT_MAIN_2.G08_C,
+                      'REMARK', OUT_MAIN_2.REMARK,
+                      'RELEASE_GIVE', OUT_MAIN_2.G541,
+                      'RELEASE_GIVE_POST', OUT_MAIN_2.G541P,
+                      'MC_STATUS', OUT_MAIN_2.MC_STATUS
+        );
+        POST('REL_MAIN_2');
+        WHILE(EOF('OUT_COMM_2') = 0,
+              Block(
+                APPENDRECORD('REL_COMM_2');
+                EDIT('REL_COMM_2');
+                SETFIELDVALUE('REL_COMM_2',
+                              'PLACEID', REL_MAIN_2.PLACEID,
+                              'ID', REL_MAIN_2.ID,
+                              'COUNTER', REL_MAIN_2.COUNTER,
+                              'G32', OUT_COMM_2.G32,
+                              'RELEASE_G33', OUT_COMM_2.OUT_G33,
+                              'RELEASE_G311', OUT_COMM_2.OUT_G311,
+                              'RELEASE_G315', OUT_COMM_2.OUT_G315,
+                              'RELEASE_G315A', OUT_COMM_2.OUT_G315A,
+                              'RELEASE_G315C', OUT_COMM_2.OUT_G315C,
+                              'RELEASE_G35', OUT_COMM_2.OUT_G35,
+                              'RELEASE_G38', OUT_COMM_2.OUT_G38,
+                              'RELEASE_G42', OUT_COMM_2.OUT_G42,
+                              'RELEASE_G46', OUT_COMM_2.OUT_G46,
+                              'RELEASE_OUT_DATE', OUT_MAIN_2.G542
+                );
+                POST('REL_COMM_2');
+                NEXT('OUT_COMM_2');
+              )
+        );
+        SETPROGRESS (i, 100, ic);
+        i := i + 1;
+        SETFILTER('OUT_COMM_2', '');
+        CLOSEDATASET ('CMR');
+        NEXT('OUT_MAIN_2');
+      )
+);
+HIDEPROGRESS ();
+{FIRST('OUT_COMM_2');
+//showmessage(OUT_MAIN_2.ID);
+WHILE(EOF('OUT_COMM_2') = 0,
+      Block(
+
+        vNGTD
+        NEXT('OUT_COMM_2');
+      )
+);}

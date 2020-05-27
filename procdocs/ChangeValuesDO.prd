@@ -1,0 +1,114 @@
+// *****************************************************************************
+// Название: Внесение изменений в ДО1
+// Описание: Внесение изменений в ДО1
+// Кнопка вызова: 1
+// Подпись кнопки: Внесение изменений в ДО1
+// *****************************************************************************
+//
+VAR ('dtStoreDate', DateTime);
+VAR ('dtAcceptDate', DateTime);
+VAR ('dtBegKeep', DateTime);
+
+Func('DaysInMonth', Block(
+  Param('sYear', String, 0),
+  Param('sMonth', String, 1)
+),
+Block(
+  Var('iYear', Integer, CONVERT (sYear, Integer));
+  Var('iMonth', Integer, CONVERT (sMonth, Integer));
+  CASE (iMonth,
+    [1, 31,
+     2, IF(isLeapYear(iYear), 29, 28),
+     3, 31,
+     4, 30,
+     5, 31,
+     6, 30,
+     7, 31,
+     8, 31,
+     9, 30,
+     10, 31,
+     11, 30,
+     12, 31],
+    30)
+));
+
+Func('AddMonths', Block(
+  Param('dtDate', DateTime, 0),
+  Param('fMonths', Float, 1)
+), Block(
+  Var('dtResult', DateTime);
+
+  Var('iYear', Integer, CONVERT(FORMATDATETIME ('YYYY', dtDate), Integer));
+  Var('iMonth', Integer, CONVERT(FORMATDATETIME ('MM', dtDate), Integer));
+  Var('iDay', Integer, CONVERT(FORMATDATETIME ('DD', dtDate), Integer));
+
+  Var('fMonthPart', Float, 0);
+
+  // Прибавляем целое кол-во месяцев без учета годов в общем числе месяцев
+  iMonth := iMonth + MOD(TRUNC(fMonths), 12);
+
+  // Прибавляем кол-во лет
+
+  iYear := iYear + TRUNC(fMonths) / 12;
+  //showmessage(iYear);
+
+  // Прибавим год, если есть переход
+  IF(iMonth > 12,
+    Block(
+      iMonth := iMonth - 12;
+      iYear := iYear + 1
+  ));
+
+  // Проверяем последние числа месяца, если надо - выравниваем
+  IF(iDay > DaysInMonth(Trim(iYear), Trim(iMonth)),
+    iDay := DaysInMonth(Trim(iYear), Trim(iMonth))
+  );
+
+  // Прибавляем кусок месяца, если надо
+  IF(CONVERT(TRUNC(fMonths), Float) < fMonths, Block(
+    // Доля остатка дней до конца месяца в общем числе дней месяца
+    fMonthPart := 1 - CONVERT(iDay, Float) / CONVERT(DaysInMonts(Trim(iYear), Trim(iMonth)), Float);
+
+    // Если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+    // прибавляемую долю уменьшим на остаток дней в предыдущем месяце
+    IF(FRAC(fMonths) > fMonthPart, Block(
+      iMonth := iMonth + 1;
+      IF(iMonth > 12,
+        iYear := iYear + 1
+      );
+      fMonthPart := FRAC(fMonths) - fMonthPart;
+    ),
+      fMonthPart := FRAC(fMonths)
+    );
+//showmessage('iDay='+iDay+CHAR(13)+'fMounthPart='+fMounthPart+CHAR(13)+'DaysinMounth='+DaysinMonth(Trim(iYear), Trim(iMonth)));
+    iDay := iDay + TRUNC(fMonthPart * CONVERT(DaysinMonth(Trim(iYear), Trim(iMonth)), Float));
+    IF(iDay > DaysinMonth(Trim(iYear), Trim(iMonth)),
+      iDay := iDay - DaysinMonth(Trim(iYear), Trim(iMonth))
+    );
+  ));
+if(imonth <= 2 , iYear := iYear + 1);
+  ENCODEDATE(iYear, iMonth, iDay)
+));
+
+
+
+
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\ChangeValuesDO1.cfm');
+FORMSETPROPERTY(frmDialog, 'dtBegKeep.Date', convert(NOW(), float));
+FORMSETPROPERTY(frmDialog, 'dtAccept.Date', convert(NOW(), float));
+if(FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено'));
+
+dtAcceptdate := FORMGETPROPERTY (frmDialog, 'dtAccept.Date');
+dtBegKeep := FORMGETPROPERTY (frmDialog, 'dtBegKeep.Date');
+dtStoreDate := AddMonths(dtAcceptDate + 1, 60 / 30);
+
+
+//showmessage(FORMGETPROPERTY (frmDialog, 'rtEdit1.text'));
+//FORMCLOSE ('AAA');
+GETSELECTEDDOCS ('QUERY1', 'PLACEID', 'ID', 'NBD');
+FIRST('QUERY1');
+WHILE(EOF('QUERY1')=0,
+      BLOCK(
+        NEXT('QUERY1');
+      )
+);

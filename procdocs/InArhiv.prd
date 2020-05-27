@@ -1,0 +1,106 @@
+// *****************************************************************************
+// Название: ДО в архив
+// Описание: Перемещение полностью выданных ДО в архив
+// Кнопка вызова: 0
+// Подпись кнопки: ДО в архив
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//RAISEEXCEPTION ('Выполнение не возможно, ведутся технические работы');
+CREATELOGFILE ('OstatkiLog');
+APPENDLOGFILE ('OstatkiLog', '         |               Остаток                  |                Приход                  |                Расход                  | ');
+APPENDLOGFILE ('OstatkiLog', '  № ДО1  ----------------------------------------------------------------------------------------------------------------------------');
+APPENDLOGFILE ('OstatkiLog', '         |     Вес      |  Мест  |   Стоимость    |     Вес      |  Мест  |   Стоимость    |     Вес      |  Мест  |   Стоимость    |');
+APPENDLOGFILE ('OstatkiLog', '-------------------------------------------------------------------------------------------------------------------------------------');
+
+
+//
+
+OPENQUERY('TOARH', 'STS_DB', 'SELECT ID, NBD FROM KRD_MAIN WHERE IN_ARCHIVE IS NULL OR IN_ARCHIVE=0');
+VAR('iCountDO', integer, RECORDCOUNT('TOARH'));
+//showmessage(iCountDO);
+VAR('iCounter', integer, 0);
+VAR('iCounterInArh', integer, 0);
+VAR('iCounterOstatok', integer, 0);
+SHOWPROGRESS ('Проверка остатков и перемещение документов в архив');
+FIRST('TOARH');
+WHILE(EOF('TOARH')=0,
+      BLOCK(
+          OPENQUERY('GET_IN', 'STS_DB', 'SELECT SUM(G35) as G35, SUM(G311) as G311, SUM(G42) as G42 FROM KRD_COMM WHERE ID='+TOARH.ID);
+          OPENQUERY('GET_OUT', 'STS_DB', 'SELECT SUM(RELEASE_G35) as G35, SUM(RELEASE_G311) as G311, SUM(RELEASE_G42) as G42 FROM REL_COMM WHERE ID='+TOARH.ID);
+          IF((GET_IN.G35=GET_OUT.G35)*(GET_IN.G311=GET_OUT.G311)*(GET_IN.G42=GET_OUT.G42),
+             BLOCK(
+               OPENQUERY('GET_DO2_ST', 'STS_DB', 'SELECT ID FROM RELEASE_ WHERE ID='+TOARH.ID+ ' AND (MC_STATUS<>'+char(39)+'3'+char(39)+' OR MC_STATUS IS NULL)');
+              // showmessage(TOARH.NBD);
+              // showmessage(RECORDCOUNT('GET_DO2_ST'));
+               IF(RECORDCOUNT('GET_DO2_ST')=0,
+                  BLOCK(
+                   TRYEXCEPT (
+                      EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET IN_ARCHIVE=1 WHERE ID='+TOARH.ID),,
+                      //showmessage('ДО № '+TOARH.NBD+' блокирован пользователем')
+                   );
+                   iCounterInArh :=iCounterInArh + 1;
+                  )
+               );
+             ),
+             BLOCK(
+                 APPENDLOGFILE ('OstatkiLog', ' ' + LEFTPAD (TOARH.NBD, 7, ' ') +
+                                              ' |' +
+                                              LEFTPAD (FORMATFLOAT ('#.##', GET_IN.G35 - GET_OUT.G35), 12, ' ') + '  |'+ LEFTPAD (FORMATFLOAT ('#.##', GET_IN.G311 - GET_OUT.G311), 6, ' ') + '  |'+ LEFTPAD (FORMATFLOAT ('#.##', GET_IN.G42 - GET_OUT.G42), 14, ' ') + '  |'+
+                                              LEFTPAD (FORMATFLOAT ('#.##', GET_IN.G35), 12, ' ') + '  |'+ LEFTPAD (FORMATFLOAT ('#.##', GET_IN.G311), 6, ' ') + '  |'+ LEFTPAD (FORMATFLOAT ('#.##', GET_IN.G42), 14, ' ') + '  |'+
+                                              LEFTPAD (FORMATFLOAT ('#.##',GET_OUT.G35), 12, ' ') + '  |'+ LEFTPAD (FORMATFLOAT ('#.##',GET_OUT.G311), 6, ' ') + '  |'+ LEFTPAD (FORMATFLOAT ('#.##',GET_OUT.G42), 14, ' ') + '  |'
+                 );
+                iCounterOstatok := iCounterOstatok + 1;
+             )
+          );
+          NEXT('TOARH');
+          iCounter:=iCounter + 1;
+          SETPROGRESS(iCounter, 100, iCountDO);
+      )
+);
+
+HIDEPROGRESS ();
+//SHOWMESSAGE('Перемещено: '+ Convert(iCounterInArh,string) + ' документов');
+GLOBALREFRESH();
+
+APPENDLOGFILE ('OstatkiLog', '-------------------------------------------------------------------------------------------------------------------------------------');
+APPENDLOGFILE ('OstatkiLog', ' ');
+APPENDLOGFILE ('OstatkiLog', ' ');
+APPENDLOGFILE ('OstatkiLog', ' ДО с остатками : '+iCounterOstatok);
+APPENDLOGFILE ('OstatkiLog', ' ');
+APPENDLOGFILE ('OstatkiLog', ' Перемещено в архив : '+iCounterInArh);
+SHOWLOGFILE ('OstatkiLog', 'Остатки по ДО');
+{OPENQUERY('TOARH', 'STS_DB', 'SELECT ID, NBD FROM KRD_MAIN WHERE IN_ARCHIVE=1');
+VAR('iCountDO', integer, RECORDCOUNT('TOARH'));
+//showmessage(iCountDO);
+VAR('iCounter', integer, 0);
+VAR('iCounterInArh', integer, 0);
+
+VAR('sBAD_ARCH', string, '');
+SHOWPROGRESS ('Перемещение документов в архив');
+FIRST('TOARH');
+WHILE(EOF('TOARH')=0,
+      BLOCK(
+          OPENQUERY('GET_IN', 'STS_DB', 'SELECT SUM(G35) as G35, SUM(G311) as G311 FROM KRD_COMM WHERE ID='+TOARH.ID);
+          OPENQUERY('GET_OUT', 'STS_DB', 'SELECT SUM(RELEASE_G35) as G35, SUM(RELEASE_G311) as G311 FROM REL_COMM WHERE ID='+TOARH.ID);
+          IF((GET_IN.G35<>GET_OUT.G35)*(GET_IN.G311<>GET_OUT.G311),
+             BLOCK(
+               //OPENQUERY('GET_DO2_ST', 'STS_DB', 'SELECT ID FROM RELEASE_ WHERE ID='+TOARH.ID+ ' AND MC_STATUS<>'+char(39)+'3'+char(39));
+               //IF(RECORDCOUNT('GET_DO2_ST')=0,
+                  //BLOCK(
+                   //EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET IN_ARCHIVE=1 WHERE ID='+TOARH.ID);
+                   sBAD_ARCH := sBAD_ARCH + TOARH.NBD;
+                   iCounterInArh :=iCounterInArh + 1;
+                  //)
+               //);
+             )
+          );
+          NEXT('TOARH');
+          iCounter:=iCounter + 1;
+          SETPROGRESS(iCounter, 100, iCountDO);
+      )
+);
+
+HIDEPROGRESS ();
+SHOWMESSAGE(sBAD_ARCH);}

@@ -1,0 +1,51 @@
+// *****************************************************************************
+// Название: Проверить номера
+// Описание: Проверить номера
+// Кнопка вызова: 1
+// Подпись кнопки: Проверить номера
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+
+If((DocType = 5)*(REL_MAIN.MC_STATUS <> '3')*((FIELDISNULL ('REL_MAIN', 'REG_RELEASE_NO')=1)|(REL_MAIN.REG_RELEASE_NO='')),
+Block(
+VAR('sSQL', Memo);
+VAR('sErrText', Memo, '');
+VAR ('vPlaceid', String, REL_MAIN.PLACEID);
+VAR ('vMainId', String, REL_MAIN.MAIN_ID);
+VAR ('vMainCounter', String, REL_MAIN.MAIN_COUNTER);
+
+IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+  sSQL := 'SELECT DISTINCT DOC_NO FROM RELEASE_ WHERE PLACEID=' + vPLaceid + ' AND MAIN_ID=' + vMainId + ' AND MAIN_COUNTER=' + vMainCounter,
+  sSQL := 'SELECT DISTINCT DOC_NO FROM RELEASE WHERE PLACEID=' + vPLaceid + ' AND MAIN_ID=' + vMainId + ' AND MAIN_COUNTER=' + vMainCounter
+);
+OPENQUERY ('qryDT', 'STS_DB', sSQL);
+FIRST ('qryDT');
+WHILE (EOF ('qryDT') = 0,
+      Block(
+        IF ( (LENGTH (EXTRACTSTR (qryDT.DOC_NO, 1, '/')) <> 8)|(LENGTH (EXTRACTSTR (qryDT.DOC_NO, 2, '/')) <> 6)|(LENGTH (EXTRACTSTR (qryDT.DOC_NO, 3, '/')) <> 7),
+             BLOCK(
+                   IF(LENGTH (sErrText) > 0, sErrText := sErrText + ', ' + char(10) + char(13));
+                   sErrText := sErrText + 'Длина номера выпускающего документа ('+ qryDT.DOC_NO + ') не соответствует требованиям по количеству знаков 8/6/7 ' ;
+             )
+        );
+        OPENQUERY ('qryJR', ' SELECT PrDocumentNumber FROM JrGoodOut2 WHERE PrDocumentNumber=' +char(39)+ qryDT.DOC_NO +char(39), 'dbJournals');
+        IF(RecordCount('qryJR', 1) = 0,
+           BLOCK(
+                 IF(LENGTH (sErrText) > 0, sErrText := sErrText + ', ' + char(10) + char(13));
+                 sErrText := sErrText + 'Выпускающий документ (' + qryDT.DOC_NO + '), указанный в ДО2, отсутствует в журнале Уведомлений о принятии решения о выдаче товаров с СВХ.';
+           )
+        );
+        NEXT('qryDT')
+      )
+);
+
+IF(LENGTH (sErrText) > 0, ShowMessage(sErrText));
+
+))
+
+
+
+

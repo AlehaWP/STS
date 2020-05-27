@@ -1,0 +1,42 @@
+// *****************************************************************************
+// Название: Представление.Альбом(ИМ)
+// Описание: ИМПОРТ представления документов в формате СВХ.Альбом
+// Кнопка вызова: 1
+// Подпись кнопки: Представление.Альбом(ИМ)
+// *****************************************************************************
+//
+
+VAR ('Report', Integer, GetCurrentReportNode());
+VAR ('sScriptPath', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\');
+VAR ('sXmlVersion', String, XMLNODEATTRIBUTE (Report, 'xmlns:rwhd'));
+
+sXmlVersion := RIGHT (sXmlVersion, 5);
+CASE (sXmlVersion, ['5.0.3', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.imp'),
+                    '5.0.5', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.imp'),
+		    '5.0.7', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.imp'),
+		    '5.0.8', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.imp'),
+		    '5.0.9', EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.imp')
+                   ],
+                   //выбираем формат автоматически, по датам
+                   Block(
+                     IF (Date () < STRTODATE ('01.02.2012', 'DD.MM.YYYY', '.'),
+                       sXmlVersion := '5.0.3',
+					   Block(
+                         IF (Date () < STRTODATE ('01.07.2012', 'DD.MM.YYYY', '.'),
+                           sXmlVersion := '5.0.5',
+                           sXmlVersion := '5.0.7'
+                         );
+                         IF (Date () < STRTODATE ('01.09.2012', 'DD.MM.YYYY', '.'),
+                           sXmlVersion := '5.0.7',
+                           sXmlVersion := '5.0.8'
+                         );
+                         IF (Date () < STRTODATE ('01.11.2012', 'DD.MM.YYYY', '.'),
+                           sXmlVersion := '5.0.8',
+                           sXmlVersion := '5.0.9'
+                         );
+					   )					   
+                     );
+                     EXECUTESCRIPT (sScriptPath + sXmlVersion +'\ntf_album.imp');                      
+                   ) // автомат - //                   
+);
+

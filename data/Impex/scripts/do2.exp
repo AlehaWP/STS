@@ -1,0 +1,315 @@
+// *****************************************************************************
+// Название: Экспорт ДО2 в формате СВХ.XML
+// Описание: Экспорт ДО2 в формате СВХ.XML
+// Кнопка вызова: 1
+// Подпись кнопки: ДО2 (эк)
+// *****************************************************************************
+//
+VAR ('iCustDocNum', Integer, 1);
+VAR ('XmlDoc', Integer, GETXMLDOCUMENT());
+
+IF (XmlNodeChildCount (XmlDoc) < 1,
+  Block (
+    XmlDoc := XmlNodeAddChild (XmlDoc, 'mailMessage:MailMessage');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:xs', 'http://www.w3.org/2001/XMLSchema-instance');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:mailMessage', 'uri.customs.svh/mailMessage');  
+    XmlNodeSetValues (XmlDoc, '', 'Date', FDT ('YYYY-MM-DD', Date ()));
+    XmlNodeSetValues (XmlDoc, '', 'Time', FDT ('HH:MM:SS', Time ()));
+    XmlNodeSetValues (XmlDoc, '', 'Number', 'Б/Н');
+    XmlNodeSetValues (XmlDoc, 'Sender', 'Authorization\Login', '@CUSTOM',
+				      'Name', IF (FINDKEY ('STORES', [KRD_MAIN.PLACEID]), STORES.NAME, 'Внутри организации'));
+    XmlNodeSetValues(XmlDoc, 'Receiver', 'Authorization\Login', '@CUSTOM', 
+					    'Name', IF (FINDKEY ('STORES', [KRD_MAIN.PLACEID]), STORES.CUSTOMS_NAME, 'Внутри организации'));
+    XmlNodeSetValues(XmlDoc, 'Subject', 'Text', 'Передача документа: Отчет о выдаче № ' + REL_MAIN.RELEASE_NO);
+  ),
+  XmlDoc := XMLNODECHILD (XmlDoc, 0);  
+); {IF - XmlNodeChildCount (XmlDoc) < 1 }
+
+VAR ('XmlDeliveryReport', Integer, XmlNodeAddChild (XmlDoc, 'Attachment\DeliveryReport'));
+  
+XmlNodeSetValues (XmlDeliveryReport, '', 'Name', 'Отчет о выдаче');
+XmlNodeSetValues (XmlDeliveryReport, 'Author', 'Post', REL_MAIN.RELEASE_GIVE_POST, 'Name', REL_MAIN.RELEASE_GIVE);
+XmlNodeSetValues (XmlDeliveryReport, 'DeclarantNumber',
+          'Custom',      STORES.CUSTOMS_CODE{CUSTOMSNOPART(REL_MAIN.DOC_NO, 1, STORES.CUSTOMS_CODE)},
+          'Date',        FDT ('YYYY-MM-DD', REL_MAIN.OUT_DATE),
+          'Time',        FDT ('HH:MM:SS', REL_MAIN.OUT_DATE),
+          'GrossNumber', LEFTPAD (CUSTOMSNOPART (REL_MAIN.RELEASE_NO, 3, RIGHT (REL_MAIN.RELEASE_NO, 7)), 7, '0'));
+IF (REL_MAIN.FIO_INSPECTOR <> '',
+  XmlNodeSetValues (XmlDeliveryReport, 'Inspector',
+            'Name', REL_MAIN.FIO_INSPECTOR,
+            'Lnp',  REL_MAIN.GD2
+  )
+); {IF - REL_MAIN.FIO_INSPECTOR <> ''}
+IF (REL_MAIN.REG_RELEASE_NO <> '',
+  XmlNodeSetValues (XmlDeliveryReport, 'CustomNumber',
+            'Custom',      STORES.CUSTOMS_CODE{CUSTOMSNOPART(REL_MAIN.REG_RELEASE_NO, 1, '')},
+            'Date',        FDT ('YYYY-MM-DD', EXCLUDEDATE (REL_MAIN.REG_RELEASE_NO)),
+            'GrossNumber', CUSTOMSNOPART (REL_MAIN.REG_RELEASE_NO, 3, '')
+  );
+); {IF - REL_MAIN.REG_RELEASE_NO <> '' }
+
+IF (FieldIsNull ('REL_MAIN', 'REG_Time') = 0,
+  XmlNodeSetValues (XmlDeliveryReport, 'CustomNumber',
+            'Time', FDT ('HH:MM:SS', REL_MAIN.REG_Time))
+); {IF - FieldIsNull ('REL_MAIN', 'REG_Time') = 0 }
+XmlNodeSetValues (XmlDeliveryReport, '',
+          'State', CASE (REL_MAIN.MC_STATUS, ['1', 'ds_Rebuilding',
+                                              'И', 'ds_OnInspect',
+                                              '3', 'ds_Registered'],
+                                              'ds_Editing')
+);
+XmlNodeSetValues (XmlDeliveryReport, '', 'ActType', 'at_Output');
+XmlNodeSetValues (XmlDeliveryReport, 'Carrier',
+          'Name',            IF (REL_MAIN.G042 <> '', REL_MAIN.G042, KRD_MAIN.G042),
+          'Address',         IF (REL_MAIN.G043 <> '', REL_MAIN.G043, KRD_MAIN.G043),
+          'Inn',             IF (REL_MAIN.G044C <> '', REL_MAIN.G044C, KRD_MAIN.G044C),
+          'Kpp',             IF (REL_MAIN.G04_KPP <> '', REL_MAIN.G04_KPP, KRD_MAIN.G04_KPP),
+          'Ogrn',            IF (REL_MAIN.G04_OGRN <> '', REL_MAIN.G04_OGRN, KRD_MAIN.G04_OGRN),
+          'Country\Code',    IF (REL_MAIN.G04_COUNTRY <> '', REL_MAIN.G04_COUNTRY, KRD_MAIN.G04_COUNTRY),
+          'Country\Name',    REFERENCE ('OKSMT', 'KOD', IF (REL_MAIN.G04_COUNTRY <> '', REL_MAIN.G04_COUNTRY, KRD_MAIN.G04_COUNTRY), 'KRNAIM'),
+          'Ambassador\Post', IF (REL_MAIN.G040P <> '', REL_MAIN.G040P, KRD_MAIN.G040P),
+          'Ambassador\Name', IF (REL_MAIN.G040 <> '', REL_MAIN.G040, KRD_MAIN.G040)
+);
+XmlNodeSetValues(XmlDeliveryReport, 'Svh', 
+          'Name',              IF (KRD_MAIN.G142 <> '', KRD_MAIN.G142, STORES.NAME),
+          'Address',           IF (KRD_MAIN.G143 <> '', KRD_MAIN.G143, STORES.ADDRESS),
+          'Inn',               STORES.G144C,
+          'Ogrn',              STORES.G140,
+          'Kpp',               STORES.KPP,
+          'CustomOwned',       IF (STORES.STORE_TYPE = 'СВХУТ', 'true', 'false'),
+          'Licence\Number',    IF (KRD_MAIN.G144 <> '',  KRD_MAIN.G144, STORES.LICENCENO),
+          'Licence\BeginDate', IF (KRD_MAIN.G145 > 0, FDT ('YYYY-MM-DD', KRD_MAIN.G145), FDT ('YYYY-MM-DD', STORES.LICENCEDATE)),
+          'Licence\Kind',      CASE (KRD_MAIN.G1440, ['1', 'lic_Certificate',
+                                      		 				    '2', 'lic_Licence',
+							                                        '3', 'lic_Permition',
+							                                        '4', 'lic_PermZtk',
+							                                        '5', 'lic_TempZtk'
+							                                       ], 'lic_Certificate')
+);
+XmlNodeSetValues(XmlDeliveryReport, 'SvhPerson',
+          'Post',  REL_MAIN.RELEASE_GIVE_POST,
+          'Name',  REL_MAIN.RELEASE_GIVE,
+          'Phone', REL_MAIN.RELEASE_GIVE_PHONE
+);
+XmlNodeSetValues(XmlDeliveryReport, 'Recipient',   
+          'Name',    IF (REL_MAIN.G082 <> '', REL_MAIN.G082, KRD_MAIN.G082),
+          'Address', IF (REL_MAIN.G082 <> '', REL_MAIN.G083, KRD_MAIN.G083),
+          'Inn',     IF (REL_MAIN.G082 <> '', REL_MAIN.G084C, KRD_MAIN.G084C),
+          'Kpp',     IF (REL_MAIN.G082 <> '', REL_MAIN.G08_KPP, KRD_MAIN.G08_KPP),
+          'Ogrn',    IF (REL_MAIN.G082 <> '', REL_MAIN.G08_OGRN, KRD_MAIN.G08_OGRN)
+);
+XmlNodeSetValues (XmlDeliveryReport, 'RecipientPerson',
+          'Post',  REL_MAIN.RELEASE_RECEIVE_POST,
+          'Name',  REL_MAIN.RELEASE_RECEIVE,
+          'Phone', REL_MAIN.RELEASE_RECEIVE_PHONE
+);
+
+VAR ('XmlCustomDocument', Integer);    
+FUNC ('WriteDeliveryGoods', ,
+  Block (
+    FIRST ('REL_COMM');
+    WHILE (EOF ('REL_COMM') = 0,
+      BLOCK (
+        IF (FINDKEY ('KRD_COMM', [REL_COMM.PLACEID, REL_COMM.ID, REL_COMM.G32]),
+          XmlNodeSetValues (XmlNodeAddChild (XmlDeliveryReport, 'Goods\DeliveryGood'), '',
+                      'Code',                          IF (TRIM (REL_COMM.RELEASE_G33) <> '', REL_COMM.RELEASE_G33, KRD_COMM.G33),
+                      'Name',                          IF (TRIM (REL_COMM.RELEASE_G312) <> '', REL_COMM.RELEASE_G312, KRD_COMM.G312),
+                      'CargoPlacesCount',              REL_COMM.RELEASE_G311,
+                      'CargoPlaces',                   KRD_COMM.G313,
+                      'Weights\Brutto',                IF (REL_COMM.RELEASE_G35 > 0, REL_COMM.RELEASE_G35, ''),
+                      'Weights\Netto',                 IF (REL_COMM.RELEASE_G38 > 0, REL_COMM.RELEASE_G38, ''),
+                      'AddUnits\Code',                 IF (REL_COMM.RELEASE_G315C > 0, '113', IF(REL_COMM.RELEASE_G315A > 0, REFERENCE ('UNITS', 'UNITNAME', KRD_COMM.G315, 'UNITCODE'),'')),
+                      'AddUnits\Name',                 IF (REL_COMM.RELEASE_G315C > 0, 'М3', KRD_COMM.G315),
+                      'AddUnits\Amount',               IF (REL_COMM.RELEASE_G315C > 0, REL_COMM.RELEASE_G315C, IF(REL_COMM.RELEASE_G315A > 0,REL_COMM.RELEASE_G315A,'')),
+                      'Cost',                          IF (REL_COMM.RELEASE_G42, REL_COMM.RELEASE_G42, ''),
+                      'OutputDate',                    FDT ('YYYY-MM-DD', IF (REL_COMM.RELEASE_OUT_DATE, REL_COMM.RELEASE_OUT_DATE, REL_MAIN.OUT_DATE)),
+                      'OutputTime',                    FDT ('HH:MM:SS', IF (REL_COMM.RELEASE_OUT_DATE, REL_COMM.RELEASE_OUT_DATE, REL_MAIN.OUT_DATE)),
+                      'Valuta\Code',                   IF (KRD_COMM.G42_CURRENCY <> '', KRD_COMM.G42_CURRENCY, KRD_MAIN.G221),
+                      'Valuta\Name',                   IF (KRD_COMM.G42_CURRENCY <> '',
+                                                         CURRENCYNAME (REL_MAIN.OUT_DATE,
+                                                         IF (KRD_COMM.G42_CURRENCY <> '', KRD_COMM.G42_CURRENCY, KRD_MAIN.G221))
+                                                       ),
+                      'Valuta\Course',                 IF ((KRD_COMM.G42_CURRENCY <> '') & (REL_MAIN.OUT_DATE > 0),
+                                                         CURRENCYCOURSE (REL_MAIN.OUT_DATE,
+                                                         IF (KRD_COMM.G42_CURRENCY <> '', KRD_COMM.G42_CURRENCY, KRD_MAIN.G221))
+                                                       ),
+                      'CustomDocNumbers',              iCustDocNum,
+                      'AcceptedGood\GoodNumber',       KRD_COMM.GN,
+                      'AcceptedGood\WhDocumentNumber', CUSTOMSNOPART (KRD_MAIN.NBD, 3, RIGHT (KRD_MAIN.NBD, 7)),
+                      'AcceptedGood\WhDocumentDate',   FDT ('YYYY-MM-DD', KRD_MAIN.BD_DATE)
+          )
+        ); {IF - FINDKEY ('KRD_COMM', [REL_COMM.PLACEID, REL_COMM.ID, REL_COMM.G32]) }
+        NEXT('REL_COMM')
+      )
+    ); {WHILE - EOF ('REL_COMM') }
+  )  
+), {FUNC - WriteDeliveryDocument() }
+  
+FUNC ('WriteTransports', , Block(
+  VAR ('XmlActTransport', Integer);
+  VAR ('sTranspCode', String);
+
+  XmlNodeSetValues (XmlDeliveryReport, '', 'PrimaryTransport', REL_MAIN.TRANSPTYPE);
+  IF ((sTranspNums <> '') & (FIELDISNULL ('RELTRANS', 'PLACEID') = 0),
+    Block(
+      FIRST ('RELTRANS');
+      WHILE (EOF ('RELTRANS')=0,
+        Block(
+          XmlActTransport := XmlNodeAddChild (XmlDeliveryReport, 'Transports\ActTransport');
+          sTranspCode := IF (RELTRANS.TRANSP_CODE <> '', RELTRANS.TRANSP_CODE, REL_MAIN.TRANSPTYPE);
+          XmlNodeSetValues (XmlActTransport, '',
+                    'Code',              IF (RELTRANS.TRANSP_CODE <> '', RELTRANS.TRANSP_CODE, REL_MAIN.TRANSPTYPE),
+                    'Number',            RELTRANS.TRANSPNO,
+                    'Weights\Brutto',    RELTRANS.TRANSP_BRUTTO,
+                    'Weights\Netto',     RELTRANS.TRANSP_NETTO);
+          IF (STRPOS (sTranspCode, '10|80|81'),
+            XmlNodeSetValues (XmlActTransport, '',
+                  		'Sea\EntryNumber',  RELTRANS.TRANSP_NTRAILER,
+    		              'Sea\Captain\Name', REL_MAIN.G040,
+    		              'Sea\Country\Code', IF (RELTRANS.TRANSP_COUNTRY <> '', RELTRANS.TRANSP_COUNTRY, REL_MAIN.TRANSPCOUNTRY),
+    		              'Sea\Country\Name', REFERENCE ('OKSMT', 'KOD', IF (KRD_TRANSP.TRANSP_COUNTRY <> '', LEFTPAD (KRD_TRANSP.TRANSP_COUNTRY, 3, ' '), LEFTPAD (KRD_MAIN.TRANSP_COUNTRY, 3, ' ')), 'KRNAIM', 'DATE_MOD', 'DATE_NIL', DATE ()),
+            ),
+          IF (STRPOS (sTranspCode, '12|20') <> 0,
+            XmlNodeSetValues (XmlActTransport, '',
+    		              'RailRoad\RailStation\Code', RELTRANS.TRANSP_NTRAILER,
+    		              'RailRoad\RailStation\Name', REFERENCE ('STATIONS.DB', 'KOD', RELTRANS.TRANSP_NTRAILER, 'NAME')
+            ),
+          IF(STRPOS(sTranspCode, '40') <> 0,
+            XmlNodeSetValues(XmlActTransport, '',
+    		              'Avia\FlightNumber', RELTRANS.TRANSP_NTRAILER,
+            ),
+          IF(STRPOS(sTranspCode, '16|23|30|31|39|43|55')<>0,
+            XmlNodeSetValues(XmlActTransport, '',
+    		              'Avto\Trailer', RELTRANS.TRANSP_NTRAILER,
+            ),
+          ))));
+          NEXT('RELTRANS');
+        )
+      ); {WHILE - EOF ('RELTRANS')=0 }
+    )
+  ); {IF - (sTranspNums <> '') & (FIELDISNULL ('RELTRANS', 'PLACEID') = 0) }
+  IF ((iRelTransRecordCount=0)&(sTranspNums <> ''),
+    Block(
+      FIRST ('KRD_TRANSP');
+      WHILE (EOF ('KRD_TRANSP') = 0,
+        Block(
+          IF (STRPOS (KRD_TRANSP.TRANSP_CODE + KRD_TRANSP.CARNO, sTransps)=0,
+            Block(
+              XmlActTransport := XmlNodeAddChild (XmlDeliveryReport, 'Transports\ActTransport');
+              sTranspCode := IF (KRD_TRANSP.TRANSP_CODE <> '', KRD_TRANSP.TRANSP_CODE, KRD_MAIN.G261);
+              XmlNodeSetValues (XmlActTransport, '',
+                        'Code',              sTranspCode,
+                        'Number',            KRD_TRANSP.CARNO,
+                        'Weights\Brutto',    KRD_TRANSP.TRANSP_BRUTTO,
+                        'Weights\Netto',     KRD_TRANSP.TRANSP_NETTO,
+                        'Keeping\Comment',   KRD_TRANSP.SVHCOMMENT,
+                        'Keeping\Area',      KRD_TRANSP.SVHAREA,
+                        'Keeping\Parking',   KRD_TRANSP.SVHPARKING,
+                        'Keeping\Square',    IF (KRD_TRANSP.SVHSQR > 0, KRD_TRANSP.SVHSQR, ''));
+              IF (STRPOS (sTranspCode, '10|80|81') <> 0,
+                XmlNodeSetValues (XmlActTransport, '',
+              	          'Sea\EntryNumber',  KRD_TRANSP.NTRAILER,
+          		            'Sea\Captain\Name',  KRD_MAIN.G040,
+          		            'Sea\Country\Code',  IF (KRD_TRANSP.TRANSP_COUNTRY <> '', KRD_TRANSP.TRANSP_COUNTRY, KRD_MAIN.TRANSP_COUNTRY),
+        	  	            'Sea\Country\Name',  REFERENCE ('OKSMT', 'KOD', IF (KRD_TRANSP.TRANSP_COUNTRY <> '', LEFTPAD (KRD_TRANSP.TRANSP_COUNTRY, 3, ' '), LEFTPAD (KRD_MAIN.TRANSP_COUNTRY, 3, ' ')), 'KRNAIM', 'DATE_MOD', 'DATE_NIL', DATE ()),
+                ),
+              IF (STRPOS (sTranspCode, '12|20')<>0,
+                XmlNodeSetValues(XmlActTransport, '',
+        		              'RailRoad\RailStation\Code', COPY (KRD_TRANSP.NTRAILER, 1, 5);
+    		                  'RailRoad\RailStation\Name', REFERENCE ('STATIONS.DB', 'KOD', KRD_TRANSP.NTRAILER, 'NAME')
+                ),
+              IF (sTranspCode = '40',
+                XmlNodeSetValues (XmlActTransport, '',
+    		                  'Avia\FlightNumber', KRD_TRANSP.NTRAILER,
+                ),
+              IF (STRPOS (sTranspCode, '16|23|30|31|39|43|55')<>0,
+                XmlNodeSetValues(XmlActTransport, '',
+    		                  'Avto\Trailer', KRD_TRANSP.NTRAILER,
+                ),
+            )))); {IF - STRPOS (KRD_TRANSP.TRANSP_CODE + KRD_TRANSP.CARNO, sTransps)=0 }
+            //Запомним номера уже записанных тр. средств, чтобы не записать неск. раз одно и то же
+            IF (sTransps<>'', sTransps := sTransps + '|'); {IF - sTransps<>'' }
+            sTransps := sTransps + KRD_TRANSP.TRANSP_CODE + KRD_TRANSP.CARNO;
+            )
+          );
+          NEXT('KRD_TRANSP');
+        )
+      ); {WHILE - EOF ('KRD_TRANSP') = 0 }
+    )
+  ); { IF - (iRelTransRecordCount=0)&(sTranspNums <> '') }
+)), {FUNC - WriteTransports() }
+
+FUNC('WriteCustomDocument', , 
+  Block(
+    XmlCustomDocument := XmlNodeFindByValues (XmlDeliveryReport, 'CustomDocs',
+                                              'Code',   REL_MAIN.DOC_CODE,
+                                              'Name',   REL_MAIN.DOC_TYPE,
+                                              'Date',   FDT ('YYYY-MM-DD', REL_MAIN.RELEASE_DATE),
+                                              'Number', REL_MAIN.DOC_NO);
+    IF (XmlCustomDocument = 0,
+      XmlCustomDocument := XmlNodeSetValues (XmlNodeAddChild (XmlDeliveryReport, 'CustomDocs\CustomDocument'), '',
+                                     'Code', REL_MAIN.DOC_CODE,
+                                     'Name', REL_MAIN.DOC_TYPE,
+                                     'Date', FDT ('YYYY-MM-DD', REL_MAIN.RELEASE_DATE),
+                                     'Number', REL_MAIN.DOC_NO)
+    ); {IF - XmlCustomDocument = 0 }
+  )                                              
+), {FUNC - WriteCustomDocument() }
+
+VAR ('iRelTransRecordCount', Integer);
+CONST ('sTranspNums', String, CHARSTR (CHAR(32), 255));
+CONST ('sTransps', String, '');
+CONST ('sDriverName', String, UPPERSTR(INIFILE ('Database', 'DbmsType', 'PARADOX')));
+
+IF (REL_MAIN.MAIN_ID = 0,
+  Block(
+    WriteTransports();
+    WriteCustomDocument();  
+    WriteDeliveryGoods();
+  ),
+  Block(
+     SETRANGE ('REL_MAIN_2', [REL_MAIN_3.PLACEID, REL_MAIN_3.MAIN_ID, REL_MAIN_3.MAIN_COUNTER]);
+     FIRST ('REL_MAIN_2');
+     IF (EOF ('REL_MAIN_2') = 0,
+       Block(
+         FINDKEY('REL_MAIN', [REL_MAIN_2.PLACEID, REL_MAIN_2.ID, REL_MAIN_2.COUNTER]);
+         sTranspNums := REL_MAIN.TRANSPNO;
+         iRelTransRecordCount := RECORDCOUNT('RELTRANS');
+       )
+     ); {IF - EOF ('REL_MAIN_2') = 0 }
+     WHILE (EOF ('REL_MAIN_2') = 0,
+       Block(
+        Var('in',integer,0);
+         IF (FINDKEY ('REL_MAIN', [REL_MAIN_2.PLACEID, REL_MAIN_2.ID, REL_MAIN_2.COUNTER]) &
+             FINDKEY ('KRD_MAIN', [REL_MAIN_2.PLACEID, REL_MAIN_2.ID]) &
+             FINDKEY ('STORES', [REL_MAIN_2.PLACEID]),
+           Block(
+             IF (sDriverName = 'INTRBASE',
+               OPENQUERY ('qryRM', 'STS_DB', 'SELECT DOC_NO, MAIN_NO FROM RELEASE_ WHERE PLACEID='+CHAR(39)+REL_MAIN.PLACEID+CHAR(39)+' AND MAIN_ID='+CHAR(39)+REL_MAIN.MAIN_ID+CHAR(39)+' AND MAIN_COUNTER='+CHAR(39)+REL_MAIN.MAIN_COUNTER+CHAR(39)+' Order by main_no'),
+               OPENQUERY ('qryRM', 'STS_DB', 'SELECT DOC_NO, MAIN_NO FROM RELEASE  WHERE PLACEID='+CHAR(39)+REL_MAIN.PLACEID+CHAR(39)+' AND MAIN_ID='+CHAR(39)+REL_MAIN.MAIN_ID+CHAR(39)+' AND MAIN_COUNTER='+CHAR(39)+REL_MAIN.MAIN_COUNTER+CHAR(39)+' Order by main_no')
+             ); {IF - sDriverName = 'INTRBASE' }
+             WriteTransports();
+             WriteCustomDocument();
+             WHILE (EOF ('qryRM')=0,
+               Block(
+                 IF ((FIELDVALUE ('qryRM', 'DOC_NO') = FIELDVALUE ('REL_MAIN', 'DOC_NO')),
+                   Block(
+                     iCustDocNum := GETRECORDNO ('qryRM');
+                     NEXT ('qryRM');
+                   ),
+                     NEXT ('qryRM');
+                 ); {IF - (FIELDVALUE ('qryRM', 'DOC_NO') = FIELDVALUE ('REL_MAIN', 'DOC_NO')) }
+               )
+             ); {WHILE - EOF ('qryRM')=0 }
+             WriteDeliveryGoods();
+             CLOSEDATASET ('qryRM');
+           )
+         ); {IF - FINDKEY ('REL_MAIN', [REL_MAIN_2.PLACEID, REL_MAIN_2.ID, REL_MAIN_2.COUNTER]) &
+             FINDKEY ('KRD_MAIN', [REL_MAIN_2.PLACEID, REL_MAIN_2.ID]) &
+             FINDKEY ('STORES', [REL_MAIN_2.PLACEID])}
+         NEXT ('REL_MAIN_2');
+       )
+     ); {WHILE - EOF ('REL_MAIN_2') = 0 }
+     CANCELRANGE ('REL_MAIN_2');
+  )
+);  {IF - REL_MAIN.MAIN_ID = 0 }

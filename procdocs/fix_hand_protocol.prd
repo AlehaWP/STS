@@ -1,0 +1,216 @@
+// *****************************************************************************
+// Название: восстановление DOCUMENTID и загрузку регистрации документа
+// Описание: Восстановление DOCUMENTID и загрузка сообщения о регистрации ДО-1\ДО-2 из Монитор ЭД
+// Кнопка вызова: 0
+// Подпись кнопки: Восстановить протокол по DocumentID
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sRelease', String, IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE'));
+
+FUNC ('SaveObject',
+  Block(
+    PARAM ('pBackupFile', String, 0);
+    // В xml-файле с отказом в регистрации ДО-1/Доб листа к ДО-1/ДО-2 нет признака на какой тип документа это отказ
+    // Поэтому принудительно дописываем в аттрибуты основного элемента признак "DocType" (0: не добавляем аттрибут, 1: ДО-1, 2: Доб лист к ДО-1, 3: ДО-2)
+    PARAM ('pDocType', Integer, 1);
+  ),
+  Block(
+    IF (FILEEXISTS(pBackupFile),
+       Block(
+         VAR ('XmlDoc', Integer);
+         VAR ('XmlObject', Integer);
+         VAR ('XmlDORegInfo', Integer);
+         VAR ('sXmlFileToSave', String, '');
+         XMLDoc := XMLDOCUMENTCREATE();
+         XMLDOCUMENTLOAD (XMLDoc, pBackupFile);
+         XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+         XMLDORegInfo := XMLNODECHILD (XmlObject, 0);
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'whid', qPM.WHId);
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'do1id', qPM.WHDocID);
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'do2id', qPM.WHDocID2);
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'dodt', FDT ('DD.MM.YYYY HH:NN:SS', Date() + Time(1)));
+         IF (pDocType > 0,
+           Block(
+             XMLNODESETATTRIBUTE (XMLDORegInfo, 'doctype', pDocType);
+           )
+         ); // IF - //
+         IF (DIRECTORYEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO ('', 'UserUuid')) = 0,
+           Block(
+             FORCEDIRECTORIES (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO('', 'UserUuid'));
+           ),
+         ); // IF - //
+         sXmlFileToSave := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO ('', 'UserUuid') + '\' + EXTRACTSTR (pBackupFile, SPLITSTR (pBackupFile, '\', sSQL), '\');
+         XMLNODESAVE (XMLDORegInfo, sXmlFileToSave);
+       ),
+    ); // IF - //
+  )
+), // FUNC - //
+
+FUNC ('getConnString', '',
+  Block(
+    VAR ('CSIDL_WINDOWS', Integer, 36);
+    Const('CSIDL_PROGRAM_FILES_COMMON', Integer, 43);
+    VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_PROGRAM_FILES_COMMON))+'CTM\ctm.cfg');
+
+    VAR ('sConnString', String, '');
+
+    IF (REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcType', '0') = 1,
+        BLOCK(
+           sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcDir', '')+'MONITORED.MDB;Persist Security Info=False';
+        ),
+        IF(REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcType', '0') = 2,
+           BLOCK(
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'ServerName', '') + ';Initial Catalog=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'DBName', '') + ';';
+                IF (REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'IntegratedSecurity', '') = '1',
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Login', '') + ';Password=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Password', '');
+                  )
+                ); // IF - //
+           )
+        )
+    );
+
+
+    IF(sConnString='',
+       BLOCK(
+    VAR ('sMonPath', String);
+
+    sMonPath := INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath);
+
+   // смотрим указанный пользователем каталог(запоминаем его в ini склада)
+   IF (sMonPath = '', sMonPath := INIFILE('MONITOR_ED', 'InstallPath', ''));
+   // если не нашли по CTM.INI - работаем в терминале, спрашиваем пользователя
+   IF(sMonPath = '', Block(
+     SELECTDIRECTORY ('sMonPath');
+     WRITEINIFILE('MONITOR_ED', 'InstallPath', sMonPath);
+   ));
+
+   If(FILEEXISTS(INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI')=0, sMonPath := '');
+   IF(sMonPath = '', RAISEEXCEPTION ('Не найден Монитор ЭД'));
+
+   VAR ('sMonitorIniPath', String, INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI');
+
+    IF (INIFILE ('DB', 'ArcType', '1', sMonitorIniPath) = 1,
+      Block(
+        // База данных Access
+        VAR ('sDBPath', String, INIFILE ('DB', 'ArcDir', '', sMonitorIniPath) + 'MONITORED.MDB');
+        IF (sDBPath = '', RAISEEXCEPTION ('Не найден путь к базе Монитора ЭД'));
+        sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sDBPath +';Persist Security Info=False';
+      ),
+      Block(
+        // База данных SQL Server
+          //      INIFILE ('DB', 'Arc_SQL_ServerName', '');
+          //      INIFILE ('DB', 'Arc_SQL_DBName', '');
+          //      INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0');
+          //      INIFILE ('DB', 'Arc_SQL_Login', '');
+          //      INIFILE ('DB', 'Arc_SQL_Password', '');
+          //      INIFILE ('DB', 'Arc_SQL_CommonDir', '');
+
+        sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + INIFILE ('DB', 'Arc_SQL_ServerName', '', sMonitorIniPath) + ';Initial Catalog=' + INIFILE ('DB', 'Arc_SQL_DBName', '', sMonitorIniPath) + ';';
+        IF (INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0', sMonitorIniPath) = '1',
+
+          Block(
+            sConnString := sConnString + 'Integrated Security=SSPI;';
+          ),
+          Block(
+            sConnString := sConnString + 'User Id=' + INIFILE ('DB', 'Arc_SQL_Login', '', sMonitorIniPath) + ';Password=' + INIFILE ('DB', 'Arc_SQL_Password', '', sMonitorIniPath);
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+        )
+    );
+
+    //showmessage(sConnString);
+    sConnString;
+  )
+),
+
+
+VAR ('sSQL', String, '');
+VAR ('sDocIDList', String);
+VAR ('iDOType', Integer, 0);
+VAR ('vPlaceID', Integer);
+VAR ('vMainID', Integer);
+VAR ('vCounter', Integer);
+VAR ('vDocumentID', String, '');
+VAR ('sDocumentID', String, '');
+VAR ('vDO2RegNo', String);
+
+  IF (FIELDISNULL ('REL_MAIN', 'PLACEID') = 0,
+    Block(
+      iDOType := CHOICEVARIANT ('Выберите тип документа', 2, 0, ['ДО-1', 'ДО-2']);
+    )
+  ); // IF - //
+
+  IF (iDOType = -1, RAISEEXCEPTION ('Отменено пользователем'));
+  vDocumentID := TRIM(INPUTTEXT('DocumentId документа', 'Введите DocumentID'));
+  IF (vDocumentID = '', RAISEEXCEPTION ('Отменено пользователем'));
+  CASE (iDoType, [0,
+                  Block(
+                    vPlaceID    := KRD_MAIN.PLACEID;
+                    vMainID     := KRD_MAIN.MAIN_ID;
+                    vCounter    := 0;                    
+                    IF (LENGTH (TRIM(KRD_MAIN.REG_NBD)) > 0, RAISEEXCEPTION ('ДО-1 уже зарегистрирована'));
+                  ),
+                  1,
+                  Block(
+                    vPlaceID    := KRD_MAIN.PLACEID;
+                    OPENQUERY ('qDO2List', 'STS_DB', 'SELECT REG_RELEASE_NO, RELEASE_NO, RELEASE_DATE, MAIN_ID, DOC_TYPE, DOC_NO, main_counter, COUNTER, MC_STATUS, DOCUMENTID FROM ' + sRelease + ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + KRD_MAIN.MAIN_ID + ' AND MC_STATUS <> ' +char(39)+ '3' + char(39));
+                    IF (SELECTVALUES ('Выберите Форму ДО-2', 'qDO2List', [['RELEASE_NO', 'Отчёт №', 30], ['RELEASE_DATE', 'Дата отчёта', 30], ['DOC_TYPE', 'Тип выпускающего документа', 30], ['DOC_NO', 'Номер выпускающего документа', 30]], [['COUNTER', 'vCounter'], ['MAIN_ID', 'vMainID'], ['DOCUMENTID', 'sDocumentID'], ['REG_RELEASE_NO', 'vDO2RegNo']], '', 'STS_DB') = 0,
+                      Block(
+                        RAISEEXCEPTION ('Отменено пользователем');
+                      )
+                    ); // IF
+                    IF (LENGTH (TRIM (vDO2RegNo)) > 0, RAISEEXCEPTION ('ДО-2 уже зарегистрирована'));
+                  )], RAISEEXCEPTION ('Отменено пользователем');
+  ); // CASE
+  
+  sDocIDList := vDocumentID;
+
+  // Проверяем есть ли в базе Монитор ЭД регистрация по указанному\указанным DOCUMENTID
+  getConnString();
+  IF(LENGTH (sConnString) > 0,
+    Block(
+      OPENDATABASE ('dbMonitor', 'ActiveX Data Objects (ADO)', sConnString);
+      sSQL := 'SELECT * FROM [ED_ProcMessages] E WHERE E.[WHId]=' + vPlaceID + ' AND E.[WHDocId] = ' +char(39)+ vDocumentId +char(39)+ ' AND E.[MsgId]=' +char(39)+ 'CMN.13010' +char(39)+ ' ORDER BY E.[ProcessedAt]';
+      DEBUGMESSAGE (sSQL, 1);
+      OPENQUERY ('qPM', sSQL, 'dbMonitor');
+      IF (FIELDISNULL ('qPM', 'BackupFile') = 0,
+        Block(
+          // поключаем функцию GetBackupFile
+          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd');
+          VAR ('sBackupFile', String, GetBackupFile (qPM.BACKUPFILE, qPM.INCOMING));
+          IF (FILEEXISTS (sBackupFile),
+            Block(
+              // загружаем регистрацию ДО-1
+              SaveObject (sBackupFile, 0);
+              IF (iDOType = 0,
+                sSQL := 'UPDATE KRD_MAIN SET DOCUMENTID=' +char(39)+ qPM.WHDocID +char(39)+ ', ALBUM_VERSION=' +char(39)+ qPM.FmtVersion +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vMainID,
+                IF (iDOType = 1, sSQL := 'UPDATE ' + sRelease + ' SET DOCUMENTID=' +char(39)+ qPM.WHDocID +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vMainID + ' AND COUNTER=' + vCounter)
+              ); // IF
+              DEBUGMESSAGE (sSQL, 1);
+              EXECUTESQL ('STS_DB', sSQL);
+              EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'data\impex\scripts\eps.imp');
+            ),
+            Block(
+              SHOWMESSAGE ('Не найден файл резервной копии регистрации ДО.', 2, 'Восстановление протокола по DOCUMENTID');
+            )
+          ); // IF
+        ),
+        Block(
+          RAISEEXCEPTION ('По DOCUMENTID (' +char(39)+ sDocIDList +char(39)+ ') не найдено сообщений о регистрации (CMN.13010)' );
+        )
+      ); // IF
+    )
+  ); // IF
+      
+
+

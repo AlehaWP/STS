@@ -1,0 +1,27 @@
+// *****************************************************************************
+// Название: Change.prd
+// Описание: Change.prd
+// Кнопка вызова: 0
+// Подпись кнопки: Change.prd
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//SETFILTER('KRD_MAIN_2','PLACEID = 14 AND ((MAIN_ID = 313351006) OR (MAIN_ID = 313351007)) ');
+FIRST('KRD_MAIN_2');
+VAR('vMAINID', integer, KRD_MAIN_2.MAIN_ID);
+        VAR('vPart_NO', integer, 0);
+//showmessage(KRD_MAIN_2.MAIN_ID);
+WHILE(EOF('KRD_MAIN_2') = 0,
+      BLOCK(
+        vPart_NO := vPart_NO + 1;
+        EDIT('KRD_MAIN_2');
+        SETFIELDVALUE('KRD_MAIN_2',
+                      'PART_NO', vPart_NO,
+                      'MAIN_ID', vMAINID
+        );
+        POST('KRD_MAIN_2');
+        NEXT('KRD_MAIN_2');
+      )
+);
+SETFILTER('KRD_MAIN_2','');

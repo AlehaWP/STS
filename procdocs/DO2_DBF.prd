@@ -1,0 +1,33 @@
+// *****************************************************************************
+// Название: DO2_DBF
+// Описание: DO2_DBF
+// Кнопка вызова: 0
+// Подпись кнопки: DO2_DBF
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR('sPath', string, '');
+IF (SELECTDIRECTORY ('sPath'),
+   BLOCK(
+      sPath :=INCLUDETRAILINGBACKSLASH(sPath);
+      IF (FILEEXISTS(sPath+'do2.dbf')=1,
+          BLOCK(
+                EXECUTESCRIPT (PROGRAMPATH() + 'ProcDocs\ReadDO2_DBF.prd');
+                ReadDO2(sPath);
+  	      )
+  	  );
+   ),
+   RAISEEXCEPTION ('Выполнение отменено')
+);
+
+
+
+
+
+
+
+
+
+
+

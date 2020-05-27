@@ -1,0 +1,205 @@
+// *****************************************************************************
+// Название: Импорт из Excel в ДО1мв
+// Описание: Импорт из Excel в ДО1мв для ПЗТК ООО "Морской рыбный порт"
+// Кнопка вызова: 1
+// Подпись кнопки: XLS->ДО1мв
+// *****************************************************************************
+//
+var('iMainMaxId', Integer,0 );
+var('maxid', Integer,0 );
+var('iNBD', Integer,0 );
+//iNBD := Convert( INIFILE ('GenNo', 'NBD_KPS_DO1mv_IMP', '1','Counters.ini'),Integer);
+VAR('sFileName', String);
+VAR('sListName', String);
+sListName := INPUTTEXT ('', 'Введите название листа:', 'Таблица 1');
+var('sNBD',String, SOLVE (INIFILE ('Docs', 'MakeBD_No', '1')) );
+sListName := '`.`'+sListName+'$';
+//sFileName := 'C:\work\port\GREEN TROMSO (new).xls';
+  IF (SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel-файлы (*.xls)|*.xls'),
+       Block(
+         OPENDATABASE ('TEST_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=exce');
+//         OPENDATABASE ('TEST_DB', 'Microsoft Excel Driver (*.xls)', 'ODBC DSN=exce');
+
+         OPENTABLE ('SOURS_TBL', sFileName+sListName, '', 'TEST_DB');
+         iMainMaxId := GENFIELDVALUE('KRD_MAIN_2.ID');
+         OPENQUERY ('qGroupKON', 'select N9 from '+CHAR (34)+sFileName+sListName+CHAR (34)+'where N9 is not null group by N9','TEST_DB');
+         OPENQUERY ('qGroupKON_TRANS', 'select N4 from '+CHAR (34)+sFileName+sListName+CHAR (34)+' group by N4','TEST_DB');
+         var('iTotalDO',Integer,RECORDCOUNT ('qGroupKON')); // кол-во партий ДО1мв
+         var('iTek',Integer,0);
+         var('iFlag',Integer,0);
+         FIRST ('qGroupKON');
+//         showmessage(iTotalDO);
+        while( iTek < iTotalDO,
+         Block(
+//         showmessage(qGroupKON.N9);
+                if( LENGTH (qGroupKON.N9) =0,,
+                   Block(
+                          SETFILTER ('SOURS_TBL', '');
+                          SETFILTER ('SOURS_TBL', '(N9='+CHAR (39)+ qGroupKON.N9 +CHAR (39)+')');
+                          FIRST ('SOURS_TBL');
+                           EDITRECORD ('KRD_MAIN');
+                           APPENDRECORD ('KRD_MAIN');
+//                           OPENQUERY ('stor', 'STS_DB', 'Select max(ID) AS MAXID from KRD_MAIN');
+                           maxid := GENFIELDVALUE('KRD_MAIN_2.ID');
+//                           showmessage('maxid :='+maxid);
+
+//                           showmessage('id :='+);
+                           SETFIELDVALUE ('KRD_MAIN','PLACEID', 1,
+                                                     'ID', maxid,
+                                                     'MAIN_ID', iMainMaxId,
+                                                     'PART_MODE', 1,
+                                                     'NBD',SOURS_TBL.N2,
+                                                     'PART_NO', iTek+1,
+                                                     'G011', 'ИМ',
+                                                     'G012', '40',
+                                                     'A_MODE', 7,
+                                                     'Z_MODE', 3,
+                                                     'BD_DATE', CONVERT (SOURS_TBL.N3, DateTime),
+                                                     'G19', '0',
+                                                     'BEG_KEEP', CONVERT (SOURS_TBL.N13, DateTime),
+                                                     'ARR_DATE', CONVERT (SOURS_TBL.N12, DateTime),
+                                                     'DOC_STATE',0,
+                                                     'WITH_PLACE',1,
+                                                     'NOTICE_RW_ONLY',0,
+                                                     'RAD_CONTROL','В НОРМЕ',
+                                                     'SHOW_NBD',SOLVE (INIFILE ('Docs', 'MakeBD_No', '1')),
+                                                     'G210',1,
+                                                     'MC_STATUS_BD', '0',
+
+                                                      'SHIP_NAME', SOURS_TBL.N4,
+                                                      'G042', UPPERSTR (SOURS_TBL.N4),
+                                                      'G043', UPPERSTR (SOURS_TBL.N5),
+                                                      'G261', SOURS_TBL.N6,
+                                                      'G022', UPPERSTR (SOURS_TBL.N22),
+                                                      'G023', UPPERSTR (SOURS_TBL.N23),
+                                                      'G084C', SOURS_TBL.N27,
+                                                      'G082', UPPERSTR (SOURS_TBL.N25),
+                                                      'G083', UPPERSTR (SOURS_TBL.N26),
+                                                      'G17A', SOURS_TBL.N31,
+                                                      'AUTHOR_POST', SOURS_TBL.N28,
+                                                      'AUTHOR', SOURS_TBL.N29,
+                                                      'G04_COUNTRY', REFERENCE('OKSMT.DBF', 'KRNAIM', UPPERSTR (SOURS_TBL.N5), 'KOD', 'DATE_MOD', 'DATE_NIL',CONVERT (SOURS_TBL.N10, DateTime)),
+                                                      'TRANSP_COUNTRY', REFERENCE('OKSMT.DBF', 'KRNAIM', UPPERSTR (SOURS_TBL.N7), 'KOD', 'DATE_MOD', 'DATE_NIL',CONVERT (SOURS_TBL.N10, DateTime)),
+                                                      'G15A',SOURS_TBL.N24
+                                                      
+                                          );
+                           POSTRECORD ('KRD_MAIN');
+//RAISEEXCEPTION (1);
+//================================== ТРАНСПОРТНЫЕ СРЕДСТВА ===============================================================
+         FIRST ('qGroupKON_TRANS');
+         WHILE (EOF ('qGroupKON_TRANS')=0, 
+          BLOCK (
+               IF ( LENGTH (qGroupKON_TRANS.N4)=0,,
+                BLOCK (
+                       EDITRECORD ('KRD_TRANSP');
+                       SETFIELDVALUE ('KRD_TRANSP','PLACEID', 1,
+                                                 'ID', maxid,
+                                                 'CARNO', qGroupKON_TRANS.N4
+                                                 
+                                                 );
+
+                       POSTRECORD ('KRD_TRANSP');
+
+                );
+               );//IF
+               NEXT ('qGroupKON_TRANS');
+          ) //BLOCK
+         );//WHILE
+
+//================================== ДОКУМЕНТЫ ===============================================================
+
+          
+                       EDITRECORD ('KRD_PAPERS');
+                       SETFIELDVALUE ('KRD_PAPERS','PLACEID', 1,
+                                                 'ID', maxid,
+                                                 'PAPERNO', SOURS_TBL.N9,
+                                                 'PAPERNAME', SOURS_TBL.N8,
+                                                 'PAPERDATE', CONVERT (SOURS_TBL.N10, DateTime),
+                                                 'PAPERCODE', '2011'
+
+                                                 );
+
+                       POSTRECORD ('KRD_PAPERS');
+
+
+//================================== ТОВАРЫ ===============================================================
+
+
+
+
+
+
+
+                           iFlag := 0;
+                          FIRST ('SOURS_TBL');
+                          WHILE (EOF ('SOURS_TBL')=0, 
+                            Block(
+
+                                   if (LENGTH (SOURS_TBL.N16) =0, ,
+                                     if (iFlag =0,
+                                       Block(
+                                             EDITRECORD ('KRD_COMM');
+                                             SETFIELDVALUE ('KRD_COMM','PLACEID', 1,
+                                                                       'ID', maxid,
+
+                                                                       'G33', SOURS_TBL.N16,
+                                                                       'G312', UPPERSTR (SOURS_TBL.N15),
+                                                                       'ACCEPTDATE',SOURS_TBL.N13,
+                                                                       'STORAGE_DATE',SOURS_TBL.N14,
+                                                                       'G313',SOURS_TBL.N17,
+                                                                       'G311',SOURS_TBL.N18,
+                                                                       'G35',SOURS_TBL.N19,
+                                                                       'G38',SOURS_TBL.N30,
+                                                                       'BOXNO',SOURS_TBL.N20,
+                                                                       'G315','КГ'
+
+                                                                       );
+
+                                             POSTRECORD ('KRD_COMM');
+                                        iFlag := 1;
+                                        ),// block
+                                       Block(
+                                             EDITRECORD ('KRD_COMM');
+                                             APPENDRECORD ('KRD_COMM');
+                                             SETFIELDVALUE ('KRD_COMM','PLACEID', 1,
+                                                                       'ID', maxid,
+
+                                                                       'G33', SOURS_TBL.N16,
+                                                                       'G312', UPPERSTR (SOURS_TBL.N15),
+                                                                       'ACCEPTDATE',SOURS_TBL.N13,
+                                                                       'STORAGE_DATE',SOURS_TBL.N14,
+                                                                       'G313',SOURS_TBL.N17,
+                                                                       'G311',SOURS_TBL.N18,
+                                                                       'G35',SOURS_TBL.N19,
+                                                                       'G38',SOURS_TBL.N30,
+                                                                       'BOXNO',SOURS_TBL.N20,
+                                                                       'G315','КГ'
+                                                                       
+
+                                                                       );
+
+                                             POSTRECORD ('KRD_COMM');
+                                        )// block
+                                      );//if
+                                      );//if
+
+                                     NEXT ('SOURS_TBL');
+                              )// block
+                             );//while
+                       ) //block
+
+                       ); //if
+               iTek := iTek +1;
+               NEXT ('qGroupKON');
+         ) //block
+         );// while
+         CLOSEDATASET ('SOURS_TBL');
+         CLOSEDATABASE ('TEST_DB');
+         GLOBALREFRESH ();
+       )
+          ,
+
+//WRITEINIFILE ('Counters.ini','GenNo', 'NBD_KPS_DO1mv_IMP', iNBD+1 );
+
+);
+

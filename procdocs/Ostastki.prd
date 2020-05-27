@@ -1,0 +1,29 @@
+// *****************************************************************************
+// Название: Остатки товаров
+// Описание: Остатки товаров
+// Кнопка вызова: 0
+// Подпись кнопки: Остатки товаров
+// Вызов по событию: 
+// *****************************************************************************
+//
+CREATELOGFILE ('Goods');
+OPENQUERY('Goods','STS_DB', 'SELECT KC.PLACEID, KC.ID, KC.G32, (SELECT G312 FROM KRD_COMM WHERE (ID = KC.ID) AND (G32 = KC.G32)) as G312, MAX(KC.G35) as G35, SUM(RC.RELEASE_G35) As rel_G35,(MAX(KC.G35) - SUM(RC.RELEASE_G35)) as Ostatki, MAX(COUNTER) '+
+                            'FROM ' +
+                            'KRD_COMM KC LEFT JOIN REL_COMM RC  ON ((KC.PLACEID = RC.PLACEID) AND (KC.ID = RC.ID) AND (KC.G32 = RC.G32)) ' +
+                            'WHERE ' +
+                            '(KC.PLACEID = '+KRD_MAIN.PLACEID+') AND (KC.ID = '+KRD_MAIN.ID+') ' +
+                            'GROUP BY KC.PLACEID, KC.ID, KC.G32 '+
+                            'HAVING '+
+                            '(MAX(COUNTER) IS NULL) OR '+
+                            '(MAX(KC.G35) > SUM(RC.RELEASE_G35)) '+
+                            'ORDER BY G32'
+);
+First('GOODS');
+WHILE(EOF('GOODS') = 0,
+      BLOCK(
+        APPENDLOGFILE ('Goods', ' Товар найден' + Goods.G312 + 'Остатки' + convert( Goods.Ostatki,string));
+        NEXT('GOODS');
+      )
+);
+
+SHOWLOGFILE ('Goods', 'Товары');

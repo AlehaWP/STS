@@ -1,0 +1,80 @@
+// *****************************************************************************
+// Название: Док. Выдачи
+// Описание: Док. Выдачи
+// Кнопка вызова: 0
+// Подпись кнопки: Док. Выдачи
+// *****************************************************************************
+//
+
+
+Func('LogMessage', Block(
+  Param('sNumPP', String, 0),
+  Param('sGTDate', String, 1),
+  Param('sInfoType', String, 2),
+  Param('sInInfo', String, 3),
+  Param('sOutInfo', String, 4),
+  Param('sRestInfo', String, 5),
+  Param('sPlace', String, 6),
+  Param('sWeight', String, 7),
+),        //функция для вывода строки в журнал
+  AppendlogFile(sLogFile, '|' + CENTER(sNumPP, 5) + '| ' +
+                                CENTER(sGTDate, 10) + ' | ' +
+                                CENTER(sInfoType, 7) + ' | ' +
+                                CENTER(sInInfo, 3) + '|' +
+                                CENTER(sOutInfo, 5) + '|' +
+                                CENTER(sRestInfo, 25) + '|' +
+                                CENTER(sPlace, 5) + '|' +
+                                CENTER(sWeight, 7) + '|')
+);
+
+
+Var('iDiffCounter', Integer, 0);
+
+VAR ('sLogFile', String, TempDirectory() + 'ChkRests.log');  { имя файла журнала }
+CREATELOGFILE (sLogFile);
+
+AppendLogFile(sLogFile, '');
+AppendLogFile(sLogFile, 'Время ' + CHARSTR(' ', 15) + FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+AppendLogFile(sLogFile, 'Товар № '+KRD_COMM.G32);
+                        {         1         2         3         4         5         6         7         8         9          }
+                        {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------'),
+AppendLogFile(sLogFile, '|  №  |    Дата    |  Вид    |№ пп| Тип |                         |     |       |'),
+AppendLogFile(sLogFile, '| п/п | выдачи тов.|   ДУ    | ДУ | док.|        Номер            |Мест |  Вес  |'),
+AppendLogFile(sLogFile, '|     |  со склада |         |    |     | Таможенного документа   |     |       |'),
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------'),
+
+
+OPENQUERY ('qryRC', 'STS_DB', 'SELECT * FROM REL_COMM RC INNER JOIN RELEASE R ON (R.PLACEID = RC.PLACEID) AND (R.ID = RC.ID) AND (R.COUNTER = RC.COUNTER)'+
+                                   ' WHERE PLACEID ='+ KRD_COMM.PLACEID +' AND ID ='+KRD_COMM.ID+' AND G32 = '+KRD_COMM.G32+
+                                   ' ORDER BY COUNTER');
+
+FIRST('qryRC');
+WHILE (EOF ('qryRC')=0,Block(
+                               //showmessage(FIELDVALUE ('qryRC', 'COUNTER'));
+                              iDiffCounter:= iDiffCounter + 1;
+                              LogMessage(Convert(iDiffCounter,string),FIELDVALUE ('qryRC', 'RELEASE_GOODS_DATE'), 'ДО2',FIELDVALUE ('qryRC', 'COUNTER') , FIELDVALUE ('qryRC', 'DOC_TYPE'),
+                                         FIELDVALUE ('qryRC', 'DOC_NO'), FIELDVALUE ('qryRC', 'RELEASE_G311'),FIELDVALUE ('qryRC', 'RELEASE_G35'));
+                              NEXT('qryRC');
+
+
+                            )
+);
+
+OPENQUERY ('qryACTOUT', 'STS_DB', 'SELECT * FROM OUT_COMM OC INNER JOIN OUT_MAIN OM ON (OM.PLACEID = OC.PLACEID) AND (OM.ID = OC.ID) AND (OM.ACTOUTID = OC.ACTOUTID)'+
+                                   ' WHERE PLACEID ='+ KRD_COMM.PLACEID +' AND ID ='+KRD_COMM.ID+' AND G32 = '+KRD_COMM.G32+
+                                   ' ORDER BY ACTOUTID');
+
+FIRST('qryACTOUT');
+WHILE (EOF ('qryACTOUT')=0,Block(
+                               
+                              iDiffCounter:= iDiffCounter + 1;
+                              LogMessage(Convert(iDiffCounter,string), FORMATDATETIME ('dd.mm.yyyy', FIELDVALUE ('qryACTOUT', 'G542')),'АКТ ВЫДАЧИ', FIELDVALUE ('qryACTOUT', 'ACTOUTID') , FIELDVALUE ('qryACTOUT', 'DOC_TYPE'),
+                                         FIELDVALUE ('qryACTOUT', 'ND_GTD'), FIELDVALUE ('qryACTOUT', 'OUT_G311'), FIELDVALUE ('qryACTOUT', 'OUT_G35'));
+                              NEXT('qryACTOUT');
+
+
+                            )
+);
+ShowLogFile(sLogFile, 'Документы выдачи груза со склада');
+                                          

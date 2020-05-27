@@ -1,0 +1,73 @@
+// *****************************************************************************
+// Название: Путь к базе
+// Описание: Путь к базе
+// Кнопка вызова: 0
+// Подпись кнопки: Путь к базе
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('sIniFile', string, PROGRAMPATH() + 'Journals.ini');
+VAR('bSQL', boolean, False);
+VAR('bParadox',boolean, False);
+VAR('bUseBuiltAuth',boolean, False);
+VAR('sPathSQL',string,'');
+VAR('sNameBD',string,'');
+VAR('sUser',string,'');
+VAR('sPassword',string,'');
+VAR('sPathAccess',string,'');
+//showmessage(1);
+
+
+     FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\PathToBase.cfm');
+     showmessage (INIFILE('ScriptConnectToBase', 'Paradox', True));
+     FORMSETPROPERTY(frmDialog, 'SQL.Checked',IF (INIFILE('ScriptConnectToBase', 'SQL', False), true, false));
+     FORMSETPROPERTY(frmDialog, 'UseBuiltAuth.Checked', IF (INIFILE('ScriptConnectToBase', 'UseBuiltAuth', False), true, false));
+     FORMSETPROPERTY(frmDialog, 'PathSQL.Text', INIFILE('ScriptConnectToBase', 'PathSQL', ''));
+     FORMSETPROPERTY(frmDialog, 'NameBD.Text', INIFILE('ScriptConnectToBase', 'NameBD', ''));
+     FORMSETPROPERTY(frmDialog, 'User.Text', INIFILE('ScriptConnectToBase', 'User', ''));
+     FORMSETPROPERTY(frmDialog, 'Password.Text', INIFILE('ScriptConnectToBase', 'Password', '', sIniFile));
+     FORMSETPROPERTY(frmDialog, 'Paradox.Checked', IF (INIFILE('ScriptConnectToBase', 'Paradox', True), true, false));
+     FORMSETPROPERTY(frmDialog, 'PathAccess.Text', INIFILE('ScriptConnectToBase', 'PathAccess', ''));
+     if(FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено'));
+
+     bSQL:= FORMGETPROPERTY(frmDialog, 'SQL.Checked')='True';
+     bUseBuiltAuth := FORMGETPROPERTY(frmDialog, 'UseBuiltAuth.Checked')='True';
+     bParadox:= FORMGETPROPERTY(frmDialog, 'Access.Checked')='True';
+     sPathSQL:=FORMGETPROPERTY(frmDialog, 'PathSQL.Text');
+     sNameBD:=FORMGETPROPERTY(frmDialog, 'NameBD.Text');
+     sUser:=FORMGETPROPERTY(frmDialog, 'User.Text');
+     sPassword:=FORMGETPROPERTY(frmDialog, 'Password.Text');
+     sPathAccess:=FORMGETPROPERTY(frmDialog, 'PathAccess.Text');
+
+     WRITEINIFILE ('ScriptConnectToBase', 'SQL', bSQL, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'UseBuiltAuth', bUseBuiltAuth, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'Access', bAccess, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'PathSQL', sPathSQL, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'NameBD', sNameBD, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'User', sUser, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'Password', sPassword, sIniFile);
+     WRITEINIFILE ('ScriptConnectToBase', 'PathAccess', sPathAccess, sIniFile);
+
+
+//OPENQUERY ('Q_TOTAL_POST', 'SELECT JOURNAL_MASTER_ID FROM DELIVERY WHERE NUM_DELIVERY = ' + DELIVERY.NUM_DELIVERY, 'dbJournals');
+
+IF(bSQL,
+   IF(bUseBuiltAuth,
+      OPENDATABASE ('BASE_DCL', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=SQLOLEDB.1;Integrated Security=SSPI;Persist Security Info=False;'+
+                                                         'Initial Catalog='+ sNameBD +';Data Source='+ sPathSQL, 'FileLinkMode=0')
+      ,
+      OPENDATABASE ('BASE_DCL', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=SQLOLEDB.1;Password='+ sPassword +';Persist Security Info=True;User ID='+ sUser +';'+
+                                                         'Initial Catalog='+ sNameBD +';Data Source='+ sPathSQL, 'FileLinkMode=0')
+   )
+);
+IF(bAccess,
+   OPENDATABASE ('BASE_DCL', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sPathAccess +';Persist Security Info=False');
+);
+
+
+
+
+
+
+

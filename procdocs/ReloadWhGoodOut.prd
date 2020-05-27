@@ -1,0 +1,133 @@
+// *****************************************************************************
+// Название: Загрузка уведомлений о выдачи с СВХ
+// Описание: Повторная загрузка уведомлений о выдачи с СВХ. Если по какой-то причине в журнале не оказалось данных. Данные перезаписываются(скриптом загрузки eps.imp).
+// Кнопка вызова: 0
+// Подпись кнопки: ReloadWhGoodOut
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+FUNC ('SaveObject',
+  Block(
+    PARAM ('pBackupFile', String, 0);
+    // В xml-файле с отказом в регистрации ДО-1/Доб листа к ДО-1/ДО-2 нет признака на какой тип документа это отказ
+    // Поэтому принудительно дописываем в аттрибуты основного элемента признак "DocType" (0: не добавляем аттрибут, 1: ДО-1, 2: Доб лист к ДО-1, 3: ДО-2)
+    PARAM ('pDocType', Integer, 1);
+  ),
+  Block(
+    IF (FILEEXISTS(pBackupFile),
+       Block(
+         VAR ('XmlDoc', Integer);
+         VAR ('XmlObject', Integer);
+         VAR ('XmlDORegInfo', Integer);
+         VAR ('sXmlFileToSave', String, '');
+         XMLDoc := XMLDOCUMENTCREATE();
+         XMLDOCUMENTLOAD (XMLDoc, pBackupFile);
+         XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+         XMLDORegInfo := XMLNODECHILD (XmlObject, 0);
+         VAR ('DoType', String,       XMLNODEVALUE (XMLNODECHILD (XMLNODECHILD (XMLDORegInfo, 'whgou:ProduceDocuments') , 'cat_ru:PrDocumentName')));
+         VAR ('DoNo', String,         XMLNODEVALUE (XMLNODECHILD (XMLNODECHILD (XMLDORegInfo, 'whgou:ProduceDocuments') , 'cat_ru:PrDocumentNumber')));
+         VAR ('DoDate', String,       XMLNODEVALUE (XMLNODECHILD (XMLNODECHILD (XMLDORegInfo, 'whgou:ProduceDocuments') , 'cat_ru:PrDocumentDate')));
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'dodt', FormatDateTime('DD.MM.YYYY HH:MM:SS', Date () + Time (1)));
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'issuedocname', DoType);
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'issuedocnumber', DoNo);
+         XMLNODESETATTRIBUTE (XMLDORegInfo, 'issuedocdate', DoDate);
+
+         IF (DIRECTORYEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO ('', 'UserUuid')) = 0,
+           Block(
+             FORCEDIRECTORIES (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO('', 'UserUuid'));
+           ),
+         ); // IF
+         sXmlFileToSave := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO ('', 'UserUuid') + '\' + EXTRACTSTR (pBackupFile, SPLITSTR (pBackupFile, '\', sSQL), '\');
+         XMLNODESAVE (XMLDORegInfo, sXmlFileToSave);
+       ),
+    ); // IF
+  )
+), // FUNC
+
+VAR ('sSTSAlbum', String, INIFILE ('XMLFormat', 'Version', '5.14.3'));
+VAR ('sSQL', String, '');
+VAR ('sFileFromBase', String, '');
+VAR ('sTempFile', String, '');
+
+VAR ('dtDateFrom', DateTime, Date() - 3);
+VAR ('dtDateTo', DateTime, Date() + ' 23:59:59');
+
+IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd') = 1,
+  Block(
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+  ),
+  Block(
+    RAISEEXCEPTION ('Не найден скрипт "sqldate.prd"');
+  )
+);
+
+IF (INPUTDATERANGE ('dtDateFrom', 'dtDateTo', 'Укажиде период для поиска уведомлений') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\open_monitor_db.prd') = 1,
+  Block(
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\open_monitor_db.prd');
+  ),
+  Block(
+    RAISEEXCEPTION ('Не найден скрипт "open_monitor_db.prd"');
+  )
+);
+
+TRYFINALLY (
+  Block(
+    SHOWINFORMATION ('Выполняется поиск уведомлений, подождите..');
+    sSQL := '';
+    sFileFromBase := '';
+    sTempFile := '';
+
+    VAR ('sMsgId', String, char(39)+ 'CMN.13014' +char(39));
+    IF (SHIFTPRESSED (), sMsgId := sMsgId + ',' +char(39)+ 'CMN.13030' +char(39));
+
+    sSQL := sSQL + 'SELECT BACKUPFILE, INCOMING FROM ED_PROCMESSAGES WHERE (MsgId IN (' + sMsgId + '))';
+    IF (STRPOS ('Provider=Microsoft.Jet.OLEDB.4.0', sConnString),
+        sSQL := sSQL + ' AND (PreparedAt BETWEEN #'+ REPLACESTR (FDT('MM.DD.YYYY', dtDateFrom), '.', '/') +' 00.00# AND #'+ REPLACESTR (FDT('MM.DD.YYYY', dtDateTo), '.', '/') +' 23.59# )',
+    );
+    IF (STRPOS ('Provider=SQLOLEDB.1', sConnString),
+        sSQL := sSQL + ' AND (PreparedAt BETWEEN '+ CHAR(39)+ FDT('DD.MM.YYYY', dtDateFrom) +' 00:00'+ CHAR(39)+' AND '+ CHAR(39)+ FDT('DD.MM.YYYY', dtDateTo) +' 23:59'+ CHAR(39)+' )',
+    );
+
+    OPENQUERY ('Q_FILE', sSQL, 'dbMonitor');
+    FIRST ('Q_FILE');
+    WHILE ( EOF ('Q_FILE') = 0,
+      Block (
+        // подключение функции GetBackupFile
+        EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd');
+        sFileFromBase := GetBackupFile (Q_FILE.BACKUPFILE, Q_FILE.INCOMING);
+        IF (FILEEXISTS (sFileFromBase),
+          Block (
+            sTempFile := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ())+ GENERATEUUID ()+'.xml';
+            //showmessage(sTempFile);
+            COPYFILE (sFileFromBase, sTempFile);
+            SaveObject (sTempFile, 0);
+            DELETEFILE (sTempFile);
+          ),
+        ); // IF
+        NEXT ('Q_FILE')
+      )
+    ); // WHILE
+    
+    // ПОДКЛИЧЕНИЕ К БАЗЕ МОНИТОР ЭД (КОНЕЦ)
+  ),
+  Block(
+    HIDEINFORMATION ();
+    CLOSEDATABASE ('dbMonitor');
+  )
+); // TRYFINALLY
+
+TRYFINALLY (
+  Block(
+    GLOBALVAR('iShowProgressBar', Integer, 1);
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'data\impex\scripts\eps.imp'),
+  ),
+  Block(
+    iShowProgressBar := 0;
+    REFRESH ('JRGOODOUT2');
+  )
+); // TRYFINALLY

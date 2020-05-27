@@ -1,0 +1,290 @@
+// *****************************************************************************
+// Название: CA_DBF
+// Описание: CA_DBF
+// Кнопка вызова: 0
+// Подпись кнопки: CA_DBF
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Func('CreateComAct',,
+     BLOCK(
+           OPENQUERY ('GET_C','STS_DB','SELECT MAX(COUNTER) as CR FROM KRD_DOP WHERE PLACEID='+iPlaceID+' AND ID='+iID);
+           VAR('iActCounter', integer, GET_C.CR + 1);
+           EXECUTESQL('STS_DB', 'INSERT INTO KRD_DOP '+
+                                '('+
+                                'PLACEID, ID, COUNTER, '+//Doc_Order_Number, '+
+                                'DOC_NAME, DOC_NO, DOC_DATETIME, '+
+                                'REASONS, WAREHOUSEPERSON_SURNAME, '+
+                                'WAREHOUSEPERSON_NAME, WAREHOUSEPERSON_POST '+
+                                ') '+
+                                'VALUES '+
+                                '('+
+                                 iPlaceid+', '+iID+', '+iActCounter+', '+ //iCaOrderCounter + ', '+//1
+                                 char(39)+'Коммерческий акт'+char(39)+ ', '+char(39)+COMACT.G074+char(39)+', '+char(39)+sActDate+char(39)+', '+//2
+                                 char(39)+COMACT.COMMENT+char(39)+ ', '+char(39)+EXTRACTSTR (COMACT.G02_2, 1, ' ')+char(39)+', '+
+                                 char(39)+EXTRACTSTR (COMACT.G02_2, 2, ' ')+char(39)+', '+char(39)+COMACT.G02_1+char(39)+
+                                ') '
+           );
+           iActCounter
+     )
+),
+
+Func('AddGoodsInComAct',,
+     BLOCK(
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                             '('+
+                             'PLACEID, ID, G32, '+
+                             'COUNTER, SDM_KIND, SDM_STAGE, '+
+                             'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                             'DOC_G312, DOC_G42, DOC_G42_CURRENCY, DOC_G311, '+
+                             'DOC_G35 '+
+                             ') '+
+                             'VALUES '+
+                             '('+
+                              iPlaceid+', '+iID+', '+iG32+', '+
+                              iComActCounter+ ', '+char(39)+COMACT.DOCTYPE+char(39)+', '+char(39)+COMACT.TYPE+char(39)+', '+//2
+                              char(39)+sActDate + char(39)+', '+char(39)+COMACT.COMMENT+char(39)+', '+char(39)+KC.G33+char(39)+', '+
+                              char(39)+KC.G312+char(39)+', '+KC.G42+', '+ char(39)+KC.G42_CURRENCY+char(39)+', '+KC.G311+',  '+
+                              KC.G35 +
+                              ') '
+          );
+
+          EXECUTESQL('STS_DB', ' UPDATE KRD_COMM SET '+
+                               ' G312='+char(39)+COMACT.G31_11+char(39)+' , '+
+                               ' G35=CONVERT(float,'+char (39) + COMACT.G351+char(39)+') , '+
+                               ' G311='+COMACT.G31_21+
+                               ' WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND G32='+iG32
+
+          );
+ 
+     )
+),
+
+Func('AddNewGoodsInDOCommAct',,
+     BLOCK(
+          // Получаем порядковый номер товара в накладной
+          OPENQUERY( 'LastComminTTN','STS_DB', 'SELECT MAX(N_TTN_G32) as N_TTN_G32 FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND N_TTN=1');
+          OPENQUERY( 'FirstComm','STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND G32=1');
+          VAR('iNTTNG32', integer, LastComminTTN.N_TTN_G32+1);
+
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_COMM '+
+                               '('+
+                               'PLACEID, ID, G32, GN, '+
+                               'G311, '+
+                               'G312, G35, '+
+                               'G42_CURRENCY, VALCODE, ACCEPTDATE, '+
+                               'STORAGE_DATE, N_TTN, N_TTN_G32, STORAGE_TYPE, LEG_PERIOD, STORE_PERIOD, '+
+                               'BOXNO, SVHAREA, SVHHANGAR '+
+                               ') '+
+                               'VALUES '+
+                               '('+
+                                iPlaceid+', '+iID+', '+iG32+', '+iG32+', '+
+                                COMACT.G31_21+', '+
+                                char(39)+COMACT.G31_11+char(39)+', '+COMACT.G351+', '+
+                                char(39)+FirstComm.G42_CURRENCY+char(39)+', '+ char(39)+FirstComm.VALCODE+char(39)+', '+char(39)+FirstComm.AcceptDate+char(39)+', '+
+                                char(39)+FirstComm.Storage_Date+char(39)+', 1, '+iNTTNG32+', ' +char(39)+ FirstComm.Storage_Type+char(39)+', ' + FirstComm.Leg_Period+', ' + FirstComm.Store_Period+', '+
+                                char(39)+ FirstComm.Boxno + char(39)+', '+char(39)+ FirstComm.SVHAREA+char(39)+', ' +char(39)+ FirstComm.SVHHANGAR+char(39)+
+                               ') '
+          );
+
+          EXECUTESQL('STS_DB', 'INSERT INTO KR_C_P'+
+                               '('+
+                               'PLACEID, ID, G32, '+
+                               'DOC_COUNTER, DOC_TYPE'+
+                               ') '+
+                               'VALUES '+
+                               '('+
+                               iPlaceid+', '+iID+', '+iG32+', '+
+                               '1, '+char(39)+'13'+char(39)+
+                               ') '
+          );
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                             '('+
+                             'PLACEID, ID, G32, '+
+                             'COUNTER, SDM_KIND, SDM_STAGE, '+
+                             'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                             'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                             'DOC_G311, DOC_G35 '+
+                             ') '+
+                             'VALUES '+
+                             '('+
+                              iPlaceid+', '+iID+', '+iG32+', '+
+                              iComActCounter+ ', '+char(39)+COMACT.DOCTYPE+char(39)+', '+char(39)+COMACT.TYPE+char(39)+', '+//2
+                              char(39)+sActDate + char(39)+', '+char(39)+COMACT.COMMENT+char(39)+', NULL, '+
+                              'NULL, NULL, NULL, '+
+                              'NULL, NULL '+
+                              ') '
+          );
+
+     )
+),
+
+
+FUNC ('ReadCA',,
+      BLOCK(
+
+            //OPENTABLE ('COMACT', 'COMACT.dbf', 'G071', 'DO_TABLE');
+            OPENQUERY ('COMACT','SELECT * FROM COMACT.dbf WHERE FUNC='+char (39)+'0'+char (39),'DO_TABLE');
+
+
+            First('COMACT');
+            While(EOF('COMACT')=0,
+              BLOCK(
+                    OPENQUERY('KM', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE NBD='+char(39)+LEFTPAD(COMACT.DO1_G074,7,'0')+char(39) +
+                                              ' AND BD_DATE>=' +char(39)+FORMATDATETIME('DD.MM.YYYY 00:00:00', COMACT.DO1_G542)+char(39) +
+                                              ' AND BD_DATE<=' +char(39)+FORMATDATETIME('DD.MM.YYYY 23:59:59', COMACT.DO1_G542)+char(39));
+
+                    IF (RECORDCOUNT ('KM') <> 0,
+                        BLOCK(//showmessage(1);
+                              VAR ('iPlaceID', integer, KM.PLACEID);
+                              VAR ('iID', integer, KM.ID);
+                              VAR ('sActDate', string, FormatDateTime('DD.MM.YYYY ', COMACT.G542) + ' ' + COMACT.G5421);
+                              OPENQUERY('KC', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPLACEID+ ' AND ID='+iID+' AND G32='+COMACT.DO1_G32);
+                              IF (RECORDCOUNT ('KC') <> 0,
+                                  BLOCK( //showmessage(2);
+                                        VAR ('iG32', integer, COMACT.DO1_G32);
+                                        VAR ('iComActCounter', integer, 0);
+                                        OPENQUERY('KD', 'STS_DB', 'SELECT COUNTER FROM KRD_DOP WHERE PLACEID='+iPLACEID+ ' AND ID='+iID+' AND DOC_NO='+char(39)+COMACT.G074+char(39));
+                                        IF (RECORDCOUNT('KD')=0, iComActCounter := CreateComAct(), iComActCounter:= KD.COUNTER);
+                                        CASE (COMACT.DOCTYPE,
+                                             ['0', AddGoodsInComAct(),
+                                              '1', AddGoodsInComAct(),
+                                              '2', AddNewGoodsInDOCommAct()
+                                             ],
+                                        );
+                                  ),
+                              );
+                        )
+                    );
+                    NEXT('COMACT');
+              );
+            );
+
+
+      )
+),
+
+Func('CreateLetter',,
+     BLOCK(
+           OPENQUERY ('GET_C','STS_DB','SELECT MAX(COUNTER) as CR FROM KRD_LETTER WHERE PLACEID='+iPlaceID+' AND ID='+iID);
+           VAR('iActCounter', integer, GET_C.CR + 1);
+
+           EXECUTESQL('STS_DB', 'INSERT INTO KRD_LETTER '+
+                                '('+
+                                {1}'PLACEID, ID, COUNTER, '+//Doc_Order_Number, '+
+                                {2}'LETTER_NAME, LETTER_NO, LETTER_DATETIME, '+
+                                'MISTAKESINFO_DATETIME, MISTAKESINFO_REASONS, WAREHOUSEPERSON_SURNAME, '+
+                                'WAREHOUSEPERSON_NAME, WAREHOUSEPERSON_POST '+
+                                ') '+
+                                'VALUES '+
+                                '('+
+                                 {1}iPlaceid+', '+iID+', '+iActCounter+', '+ //iCaOrderCounter + ', '+//1
+                                 {2}char(39)+'Письмо'+char(39)+ ', '+char(39)+LETTER.G074+char(39)+', '+char(39)+sLetterDate+char(39)+','+//2
+                                 char(39)+sLetterDate+char(39)+', '+char(39)+LETTER.COMMENT+char(39)+ ', '+char(39)+EXTRACTSTR (LETTER.G02_2, 1, ' ')+char(39)+', '+
+                                 char(39)+EXTRACTSTR (LETTER.G02_2, 2, ' ')+char(39)+', '+char(39)+LETTER.G02_1+char(39)+
+                                ') '
+           );
+           iActCounter
+     )
+),
+
+Func('ADDDOCINLETTER',,
+     BLOCK(
+          //showmessage(1);
+          OPENQUERY ('GET_ID', 'STS_DB', 'SELECT MAX(SUBID) as SUBID FROM KRD_LMD WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND COUNTER='+iLetterCounter);
+          EXECUTESQL('STS_DB', 'INSERT INTO KRD_LMD '+
+                             '('+
+                             'PLACEID, ID, COUNTER, '+
+                             'SUBID, TABLENAME, FIELDNAME, '+
+                             'KEYINFO,  '+
+                             'MISTAKEVALUE, VALIDVALUE '+
+                             ') '+
+                             'VALUES '+
+                             '('+
+                              iPlaceid+', '+iID+', '+iLetterCounter+', '+
+                              (GET_ID.SUBID + 1)+ ', '+char(39)+'KR_PAPER'+char(39)+', '+char(39)+'PAPERNO'+char(39)+', '+//2
+                              char(39)+iID + ';1;'+KP.COUNTER + char(39)+', '+
+                              char(39)+LETTER.N_TTN+char(39)+', '+char(39)+LETTER.N_TTN1+char(39)+
+                              ') '
+          );
+
+          EXECUTESQL('STS_DB', ' UPDATE KR_PAPER SET '+
+                               ' PAPERNO='+char(39)+LETTER.N_TTN1+char(39)+
+                               ' WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND COUNTER='+KP.COUNTER
+
+          );
+
+     )
+),
+
+FUNC ('ReadLetter',,
+      BLOCK(
+            //OPENTABLE ('COMACT', 'COMACT.dbf', 'G071', 'DO_TABLE');
+            OPENQUERY ('LETTER','SELECT * FROM CUSTLET.dbf WHERE FUNC='+char (39)+'1'+char (39),'DO_TABLE');
+
+
+            First('LETTER');
+            While(EOF('LETTER')=0,
+              BLOCK(
+                    OPENQUERY('KM', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE NBD='+char(39)+LEFTPAD(LETTER.DO1_G074,7,'0')+char(39) +
+                                              ' AND BD_DATE>=' +char(39)+FORMATDATETIME('DD.MM.YYYY 00:00:00', LETTER.DO1_G542)+char(39) +
+                                              ' AND BD_DATE<=' +char(39)+FORMATDATETIME('DD.MM.YYYY 23:59:59', LETTER.DO1_G542)+char(39));
+                    IF (RECORDCOUNT ('KM') <> 0,
+                        BLOCK(
+                              VAR ('iPlaceID', integer, KM.PLACEID);
+                              VAR ('iID', integer, KM.ID);
+                              VAR ('sLETTERDate', string, FormatDateTime('DD.MM.YYYY ', LETTER.G542) + ' ' + LETTER.G5421);
+                              OPENQUERY('KP', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID='+iPLACEID+ ' AND ID='+iID+' AND PAPERNO='+char(39)+LETTER.N_TTN+char(39));
+                              IF (RECORDCOUNT ('KP') <> 0,
+                                  BLOCK(//showmessage(LETTER.N_TTN);
+                                        //VAR ('iG32', integer, CUSTLET.DO1_G32);
+                                        VAR ('iLetterCounter', integer, 0);
+                                        VAR ('iPaperCounter', integer, KP.COUNTER);
+                                        OPENQUERY('KL', 'STS_DB', 'SELECT COUNTER FROM KRD_LETTER WHERE PLACEID='+iPLACEID+ ' AND ID='+iID+' AND LETTER_NO='+char(39)+LETTER.G074+char(39));
+                                        IF (FIELDISNULL('KL','COUNTER'), iLetterCounter := CreateLetter(), iLetterCounter:= KL.COUNTER);
+                                        OPENQUERY('KLMD', 'STS_DB', 'SELECT * FROM KRD_LMD WHERE PLACEID='+iPLACEID+ ' AND ID='+iID+' AND COUNTER='+iLetterCounter+' AND KEYINFO='+char(39)+iID + ';1;'+KP.COUNTER + char(39));
+                                         //showmessage (FIELDISNULL('KLMD','ID'));
+                                        IF (FIELDISNULL('KLMD','ID'), ADDDOCINLETTER());
+                                  ),
+                              );
+                        )
+                    );
+                    NEXT('LETTER');
+              );
+            );
+
+
+      )
+),
+
+FUNC ('ReadTable',PARAM('sFilePath', string, 0),
+      BLOCK(
+            VAR('sFilterCrit', string, '');
+            OPENDATABASE ('DO_TABLE', 'STANDARD', 'PATH=' + sFilePath);
+            IF (FILEEXISTS(sPath+'COMACT.dbf'), ReadCA(), ReadLetter());
+            CLOSEDATABASE('DO_TABLE');
+            GLOBALREFRESH ();
+            //sFilterCrit:= sFilterCrit + ' AND PART_NO=1';
+            //showmessage(sFilterCrit);
+            SETFILTER('KRD_MAIN', sFilterCrit);
+
+      )
+),
+//ReadTable ('C:\Users\a.nerchenko\Desktop\CA\');
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,239 @@
+// *****************************************************************************
+// Название: Импорт из Excel в ДО1
+// Описание: Импорт из Excel в ДО1
+// Кнопка вызова: 1
+// Подпись кнопки: XLS->ДО1
+// *****************************************************************************
+//
+var('maxid', Integer,0 );
+var('iNBD', Integer,0 );
+//iNBD := Convert( INIFILE ('GenNo', 'NBD_KPS_DO1mv_IMP', '1','Counters.ini'),Integer);
+VAR('sFileName', String);
+VAR('sListName', String);
+sListName := INPUTTEXT ('', 'Введите название листа:', 'Лист1');
+var('sNBD',String, SOLVE (INIFILE ('Docs', 'MakeBD_No', '1')) );
+sListName := '`.`'+sListName+'$';
+VAR ('PlaceIsSelected', Integer, 0);
+VAR ('vPlaceId', Integer);
+VAR ('vID', Integer);
+VAR ('dtDODate', DateTime);
+VAR ('dtStoreDate', DateTime);
+VAR ('vStorePeriod', Integer, 1);
+VAR ('dtBegkeep', DateTime);
+VAR('vPaperInv',string);
+VAR ('vG32', Integer, 1);
+VAR ('vCount', Integer, 1);
+VAR ('vCountPaper', Integer, 1);
+Func('isLeapYear',
+  Param('iYear', Integer, 0),
+Block(
+  (MOD(iYear, 4) = 0) * ((MOD(iYear, 400) = 0) | (MOD(iYear, 100) <> 0))
+));
+
+Func('DaysInMonth', Block(
+  Param('sYear', String, 0),
+  Param('sMonth', String, 1)
+),
+Block(
+  Var('iYear', Integer, CONVERT (sYear, Integer));
+  Var('iMonth', Integer, CONVERT (sMonth, Integer));
+  CASE (iMonth,
+    [1, 31,
+     2, IF(isLeapYear(iYear), 29, 28),
+     3, 31,
+     4, 30,
+     5, 31,
+     6, 30,
+     7, 31,
+     8, 31,
+     9, 30,
+     10, 31,
+     11, 30,
+     12, 31],
+    30)
+));
+
+Func('AddMonths', Block(
+  Param('dtDate', DateTime, 0),
+  Param('fMonths', Float, 1)
+), Block(
+  Var('dtResult', DateTime);
+
+  Var('iYear', Integer, CONVERT(FORMATDATETIME ('YYYY', dtDate), Integer));
+  Var('iMonth', Integer, CONVERT(FORMATDATETIME ('MM', dtDate), Integer));
+  Var('iDay', Integer, CONVERT(FORMATDATETIME ('DD', dtDate), Integer));
+
+  Var('fMonthPart', Float, 0);
+
+  // Прибавляем целое кол-во месяцев без учета годов в общем числе месяцев
+  iMonth := iMonth + MOD(TRUNC(fMonths), 12);
+
+  // Прибавляем кол-во лет
+
+  iYear := iYear + TRUNC(fMonths) / 12;
+  //showmessage(iYear);
+
+  // Прибавим год, если есть переход
+  IF(iMonth > 12, 
+    Block(
+      iMonth := iMonth - 12;
+      iYear := iYear + 1
+  ));
+
+  // Проверяем последние числа месяца, если надо - выравниваем
+  IF(iDay > DaysInMonth(Trim(iYear), Trim(iMonth)),
+    iDay := DaysInMonth(Trim(iYear), Trim(iMonth))
+  );
+
+  // Прибавляем кусок месяца, если надо
+  IF(CONVERT(TRUNC(fMonths), Float) < fMonths, Block(
+    // Доля остатка дней до конца месяца в общем числе дней месяца
+    fMonthPart := 1 - CONVERT(iDay, Float) / CONVERT(DaysInMonts(Trim(iYear), Trim(iMonth)), Float);
+
+    // Если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+    // прибавляемую долю уменьшим на остаток дней в предыдущем месяце
+    IF(FRAC(fMonths) > fMonthPart, Block(
+      iMonth := iMonth + 1;
+      IF(iMonth > 12,
+        iYear := iYear + 1
+      );
+      fMonthPart := FRAC(fMonths) - fMonthPart;
+    ),
+      fMonthPart := FRAC(fMonths)
+    );
+//showmessage('iDay='+iDay+CHAR(13)+'fMounthPart='+fMounthPart+CHAR(13)+'DaysinMounth='+DaysinMonth(Trim(iYear), Trim(iMonth)));
+    iDay := iDay + TRUNC(fMonthPart * CONVERT(DaysinMonth(Trim(iYear), Trim(iMonth)), Float));
+    IF(iDay > DaysinMonth(Trim(iYear), Trim(iMonth)),
+      iDay := iDay - DaysinMonth(Trim(iYear), Trim(iMonth))
+    );
+  ));
+if(imonth <= 2 , iYear := iYear + 1);
+  ENCODEDATE(iYear, iMonth, iDay)
+));
+
+
+
+
+IF(SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel-файлы (*.xlsx)|*.xlsx'),
+   block(
+     OPENDATABASE ('TEST_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=excel');//, *.xlsx, *.xlsm, *.xlsb , 'ODBC DSN=Excel'
+     //OPENTABLE ('SOURS_TBL', sFileName+sListName, '', 'TEST_DB');
+     maxid := GENFIELDVALUE('KRD_MAIN_2.ID');
+     
+     OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES');
+     PlaceIsSelected := SelectValues ('Выбор склада, на который будет создан документ', 'Stors',
+                                            [
+                                              ['LICENCENO',   'Номер лицензии', 15],
+                                              ['LICENCENO_EXT',   ' ', 1],
+                                              ['STORE_NO',   'Номер склада', 15],
+                                              ['NAME',   'Название склада', 30],
+                                              ['PlaceId',   '', 10]
+                                            ],
+                                            [
+                                              ['PlaceId', 'vPlaceId'],
+                                            ], '', 'STS_DB');
+      IF (PlaceIsSelected = 0,
+         RAISEEXCEPTION ('Отменено пользователем')
+     ); {IF - PlaceIsSelected = 0 }
+     dtDODate := NOW();
+     dtBegkeep := DATE() + 1;
+     dtStoreDate := dtBegkeep+60;
+     vStorePeriod := 60;
+     
+     
+     
+     OPENQUERY ('qEXEL', 'select * from '+CHAR (34)+sFileName+sListName+CHAR (34)+'where "ТНВЭД" is not null order by "Дата инвойса"','TEST_DB');
+
+     APPENDRECORD ('KRD_MAIN_2');
+     EDITRECORD ('KRD_MAIN_2');
+     SETFIELDVALUE ('KRD_MAIN_2','PLACEID',vPlaceId,
+                               'ID',MaxId,
+                               'A_MODE', 8,
+                               'PART_MODE', 0,
+                               'PART_NO', 1,
+                               'G011', 'ИМ',
+                               'G012', '40',
+                               'BEG_KEEP', dtDODate + 1,
+                               'BD_DATE', dtDODate
+
+      );
+      POST('KRD_MAIN_2');
+       
+     FIRST('qExel');
+     While(EOF('qExel')=0,
+       Block(//showmessage(LOCATE ('KRD_PAPERS', 'PLACEID; PAPERNO', [vPlaceID, FIELDVALUE ('qExel', 'Номер инвойса')]));
+
+         IF (LOCATE ('KRD_PAPERS_2', 'PLACEID;ID; PAPERNO', [vPlaceID,maxid, FIELDVALUE ('qExel', 'номер СМR')]) = 0,
+           block(
+            APPENDRECORD ('KRD_PAPERS_2');
+            EDITRECORD ('KRD_PAPERS_2');
+            SETFIELDVALUE ('KRD_PAPERS_2','PLACEID', vPlaceId,
+                                        'ID', maxid,
+                                        'COUNTER', vCountPaper,
+                                        'PAPERNO',"qEXEL"."номер СМR",
+                                        'PAPERNAME', 'CMR',
+                                        'PAPERDATE', CONVERT ("qEXEL"."дата CMR", DateTime),
+                                        'PAPERCODE', '02015'
+
+            );
+            POSTRECORD ('KRD_PAPERS_2');
+            vCountPaper := vCountPaper + 1;
+
+           ),
+         );
+
+         IF (LOCATE ('KRD_PAPERS_2', 'PLACEID; ID; PAPERNO', [vPlaceID,maxid, FIELDVALUE ('qExel', 'Номер инвойса')]) = 0,
+         block(
+           APPENDRECORD ('KRD_PAPERS_2');
+           EDITRECORD ('KRD_PAPERS_2');
+           SETFIELDVALUE ('KRD_PAPERS_2','PLACEID', vPlaceId,
+                                       'ID', maxid,
+                                       'COUNTER', vCountPaper,
+                                       'PAPERNO',"qEXEL"."Номер инвойса",
+                                       'PAPERNAME', 'ИНВ',
+                                       'PAPERDATE', CONVERT ("qEXEL"."Дата инвойса ", DateTime)
+
+           );
+           POSTRECORD ('KRD_PAPERS_2');
+           vCountPaper := vCountPaper + 1;
+         ),);
+
+         APPENDRECORD ('KRD_COMM_2');
+         EDITRECORD ('KRD_COMM_2');
+         SETFIELDVALUE ('KRD_COMM_2','PLACEID',vPlaceId,
+                                   'ID',MaxId,
+                                   'G32',vG32,
+                                   'G33', "qExel"."ТНВЭД",
+                                   'G312', "qExel"."Марка, модель ТС",
+                                   'G35', "qExel"."Вес брутто",
+                                   'G313', "qExel"."Вид грузовых мест",
+                                   'G42', "qExel"."Сумма в инвойсе",
+                                   'STORAGE_TYPE', 'НОР',
+                                   'STORE_PERIOD', vStorePeriod,
+                                   'ACCEPTDATE', dtDODate,
+                                   'LEG_PERIOD', '15' ,
+                                   'STORAGE_DATE', dtStoreDate
+
+          );
+         POST('KRD_COMM_2');
+         IF (LOCATE ('KRD_TRANSP_2', 'PLACEID;ID; CARNO', [vPlaceID, maxid, FIELDVALUE ('qExel', 'транспортное средство')]) = 0,
+         block(
+           APPENDRECORD ('KRD_TRANSP_2');
+           EDITRECORD ('KRD_TRANSP_2');
+           SETFIELDVALUE ('KRD_TRANSP_2','PLACEID', vPlaceId,
+                                         'ID', maxid,
+                                         'COUNTER', vCount,
+                                         'CARNO',"qEXEL"."транспортное средство",
+                                         'TRANSP_CODE', '30'
+           );
+           POSTRECORD ('KRD_TRANSP_2');
+           vCount:= vCount + 1;
+         ),);
+         vG32:=vG32 + 1;
+         NEXT('qExel');
+       )
+     );
+     CLOSEDATABASE ('TEST_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=Excel');
+   )
+);
+

@@ -1,0 +1,146 @@
+// *****************************************************************************
+// Название: Загрузка отказа регистрации ДО-2
+// Описание: Загрузка отказа регистрации ДО-2
+// Кнопка вызова: 0
+// Подпись кнопки: DO2Error
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'DO2Error'));
+VAR ('vPlaceID',  String,  XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+VAR ('vDO1ID',    String,  XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+VAR ('vCounter',  String,  XMLNODEATTRIBUTE (XmlDoc, 'do2id'));
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlDoc, 'dodt');
+IF (VAREXISTS ('iRecordType') = 0, VAR ('iRecordType', Integer, 0));
+
+VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+VAR ('sSQL', String, '');
+VAR ('vID', String);
+
+    // сначала пытаемся искать ДО-2 по таблице RELEASE, потом по таблице KRD_MAIN
+    // пришел GUID, пытаемся искать его значение в RELEASE.DOCUMENTID
+    IF (LENGTH (vDO1ID) > 30,
+      Block(
+        sSQL := 'SELECT ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+        OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+        IF (RECORDCOUNT ('qFindDocID') > 0,
+          Block( // ДО-2 найдена
+            vID := qFindDocID.ID;
+          ),
+          Block( // ДО-2 не найдена
+            sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+            //showmessage (sSQL);
+            OPENQUERY ('qFindID', 'STS_DB', sSQL);
+            vID := qFindID.ID;
+          )
+        );
+      )
+    ); // IF - LENGTH (vDO1ID) > 30 //
+
+    IF (LENGTH (vDO1ID) > 30,
+      Block( // получили GUID
+        sSQL := 'SELECT ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+        OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+        IF (RECORDCOUNT ('qFindDocID') > 0,
+          Block( // найдена ДО-2
+            vID := qFindDocID.ID;
+          ),
+          Block( // ДО-2 не найдена
+            sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+            //showmessage (sSQL);
+            OPENQUERY ('qFindID', 'STS_DB', sSQL);
+            vID := qFindID.ID;
+          )
+        ); // IF - //
+      ),
+      Block( // получили ID
+        sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vDO1ID;
+        //showmessage (sSQL);
+        OPENQUERY ('qFindID', 'STS_DB', sSQL);
+        vID := qFindID.ID;
+      )
+    ); // IF - //
+
+FUNC ('IsNewStatus', '',
+  Block(
+    VAR ('return', Integer, 0);
+    return := 0;
+    // проверяем не загружен ли в базу более "высокий" статус ЭПС
+    sSQL := 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DODT > ' +char(39)+ DoDt +char(39);
+    OPENQUERY ('qCheck', sSQL, 'dbJournals');
+    IF (RECORDCOUNT ('qCheck') > 0,
+      Block(
+        return := 0;
+      ),
+      Block(
+        return := 1
+      )
+    ); // IF - //
+    return
+  )
+), // FUNC - IsNewStatus () //
+
+
+Var ('strStatus', String, '');
+Var ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DocId', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime);
+VAR ('sSubStatus', String, '');
+
+
+VAR ('sSSText', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'error')));
+
+IF (LENGTH (sSSText) > 0,
+ Block(
+   sSSText := EXTRACTSTR (REPLACECR (sSSText), 3, ':');
+   sSubStatus := COPY (sSSText, 1, (LENGTH (sSSText) - 17));
+ )
+); // IF - //
+
+IF ((vPlaceID <> '') * (vID <> '') * (vCounter <> ''),
+  Block(
+
+    VAR ('sSQL', String, '');
+    OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPLACEID + ' AND MAIN_ID=' + vID + ' AND MAIN_COUNTER=' + vCounter);
+    IF ((REL_MAIN_3.REG_RELEASE_NO = '')*(FIELDISNULL('REL_MAIN_3','REG_RELEASE_NO')=1), 
+      Block(
+        sSQL := 'UPDATE ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' SET MC_STATUS=' +char(39)+ '1' + char(39)+
+                ' WHERE PLACEID=' + vPlaceId +
+                ' AND MAIN_ID=' + vId +
+                ' AND MAIN_COUNTER=' + vCounter;
+
+        EXECUTESQL ('STS_DB', sSQL);
+        IF (IsNewStatus (),
+          Block(
+        EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'В регистрации ДО-2 № ' + REL_MAIN_3.RELEASE_NO + ' отказано' +char(39)+ ' WHERE PLACEID=' + vPLACEID + ' AND MAIN_ID=' + vID);
+      )
+        ); // IF - //
+      )
+    );
+    OPENQUERY ('qryNUM', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+    sJourGuid :=qryNUM.JOURGUID;
+
+    DoType   := 'ДО-2';
+    DoNo     := REL_MAIN_3.RELEASE_NO;
+    DocId    := REL_MAIN_3.DOCUMENTID;
+    DoDate   := REL_MAIN_3.OUT_DATE;
+    strStatus:= 'Отказ в регистрации ДО-2';
+    dRegDate := DATE()+TIME(1);
+    iRecordType := 0;
+    
+    Block(
+          VAR ('sRZD', String, INIFILE ('RZD', 'RZD', '0'));
+          if ( sRZD ,
+             Block(
+                   EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'ProcDocs/SendToFillBill.prd');
+                   SendInfoToFillBill( PID(vPlaceId, vID), 'ДО2. Отказан №' + DoNo);
+             ),
+         );
+    );
+    
+    
+  )
+); // IF - //

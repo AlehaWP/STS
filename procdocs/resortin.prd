@@ -1,0 +1,107 @@
+// *****************************************************************************
+// Название: Сортировка
+// Описание: Сортировка
+// Кнопка вызова: 0
+// Подпись кнопки: Сортировка
+// Вызов по событию: 
+// *****************************************************************************
+//
+{пересортировка для SQL серверов (вычисление KRD_MAIN.ShowNBD)  }  
+
+Func('LogMessage', Param('aMessage', String, 0),        { ??????? ??? ?????? ?????? ? ?????? }
+  AppendlogFile(sLogFile, '| ' + RightPad((KRD_MAIN_2.STORE_DOC_NO+'/'+KRD_MAIN_2.NBD), 30, ' ') + '   ' + '     ' + ' | ' + RightPad(aMessage, 48, ' ') + '  |')
+),
+Func('CheckExpr',,    {поиск и замена KRD_MAIN на KRD_MAIN_2}  
+   Block(
+     While(STRPOS('KRD_MAIN.', bookExpr) <> 0,
+       Block( 
+         Let('bookExpr', COPY (bookExpr, 1, STRPOS('KRD_MAIN.', bookExpr)-1)+'KRD_MAIN_2.'+ Copy(bookExpr, StrPos('KRD_MAIN.', bookExpr)+9, Length(bookExpr)+1-StrPos('KRD_MAIN.', bookExpr)));  
+         {DebugMessage(BookExpr);  }  
+       )    
+     );                                      
+     While(STRPOS('KRD_COMM.', bookExpr) <> 0,
+       Block( 
+         Let('bookExpr', COPY (bookExpr, 1, STRPOS('KRD_COMM.', bookExpr)-1)+'KRD_COMM_2.'+ Copy(bookExpr, StrPos('KRD_COMM.', bookExpr)+9, Length(bookExpr)+1-StrPos('KRD_COMM.', bookExpr)))  
+       )    
+     );                                      
+     While(STRPOS('KRD_PAPERS.', bookExpr) <> 0,
+       Block( 
+         Let('bookExpr', COPY (bookExpr, 1, STRPOS('KRD_PAPERS.', bookExpr)-1)+'KRD_PAPERS_2.'+ Copy(bookExpr, StrPos('KRD_PAPERS.', bookExpr)+11, Length(bookExpr)+1-StrPos('KRD_PAPERS.', bookExpr)))  
+       )    
+     );                                      
+     While(STRPOS('KRD_TRANSP.', bookExpr) <> 0,
+       Block( 
+         Let('bookExpr', COPY (bookExpr, 1, STRPOS('KRD_TRANSP.', bookExpr)-1)+'KRD_TRANSP_2.'+ Copy(bookExpr, StrPos('KRD_TRANSP.', bookExpr)+11, Length(bookExpr)+1-StrPos('KRD_TRANSP.', bookExpr)))  
+       )    
+     );                                      
+     While(STRPOS('KRD_DCD.', bookExpr) <> 0,
+       Block( 
+         Let('bookExpr', COPY (bookExpr, 1, STRPOS('KRD_DCD.', bookExpr)-1)+'KRD_DCD_2.'+ Copy(bookExpr, StrPos('KRD_DCD.', bookExpr)+8, Length(bookExpr)+1-StrPos('KRD_DCD.', bookExpr)))  
+       )    
+     );                                      
+     While(STRPOS('STORES.', bookExpr) <> 0,
+       Block( 
+         Let('bookExpr', COPY (bookExpr, 1, STRPOS('STORES.', bookExpr)-1)+'STORES_2.'+ Copy(bookExpr, StrPos('STORES.', bookExpr)+7, Length(bookExpr)+1-StrPos('STORES.', bookExpr)))  
+       )    
+     );                                      
+  
+       
+   )  
+),    
+Func('RecountShowNBD',,
+  Block(  
+    ShowProgress ('Обработка документов...');
+    FIRST('KRD_MAIN_2');                                          { переход на первый документ }  
+    WHILE ( EOF('KRD_MAIN_2') <> 1,         { цикл по документам }
+      BLOCK (              
+        Let ('sOldShowNBD', FieldValue('KRD_MAIN_2','SHOW_NBD'));  
+        LET ('sShowNBD', Solve (bookExpr));
+        If( sShowNBD <> '', 
+          Block(
+            EDITRECORD ('KRD_MAIN_2');    
+            SETFIELDVALUE ('KRD_MAIN_2','Show_NBD', sShowNbd);
+            POSTRECORD ('KRD_MAIN_2'); 
+          )  
+        );
+        LogMessage('было:'+sOldShowNBD+ '; стало:'+ sShowNBD);  
+        Let ('sOldShowNBD', '');  
+        Let('iRecNo', iRecNo + 1);      
+        SetProgress(iRecNo, 100, iRecCount);           
+        NEXT ('KRD_MAIN_2');                                    { переход на следующий документ }
+      )
+    );        
+    HideProgress();
+    {SETFILTER ('KRD_MAIN', sFilter); }                                    
+    GLOBALREFRESH ();      
+  )  
+),  
+
+Const ('sShowNbd', String,''),
+Const ('sOldShowNbd', String,''),
+Var   ('bookExpr', String);  
+Const ('iRecNo', Integer, 0);  
+Const ('iRecCount', Integer, RecordCount('KRD_MAIN_2'));   
+Const ('sFilter', String, '');  
+
+VAR ('sLogFile', String, TempDirectory() + 'CommChk.log'),  { имя файла журнала }
+ 
+CreateLogFile(sLogFile),                                    { создание журнала }
+                        {         1         2         3         4         5         6         7         8         9          }
+                        {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------'),
+AppendLogFile(sLogFile, '|        № ДО                                                  Изменение                     |'),
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------'),
+  
+bookExpr := UPPERSTR (INIFILE('RegBook', 'BD_ExprIndex', 'FDT("YYYY", KRD_MAIN_2.BD_DATE)+LEFTPAD(RIGHT(KRD_MAIN_2.NBD, 5), 5, "0")'));  
+{DebugMessage(BookExpr);    }  
+CheckExpr();    
+  
+If(iRecCount > 1000,
+  If (YesNo('Количество документов = '+CONVERT (iRecCount, String)+'. Пересортировка может занять'+CHAR(13)+CHAR(10)+'длительное время. Продолжать?'), 
+    RecountShowNbd()
+  );  
+  RecountShowNbd();    
+);  
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------'),
+{ShowLogFile(sLogFile, 'Проверка заполнения ShowNBD');  }  
+SHOWMESSAGE('Обработка документов завершена.')  

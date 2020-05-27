@@ -1,0 +1,116 @@
+// *****************************************************************************
+// Название: После подключения к БД
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+VAR ('sDir', String, IncludeTrailingBackslash (ProgramPath ()) + 'STS-MED\iout\');
+IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+VAR ('sTemp', String, '');
+VAR ('sFileList', String, GETFILELIST (sDir, '*.xml', '|'));
+VAR ('iFileCount', Integer, SPLITSTR (sFileList, '|', sTemp));
+IF ( iFileCount > 0,
+    STSHOSTEXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\SCRIPTS\eps.imp', 1, 0)
+,);
+WRITEINIFILE (USERINFO ('', 'UserUUID') + 'iCountEpsimp', 'iCountEpsimp', '0', IncludeTrailingBackslash (ProgramPath ())+'sts.ini' );
+
+
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\check_album.prd');
+
+FUNC ('ClearList', '',
+  Block(
+    EXECUTESQL ('dbJournals', 'UPDATE EPS_LOG SET READED=' +char(39)+ '1' +char(39));
+    SETSTATUSBARHINT ('', '', '', '');
+  )
+), // FUNC - ClearList() //
+
+FUNC ('AddNotification', '',
+  Block(
+    OPENQUERY ('qNewMessages', 'SELECT DOCSTATUS, JOURGUID FROM EPS_LOG WHERE READED=' +char(39)+ '0' +char(39), 'dbJournals');
+
+    VAR ('iMessageNo', Integer, RECORDCOUNT ('qNewMessages'));
+    VAR ('sMessageText', String, '');
+
+    IF (iMessageNo > 0,
+      Block(
+        IF (iMessageNo > 1000,
+          Block(
+            IF (YESNO ('Количество непрочитанных сообщений: ' + iMessageNo +char(13)+ 'Отметить все сообщения, как прочитанные?'),
+              Block(
+                ClearList ();
+              ),
+              Block(
+                LAST ('qNewMessages');
+                sMessageText := qNewMessages.DOCSTATUS;
+                //SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+                SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+              )
+            ); // IF - //
+          ),
+          Block(
+            LAST ('qNewMessages');
+            sMessageText := qNewMessages.DOCSTATUS;
+            //SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+            SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+          )
+        ); // IF - //
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+
+    CLOSEDATASET ('qNewMessages');
+  )
+), // FUNC - AddNotification() //
+
+AddNotification ();
+
+IF ((CheckAlbum() = 0) * (INIFILE ('Docs', 'EpsSupport', '0') = 1),
+  SHOWMESSAGE ('Внимание! Версия альбома форматов в настройках ВЭД-Склад (Сервис \ Настройка)' +char(13)+
+               'и в настройках Монитор ЭД (Сервис \ Настройки \ Основные \ вкладка Передача данных)  не совпадает!' +char(13)+
+               'Пожалуйста, исправьте настройки, обмен через ЭПС не возможен.', 2)
+); // IF
+
+
+
+IF (INIFILE ('Docs', 'ProhibitEditDocsOnReg', '') = '',
+  WRITEINIFILE ('Docs', 'ProhibitEditDocsOnReg', 1);
+);
+
+
+// ПОЛУЧЕНИЕ СИСТЕМНЫХ ДАННЫХ О ПОЛЬЗОВАТЕЛЕ И КОМПЬЮТЕРЕ
+GLOBALVAR ('gUserName', String, USERINFO ('', 'USERLOGIN'));
+GLOBALVAR ('gComputerName', String, '');
+
+TRYEXCEPT (
+  Block(
+    VAR ('vSvhExtention', Variant);
+    vSvhExtention := CREATEOLEOBJECT ('svh.Extention');
+    GLOBALLET ('gUserName',     vSvhExtention.CurrentUser());
+    GLOBALLET ('gComputerName', vSvhExtention.ComputerName());
+  ),
+  Block(
+    EXECUTESCRIPT ('PROCDOCS\writelog.prd');
+    WriteLog ('STS', EXCEPTIONMESSAGE());
+  )
+); // TRYEXCEPT
+
+
+// ПОДСВЕТКА НЕПРОЧИТАННЫХ СООБЩЕНИЙ (НОВЫЕ СООБЩЕНИЯ)
+TRYFINALLY (
+  Block(
+    SHOWINFORMATION ('Проверка оперативных обновлений');
+    EXECUTEPROJECT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\updates\updates.ssproj',);
+  ),
+  Block(
+    HIDEINFORMATION ();
+  )
+); // TRYFINALLY

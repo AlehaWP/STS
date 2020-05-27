@@ -1,0 +1,315 @@
+// *****************************************************************************
+// Название: Корректировка дат документов
+// Описание: Устанавливает даты для (выделенных) документа(ов) в книге учета. Если Дата не была заполнена - оставляет пустой, прилагается форма - cordates.cfm
+// Кнопка вызова: 0
+// Подпись кнопки: Изменить даты
+// *****************************************************************************
+//
+
+Func('isLeapYear',
+  Param('iYear', Integer, 0),
+Block(
+  (MOD(iYear, 4) = 0) * ((MOD(iYear, 400) = 0) | (MOD(iYear, 100) <> 0))
+));
+
+Func('DaysInMonth', Block(
+  Param('sYear', String, 0),
+  Param('sMonth', String, 1)
+),
+Block(
+  Var('iYear', Integer, CONVERT (sYear, Integer));
+  Var('iMonth', Integer, CONVERT (sMonth, Integer));
+  CASE (iMonth,
+    [1, 31,
+     2, IF(isLeapYear(iYear), 29, 28),
+     3, 31,
+     4, 30,
+     5, 31,
+     6, 30,
+     7, 31,
+     8, 31,
+     9, 30,
+     10, 31,
+     11, 30,
+     12, 31],
+    30)
+));
+
+Func('DaysinMonthByDate',
+  Param('dtDate', DateTime, 0),
+Block(
+  DaysInMonth(FORMATDATETIME ('YYYY', dtDate), FORMATDATETIME ('MM', dtDate))
+));
+
+Func('AddMonths', Block(
+  Param('dtDate', DateTime, 0),
+  Param('fMonths', Float, 1)
+), Block(
+  Var('dtResult', DateTime);
+  
+  Var('iYear', Integer, CONVERT(FORMATDATETIME ('YYYY', dtDate), Integer));
+  Var('iMonth', Integer, CONVERT(FORMATDATETIME ('MM', dtDate), Integer));
+  Var('iDay', Integer, CONVERT(FORMATDATETIME ('DD', dtDate), Integer));
+  
+  Var('fMonthPart', Float, 0);
+  
+  // Прибавляем целое кол-во месяцев без учета годов в общем числе месяцев
+  iMonth := iMonth + MOD(TRUNC(fMonths), 12);
+  // Прибавляем кол-во лет
+  iYear := iYear + TRUNC(fMonths) / 12;
+
+  // Прибавим год, если есть переход
+  IF(iMonth > 12, 
+    Block(
+      iMonth := iMonth - 12;
+      iYear := iYear + 1
+  ));
+
+  // Проверяем последние числа месяца, если надо - выравниваем
+  IF(iDay > DaysInMonth(Trim(iYear), Trim(iMonth)),
+    iDay := DaysInMonth(Trim(iYear), Trim(iMonth))
+  );
+
+  // Прибавляем кусок месяца, если надо
+  IF(CONVERT(TRUNC(fMonths), Float) < fMonths, Block(
+    // Доля остатка дней до конца месяца в общем числе дней месяца
+    fMonthPart := 1 - CONVERT(iDay, Float) / CONVERT(DaysInMonts(Trim(iYear), Trim(iMonth)), Float);
+    
+    // Если прибавить к дням нужно больше, чем осталось до конца месяца, прибавим месяц
+    // прибавляемую долю уменьшим на остаток дней в предыдущем месяце
+    IF(FRAC(fMonths) > fMonthPart, Block(
+      iMonth := iMonth + 1;
+      IF(iMonth > 12,
+        iYear := iYear + 1
+      );
+      fMonthPart := FRAC(fMonths) - fMonthPart;
+    ), 
+      fMonthPart := FRAC(fMonths)
+    );
+
+    iDay := iDay + TRUNC(fMonthPart * CONVERT(DaysinMonth(Trim(iYear), Trim(iMonth)), Float));
+    IF(iDay > DaysinMonth(Trim(iYear), Trim(iMonth)),
+      iDay := iDay - DaysinMonth(Trim(iYear), Trim(iMonth))
+    );
+  ));
+
+  ENCODEDATE(iYear, iMonth, iDay)
+));
+
+Func('ChangeDate', Block(
+  Param('sTableName', String, 0),  
+  Param('sFieldName', String, 1),
+  Param('dtOldFieldValue', DateTime, 2),      
+  Param('dtNewFieldValue', DateTime, 3)),
+Block(
+  Var('iHours', Integer);
+  Var('iMins', Integer);
+  Var('iSecs', Integer);
+  if(LENGTH(CONVERT(dtOldFieldValue, String))>6, Block(
+    iHours := CONVERT(FORMATDATETIME('HH', dtOldFieldValue), Integer);
+    iMins := CONVERT(FORMATDATETIME('NN', dtOldFieldValue), Integer);
+    iSecs := CONVERT(FORMATDATETIME('SS', dtOldFieldValue), Integer);
+  ), Block(
+    iHours := CONVERT(FORMATDATETIME('HH', DATE() + TIME(1)), Integer);
+    iMins := CONVERT(FORMATDATETIME('NN', DATE() + TIME(1)), Integer);
+    iSecs := CONVERT(FORMATDATETIME('SS', DATE() + TIME(1)), Integer);
+  ));
+  if(FINDKEY('KRD_MAIN_2', [FIELDVALUE(sTableName, 'PLACEID'), FIELDVALUE(sTableName, 'ID')]), Block(  
+    EDIT('KRD_MAIN_2');  
+    SETFIELDVALUE('KRD_MAIN_2', sFieldName, dtNewFieldValue + ENCODETIME(iHours, iMins, iSecs));  
+    POST('KRD_MAIN_2');
+  ));        
+)),  
+  
+Func('ChangeDates', Block(  
+  Param('sTableName', String, 0),  
+  Param('dtNewDate', DateTime, 1)
+), Block(
+  Var('iStorMonths', Float, 0);
+  if((FIELDVALUE(sTableName, 'MC_STATUS_BD')='3')*(iProcReg = 0),
+    LET('DocDORegCounter', DocDORegCounter + 1), 
+  if((FIELDVALUE(sTableName, 'A_MODE')<>2)*(FIELDVALUE(sTableName, 'A_MODE')<>5), Block(  
+    if(DoBDDate, ChangeDate(sTableName, 'BD_DATE', FIELDVALUE(sTableName, 'BD_DATE'), dtNewDate));
+    if(DoBegKeep, ChangeDate(sTableName, 'BEG_KEEP', FIELDVALUE(sTableName, 'BEG_KEEP'), dtNewDate));
+    if(DoArrDate, ChangeDate(sTableName, 'ARR_DATE', FIELDVALUE(sTableName, 'ARR_DATE'), dtNewDate));
+    LET('DocDOCounter', DocDOCounter + 1);
+    
+    IF(CommAccDate, Block(
+      SETRANGE ('KRD_COMM_2', [FIELDVALUE(sTableName, 'PLACEID'), FIELDVALUE(sTableName, 'ID')]);
+      FIRST('KRD_COMM_2');
+      WHILE(EOF('KRD_COMM_2') = 0, Block(
+        EDIT('KRD_COMM_2');
+        SETFIELDVALUE ('KRD_COMM_2', 'ACCEPTDATE', dtNewDate);
+        iStorMonths := CONVERT(REFERENCE('STORTYPE', 'STORAGE_TYPE', KRD_COMM_2.STORAGE_TYPE, 'STORAGE_PERIOD'), Integer) / 30;
+
+        IF(iStorMonths = 0, iStorMonths := 2);
+          
+        IF(AistCompatible,
+          SETFIELDVALUE ('KRD_COMM_2', 'STORAGE_DATE', dtNewDate + CONVERT(REFERENCE('STORTYPE.DB', 'STORAGE_TYPE', KRD_COMM_2.STORAGE_TYPE, 'STORAGE_PERIOD'), Integer)),
+          SETFIELDVALUE ('KRD_COMM_2', 'STORAGE_DATE', AddMonths(dtNewDate+1, iStorMonths))
+        );
+        POST('KRD_COMM_2');
+        NEXT('KRD_COMM_2');
+      ));
+      CANCELRANGE ('KRD_COMM_2');
+    ));
+
+  )));           
+  
+  if((FIELDVALUE(sTableName, 'MC_STATUS_NT')='3')*(iProcReg = 0),
+    LET('DocPPRegCounter', DocPPRegCounter + 1), 
+  if(FIELDVALUE(sTableName, 'NU')<>'', Block(  
+    if(PPG542, ChangeDate(sTableName, 'G542', FIELDVALUE(sTableName, 'G542'), dtNewDate));
+    LET('DocPPCounter', DocPPCounter + 1);   
+  )));
+
+)),  
+
+Func('GetDate',
+  Param('sTableName', String, 0),
+Block(
+  Var('dtResult', DateTime);
+
+  IF(FORMGETPROPERTY(frmDialog, 'rbtnAllDates.Checked') = 'True', Block(
+    IF(FORMGETPROPERTY(frmDialog, 'rbtnAll2.Checked') = 'True', 
+      dtResult := FIELDVALUE(sTableName, sFieldSrc),
+      dtResult := Main_Date
+    );
+  ), Block(
+    IF(FORMGETPROPERTY(frmDialog, 'rbtnDate2.Checked')='True', 
+      dtResult := FIELDVALUE (sTableName, sFieldSrc),
+      dtResult := Main_Date2
+    );
+  ));
+  
+  dtResult
+));
+
+if(BOOKOPENED() < 1, RAISEEXCEPTION('Книга учета закрыта'));
+
+{--------Переменные-----------------------------------------------------------------}
+Var('DoBdDate', Integer, 0);
+Var('DoBegKeep', Integer, 0);
+Var('DoArrDate', Integer, 0);
+Var('PPG542', Integer, 0);
+Var('CommAccDate', Integer, 0);
+
+Var('Main_Date', DateTime);
+Var('Main_Date2', DateTime);
+
+Var('Beg_Keep', DateTime);  
+Var('Bd_Date', DateTime);
+Var('Arr_Date', DateTime);
+Var('G542', DateTime);
+  
+Var('sMsg', String);  
+
+Var('sFieldSrc', String, '');
+
+Var('iProcReg', Integer, 0);
+
+Const('DocDOCounter', Integer, 0);
+Const('DocPPCounter', Integer, 0);      
+Const('DocDORegCounter', Integer, 0);  
+Const('DocPPRegCounter', Integer, 0);    
+
+Var('iRecordCount', Integer, 0);
+Var('iCurrentRecord', Integer, 1);
+Var('ProgrItem', Float, 0);
+
+Var('AistCompatible', Integer, CONVERT(INIFILE ('Docs', 'AistCompatible', '0'), Integer));
+{-----------------------------------------------------------------------------------}      
+
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\cordates.cfm');
+  
+FORMSETPROPERTY(frmDialog, 'dtedAllDates.Date', Convert(Date(), Float));
+FORMSETPROPERTY(frmDialog, 'dtedNewDate.Date', Convert(Date(), Float));
+  
+if(FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено'));
+
+iProcReg := SHIFTPRESSED() * CTRLPRESSED();
+
+IF(iProcReg,
+  IF(YESNO ('Вы действительно хотите изменить зарегистрированные документы ?') = 0, RAISEEXCEPTION('Выполнение отменено'))
+);
+
+IF(FORMGETPROPERTY(frmDialog, 'rbtnAllDates.Checked') = 'True', Block(
+
+    DoBDDate := 1;
+    DoBegKeep := 1;
+    DoArrDate := 1;
+    PPG542 := 1;
+    CommAccDate := 1;
+
+    CASE (FORMGETPROPERTY(frmDialog, 'edNewDateAllDates.Text'),
+                           ['Дата создания', sFieldSrc := 'BD_DATE',
+                            'Дата отсчета срока хран.', sFieldSrc := 'BEG_KEEP',
+                            'Дата прибытия на СВХ', sFieldSrc := 'ARR_DATE',
+                            'Дата подтв. о прибытии', sFieldSrc := 'G542']);
+                            
+), Block(
+
+    CASE(FORMGETPROPERTY(frmDialog, 'edDate.Text'),
+                           ['Дата создания', DoBDDate := 1,
+                            'Дата отсчета срока хран.', DoBegKeep := 1,
+                            'Дата прибытия на СВХ', DoArrDate := 1,
+                            'Дата подтв. о прибытии', PPG542 := 1,
+                            'Дата приема товаров', CommAccDate := 1]);
+
+    CASE (FORMGETPROPERTY(frmDialog, 'edNewDate.Text'),
+                           ['Дата создания', sFieldSrc := 'BD_DATE',
+                            'Дата отсчета срока хран.', sFieldSrc := 'BEG_KEEP',
+                            'Дата прибытия на СВХ', sFieldSrc := 'ARR_DATE',
+                            'Дата подтв. о прибытии', sFieldSrc := 'G542']);
+                            
+));
+
+Main_Date := Convert(Convert(FORMGETPROPERTY(frmDialog, 'dtedAllDates.Date'), Float), DateTime);
+Main_Date2 := Convert(Convert(FORMGETPROPERTY(frmDialog, 'dtedNewDate.Date'), Float), DateTime);
+
+//if(YESNO('Установить следующие даты для документа(ов)?' + CHAR(13) + sMsg)=0, RAISEEXCEPTION('Выполнение отменено'));
+
+if(FORMGETPROPERTY(frmDialog, 'rbtnSelectedDocs.Checked')='True', Block(  
+  GETSELECTEDDOCS('KM_SELECTED', 'PLACEID', 'ID', 'BD_DATE', 'BEG_KEEP', 'ARR_DATE', 'G542', 'MC_STATUS_BD', 'MC_STATUS_NT', 'A_MODE', 'NU');
+  
+  iRecordCount := RECORDCOUNT('KM_SELECTED');
+  LET('ProgrItem', CONVERT(iRecordCount, Float)/100.0);
+
+  IF(YESNO ('Вы уверены, что хотите изменить даты у ' + Trim(iRecordCount) + ' документов ?') = 0, RAISEEXCEPTION('Выполнение отменено'));
+
+  SHOWPROGRESS('Изменение дат документов...');
+
+  FIRST('KM_SELECTED');
+  iCurrentRecord := 1;
+  WHILE(iCurrentRecord <= iRecordCount, Block(
+    
+    ChangeDates('KM_SELECTED', GetDate('KM_SELECTED'));
+    
+    NEXT('KM_SELECTED');
+    SETPROGRESS(iCurrentRecord/ProgrItem);
+    IF(CANCELPRESSED(), iRecordCount := iCurrentRecord);
+    iCurrentRecord := iCurrentRecord + 1;
+  ));  
+), Block(
+  
+  ChangeDates('KRD_MAIN', GetDate('KRD_MAIN'));
+  
+));{if(FORMGETPROPERTY(frmDialog, 'rbtnSelectedDocs.Checked')}
+  
+GLOBALREFRESH();        
+LET('sMsg', 'Обработка завершена.' + CHAR(13) + CHAR(13) +  
+            'Обработано документов: ' + CHAR(13) + 
+            'Подтверждений о прибытии - ' + Convert(DocPPCounter, String) + CHAR(13) +  
+            'Докуметов учета - ' + Convert(DocDOCounter, String));  
+
+if((DocDORegCounter > 0)|(DocPPRegCounter > 0), Block(
+  LET('sMsg', sMsg + CHAR(13) + CHAR(13) + 'Необработано зарегистрированных:');  
+  if(DocPPRegCounter > 0, LET('sMsg', sMsg + CHAR(13) + 'Подтверждений о прибытии - ' + Convert(DocPPRegCounter, String)));          
+  if(DocDORegCounter > 0, LET('sMsg', sMsg + CHAR(13) + 'Документов учета - ' + Convert(DocDORegCounter, String)));  
+));    
+
+HIDEPROGRESS ();
+  
+SHOWMESSAGE(sMsg);  
+              
+FORMDESTROY(frmDialog);  

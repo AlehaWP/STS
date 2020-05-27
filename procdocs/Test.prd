@@ -1,0 +1,21 @@
+// *****************************************************************************
+// Название: Тест 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+EXECUTEPROJECT (PROGRAMPATH () + 'procdocs\Projects\PathToBase\PathToBase.ssproj', '');
+OPENQUERY ('GET_DO', 'SELECT * FROM KRD_MAIN', 'STS_DB_OLD');
+showmessage (GET_DO.ID);
+CLOSEDATABASE ("STS_DB_OLD");
+
+
+
+
+
+
+
+

@@ -1,0 +1,233 @@
+// *****************************************************************************
+// Название: Подготовка Формы ДО-2 для повторной отправки через ЭПС
+// Описание: Подготовка Формы ДО-2 для повторной отправки через ЭПС
+// Кнопка вызова: 1
+// Подпись кнопки: Переотправка ДО-2
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+
+VAR ('sUserName', String, USERINFO ('', 'USERLOGIN'));
+VAR ('sUserComputer', String, '');
+VAR ('sSQL', String, '');
+
+TRYEXCEPT (
+  Block(
+    VAR ('o', Variant);
+    o := CREATEOLEOBJECT ('svh.Extention');
+    sUserName := o.CurrentUser();
+    sUserComputer := o.ComputerName();
+  ),
+  Block(
+    WriteLog ('STS', EXCEPTIONMESSAGE());
+  )
+); // TRYEXCEPT
+
+
+FUNC ('AddNotification', '',
+  Block(
+    OPENQUERY ('qNewMessages', 'SELECT DOCSTATUS FROM EPS_LOG WHERE READED='+char(39)+'0'+char(39), 'dbJournals');
+
+    VAR ('iMessageNo', Integer, RECORDCOUNT ('qNewMessages'));
+    VAR ('sMessageText', String, '');
+
+    IF (iMessageNo > 0,
+      Block(
+        LAST ('qNewMessages');
+        sMessageText := qNewMessages.DOCSTATUS;
+        SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+
+    CLOSEDATASET ('qNewMessages');
+  )
+), // FUNC - AddNotification()
+
+
+VAR ('vPlaceID', String, KRD_MAIN.PLACEID);
+VAR ('vID', String, KRD_MAIN.ID);
+VAR ('vCounter', Integer);
+VAR ('vMCounter', Integer);
+VAR ('vMainID', String, '');
+VAR ('sMCStatus', String, '');
+VAR ('sReleaseNo', String, '');
+VAR ('sReleaseDate', String, '');
+VAR ('sDocumentID', String, GENERATEUUID (1));
+VAR ('sOldDocumentID', String, '');
+
+
+OPENQUERY ('qDO2List', 'STS_DB', 'SELECT RELEASE_NO, OUT_DATE, MAIN_ID, DOC_TYPE, DOC_NO, main_counter, COUNTER, MC_STATUS, DOCUMENTID FROM RELEASE WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+
+
+FUNC ('Resend', '',
+  Block(
+    sSQL := 'UPDATE RELEASE SET DOCUMENTID=' +char(39)+ sDocumentID +char(39)+', MC_STATUS=NULL  WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vMainID+' AND MAIN_COUNTER=' + vMCounter;
+    EXECUTESQL ('STS_DB', sSQL);
+    sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-2 № ' + sReleaseNo + ' готова к повторной отправке' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID;
+    EXECUTESQL ('STS_DB', sSQL);
+
+    LOCATE ('STORES_2', 'PLACEID', [vPlaceid]);
+    OPENQUERY ('qryNUM', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM EPS_LOG ', 'dbJournals');
+    VAR('iMaxID', Integer, qryNUM.MAX_ID + 1);
+
+    sSQL := 'SELECT RELEASE_NO, OUT_DATE FROM RELEASE WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vMainID+ ' AND MAIN_COUNTER=' + vMCounter;
+    OPENQUERY ('qryRel', 'STS_DB', sSQL);
+    sReleaseNo := qryRel.RELEASE_NO;
+    sReleaseDate := qryRel.OUT_DATE;
+    OPENTABLE     ('EPS_LOG_5', 'EPS_LOG', '', 'dbJournals', 1);
+    APPENDRECORD  ('EPS_LOG_5');
+    EDITRECORD    ('EPS_LOG_5');
+    SETFIELDVALUE ('EPS_LOG_5', 'JOURNAL_MASTER_ID', iMaxId);    // Ключевое поле //
+    SETFIELDVALUE ('EPS_LOG_5', 'PLACEID', vPlaceid);
+    SETFIELDVALUE ('EPS_LOG_5', 'ID', vMainId);
+    SETFIELDVALUE ('EPS_LOG_5', 'COUNTER', vCounter);
+    SETFIELDVALUE ('EPS_LOG_5', 'DocumentId', sDocumentID);
+    SETFIELDVALUE ('EPS_LOG_5', 'DocType', 'ДО-2');
+    SETFIELDVALUE ('EPS_LOG_5', 'DocNo',   sReleaseNo);
+    SETFIELDVALUE ('EPS_LOG_5', 'DocDate', sReleaseDate);
+    SETFIELDVALUE ('EPS_LOG_5', 'DocStatus', 'Присвоен новый DOCUMENTID');
+    SETFIELDVALUE ('EPS_LOG_5', 'RegDate', NOW());
+    SETFIELDVALUE ('EPS_LOG_5', 'LICENCENO', STORES_2.LICENCENO);
+    SETFIELDVALUE ('EPS_LOG_5', 'LICENCEDATE', STORES_2.LICENCEDATE);
+    SETFIELDVALUE ('EPS_LOG_5', 'JOURGUID', GENERATEUUID());
+    SETFIELDVALUE ('EPS_LOG_5', 'SUBSTATUS', 'Предыдущее значение DOCUMENTID: ' + sOldDOcumentID);
+    SETFIELDVALUE ('EPS_LOG_5', 'READED', '0');
+    SETFIELDVALUE ('EPS_LOG_5', 'RECORD_TYPE', 2);
+    POSTRECORD    ('EPS_LOG_5');
+    CLOSEDATASET  ('EPS_LOG_5');
+  )
+), // FUNC - Resend
+
+
+IF (SELECTVALUES ('Выберите Форму ДО-2', 'qDO2List', [['RELEASE_NO', 'Отчёт №', 30], ['OUT_DATE', 'Дата отчёта', 30], ['DOC_TYPE', 'Тип выпускающего документа', 30], ['DOC_NO', 'Номер выпускающего документа', 30]], [['COUNTER', 'vCounter'], ['MAIN_COUNTER', 'vMCounter'], ['MAIN_ID', 'vMainID'], ['MC_STATUS', 'sMCStatus'], ['RELEASE_NO', 'sReleaseNo'], ['RELEASE_DATE', 'sReleaseDate'], ['DOCUMENTID', 'sOldDocumentID']], '', 'STS_DB'),
+  Block(
+    IF (sMCStatus <> '3',
+      Block(
+        IF (YESNO ('Предыдущий обмен по выбранной ДО-2 будет потерян, Вы хотите продолжить?');
+          Block(
+            Resend();
+          ),
+          Block(
+            RAISEEXCEPTION ('Отменено пользователем');
+          )
+        ); // IF
+      ),
+      Block(
+        IF (YESNO ('Вы собираетесь подготовить к переотправке уже ЗАРЕГИСТРИРОВАННЫЙ в таможне отчёт!' +char(13)+char(13)+ 'Продолжить выполнение?'),
+          Block(
+{
+            OPENQUERY ('qryNUM', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM EPS_LOG ', 'dbJournals');
+            VAR('iMaxID', Integer, qryNUM.MAX_ID + 1);
+
+            sSQL := 'SELECT RELEASE_NO, OUT_DATE FROM RELEASE WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vMainID+' AND MAIN_COUNTER=' + vMCounter;
+            OPENQUERY ('qryRel', 'STS_DB', sSQL);
+            sReleaseNo := qryRel.RELEASE_NO;
+            sReleaseDate := qryRel.OUT_DATE;
+            OPENTABLE     ('EPS_LOG_5', 'EPS_LOG', '', 'dbJournals', 1);
+            APPENDRECORD  ('EPS_LOG_5');
+            EDITRECORD    ('EPS_LOG_5');
+            SETFIELDVALUE ('EPS_LOG_5', 'JOURNAL_MASTER_ID', iMaxId);    // Ключевое поле //
+            SETFIELDVALUE ('EPS_LOG_5', 'PLACEID', vPlaceid);
+            SETFIELDVALUE ('EPS_LOG_5', 'ID', vMainId);
+            SETFIELDVALUE ('EPS_LOG_5', 'COUNTER', vCounter);
+            SETFIELDVALUE ('EPS_LOG_5', 'DocumentId', sDocumentID);
+            SETFIELDVALUE ('EPS_LOG_5', 'DocType', 'ДО-2');
+            SETFIELDVALUE ('EPS_LOG_5', 'DocNo',   sReleaseNo);
+            SETFIELDVALUE ('EPS_LOG_5', 'DocDate', sReleaseDate);
+            SETFIELDVALUE ('EPS_LOG_5', 'DocStatus', 'ДО-2 подготовлена к переотправке пользователем ' );
+            SETFIELDVALUE ('EPS_LOG_5', 'RegDate', NOW());
+            SETFIELDVALUE ('EPS_LOG_5', 'LICENCENO', STORES_2.LICENCENO);
+            SETFIELDVALUE ('EPS_LOG_5', 'LICENCEDATE', STORES_2.LICENCEDATE);
+            SETFIELDVALUE ('EPS_LOG_5', 'JOURGUID', GENERATEUUID());
+            SETFIELDVALUE ('EPS_LOG_5', 'SUBSTATUS', 'Рег. номер= ' + REG_RELEASE_NO + ' от ' + '');
+            SETFIELDVALUE ('EPS_LOG_5', 'READED', '0');
+            POSTRECORD    ('EPS_LOG_5');
+            CLOSEDATASET  ('EPS_LOG_5');
+}
+{
+                 WriteEpsLog (
+                   pWhId,
+                   vId,
+                   pWhDocId2,
+                   pWhDocId,
+                   vDocName,
+                   vDocNo,
+                   FDT ('DD.MM.YYYY HH:NN:SS', vDocDate),
+                   vDocName + ' восстановлена после удаления',
+                   FDT ('DD.MM.YYYY HH:NN:SS', (Date() + Time(1))),
+                   GENERATEUUID (),
+                   '',
+                   '',
+                   '1',
+                   FDT ('DD.MM.YYYY HH:NN:SS', (Date() + Time(1))),
+                   2
+                 ); // WriteEpsLog
+}
+
+            sSQL := 'SELECT RELEASE_NO, OUT_DATE FROM RELEASE WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vMainID+ ' AND MAIN_COUNTER=' + vMCounter;
+            OPENQUERY ('qryRel', 'STS_DB', sSQL);
+            sReleaseNo := qryRel.RELEASE_NO;
+            sReleaseDate := qryRel.OUT_DATE;
+
+            sSQL := 'SELECT' +
+                    ' RELEASE_NO,OUT_DATE,REG_RELEASE_NO,REG_TIME,FIO_INSPECTOR,POST_INSPECTOR,GD2,PLACEID,ID,COUNTER,MAIN_ID,MAIN_COUNTER,MAIN_NO' +
+                    ' FROM ' + CORRECTTABLENAME ('RELEASE') +
+                    ' WHERE PLACEID=' + vPlaceId + ' AND ID=' + vMainId + ' AND COUNTER=' + vCounter;
+            OPENQUERY ('qRelease', 'STS_DB', sSQL, 1);
+
+            VAR ('sSubStatusText', String);
+            sSubStatusText := 'Рег. номер= ' + qRelease.REG_RELEASE_NO + ' от ' + FDT ('DD.MM.YYYY', qRelease.REG_TIME) +
+                              ' присовен ' + qRelease.FIO_INSPECTOR +
+                              ' (' + qRelease.POST_INSPECTOR + '|' + qRelease.GD2 + ')';
+
+            WriteEpsLog (
+                vPlaceId,
+                vMainId,
+                vCounter,
+                sOldDocumentID,
+                'ДО-2',
+                sReleaseNo,
+                sReleaseDate,
+                'ДО-2 подготовлена к переотправке пользователем ' + sUserComputer + ' ' + sUserName,
+                Date() + Time(1),
+                GENERATEUUID (),
+                sSubStatusText,
+                '',
+                '1',
+                Date() + Time(1),
+                2
+            ); // WriteEpsLog
+            CLOSEDATASET ('qRelease');
+
+            sSQL := 'UPDATE ' + CORRECTTABLENAME ('RELEASE') +
+                    ' SET REG_TIME=NULL' +
+                    ',REG_RELEASE_NO=NULL' +
+                    ',GD2=NULL' +
+                    ',FIO_INSPECTOR=NULL' +
+                    ',POST_INSPECTOR=NULL' +
+                    ',MC_STATUS=NULL' +
+                    ' WHERE PLACEID=' + vPlaceID +
+                    ' AND MAIN_ID=' + vMainID +
+                    ' AND MAIN_COUNTER=' + vMCounter;
+            EXECUTESQL ('STS_DB', sSQL);
+
+            Resend();
+          ),
+          RAISEEXCEPTION ('Выбранный документ находится в состоянии "Зарегистрирован" и не может быть повторно отправлен')
+        ); // IF
+      )
+    ); // IF - //
+  ),
+  Block(
+    RAISEEXCEPTION ('Отменено пользователем');
+  )
+); // IF - //
+  
+AddNotification ();

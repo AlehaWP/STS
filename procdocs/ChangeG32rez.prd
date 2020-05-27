@@ -1,0 +1,175 @@
+// *****************************************************************************
+// Название: Изменение нумерации товаров в ДО2
+// Описание: Изменение нумерации товаров в ДО2
+// Кнопка вызова: 1
+// Подпись кнопки: Изменение нумерации товаров в ДО2
+// *****************************************************************************
+//
+
+VAR('vPlaceID', string, KRD_MAIN.PLACEID);
+VAR('vID', string, KRD_MAIN.ID);
+VAR('iChangeG32', integer, convert(INPUTTEXT ('Изменение номера товара', 'Введите старый номер товара'), integer));
+VAR('iNewG32', integer, convert(INPUTTEXT ('Изменение номера товара', 'Введите новый номер товара'), integer));
+VAR('sPaperNames', string, '');
+VAR('sPaperCodes', string, '');
+VAR('sNumBill', string, '');
+VAR('sCodeBill', string, '');
+VAR('sNameBill', string, '');
+VAR('nTTN', integer, 1);
+
+OPENQUERY('QRYREFPAPERS', 'STS_DB', 'SELECT PAPER_DOCG44_CODE, PAPERNAME ' +
+                                    'FROM PAPERS ' +
+                                    'WHERE PAPER_IS_WAYBILL = 1');
+
+sPaperNames := '|' + JOINVALUES('QRYREFPAPERS', '|', ['PAPERNAME']) + '|';
+sPaperCodes := '|' + JOINVALUES('QRYREFPAPERS', '|', ['PAPER_DOCG44_CODE']) + '|';
+
+
+OPENQUERY('DO1', 'STS_DB', 'SELECT KM.ID, KC.G32, KC.GN  ' +
+                             'FROM KRD_MAIN KM LEFT JOIN KRD_COMM KC ON (KM.PLACEID=KC.PLACEID AND ' +
+                                                                        'KM.ID=KC.ID) ' +
+                             'WHERE KM.PLACEID=' + vPlaceId + ' AND ' +
+                             'KM.ID=' + vId +
+                             ' ORDER BY  KC.G32');
+
+if(LOCATE('DO1', 'G32' , iChangeG32) = 1,
+   block(
+       Var('iNewNumG32', integer, DO1.G32);
+       Var('iNewNumGN', integer, DO1.GN);
+
+        // Запоминаем данные по накладной в это товаре, чтобы потом перенумеровать номера по накладной
+        OPENQUERY('NumBill', 'STS_DB', 'SELECT' +
+                                      ' KP.PAPERNAME, KP.PAPERNO, KP.PAPERDATE, KP.PAPERCODE '+
+                                      ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KCP.PLACEID = KP.PLACEID) AND (KCP.ID = KP.ID) AND (KCP.DOC_COUNTER = KP.COUNTER))'+
+                                      'WHERE '+
+                                      ' KCP.PLACEID = ' + vPlaceId + ' AND KCP.ID = '  + DO1.ID +
+                                      ' AND KCP.G32 = ' + DO1.G32 + ' AND KCP.DOC_TYPE = 13 '+
+                                      ' ORDER BY KP.PAPERDATE');
+        FIRST('NumBill');
+        While((EOF('NumBill')=0)*(sNumBill = ''),
+               Block(
+                 if(STRPOS ('|' + NumBill.PAPERNAME + '|', sPaperNames)|STRPOS ('|' + NumBill.PAPERCODE + '|', sPaperCodes) ,
+                             Block(
+                             sNumBill := NumBill.PAPERNO;
+                             sCodeBill := NumBill.PAPERCODE;
+                             sNameBill := NumBill.PAPERNAME;
+                             )
+                 );
+                 NEXT('NumBill');
+               )
+        );
+
+        // Перекидываем товар в конец списка и освобождаем его клетку
+        FINDKEY('KRD_COMM_2', [vPlaceId, FIELDVALUE('DO1', 'ID'), FIELDVALUE('DO1', 'G32')]);
+        EDIT('KRD_COMM_2');
+        SETFIELDVALUE('KRD_COMM_2',
+                      'G32', 32767,
+                      'GN' , 32767
+        );
+        POST('KRD_COMM_2');
+        
+        //Обновляем KR_C_P
+        OPENQUERY('KR_C_P_G32', 'STS_DB', 'SELECT * FROM KR_C_P '+
+                                          ' WHERE PLACEID = '+ vPlaceID +
+                                          ' AND ID = '+ vID + ' AND G32 = ' + DO1.G32
+        );
+        FIRST('KR_C_P_G32');
+        WHILE(EOF('KR_C_P_G32') = 0,
+              Block(
+                FINDKEY('KRD_COMM_PAPERS_2', [vPlaceId, vID, KR_C_P_G32.G32, KR_C_P_G32.DOC_TYPE, KR_C_P_G32.DOC_COUNTER]);
+                EDIT('KRD_COMM_PAPERS_2');
+                SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                              'G32', 32767
+                );
+                POST('KRD_COMM_PAPERS_2');
+                NEXT('KR_C_P_G32');
+              )
+        );
+        
+
+       ),
+       RAISEEXCEPTION ('Товара с выбранным номером не существует')
+);
+//REFRESH ('KRD_COMM_2');
+// сдвигаем товары на строчку вниз, т.е  значение "G32' + 1
+LOCATE('DO1', 'G32' , (iChangeG32 - 1));
+While((DO1.G32 >= iNewG32 )*(BOF ('DO1') = 0),
+      Block(
+        FINDKEY('KRD_COMM_2', [vPlaceId, FIELDVALUE('DO1', 'ID'), FIELDVALUE('DO1', 'G32')]);
+        EDIT('KRD_COMM_2');
+        SETFIELDVALUE('KRD_COMM_2',
+                      'G32', iNewNumG32,
+                      'GN' , iNewNumGN
+        );
+        POST('KRD_COMM_2');
+        OPENQUERY('KR_C_P_G32', 'STS_DB', 'SELECT * FROM KR_C_P '+
+                                          ' WHERE PLACEID = '+ vPlaceID +
+                                          ' AND ID = '+ vID + ' AND G32 = ' + DO1.G32
+        );
+        FIRST('KR_C_P_G32');
+        //меняем KR_C_P
+        WHILE(EOF('KR_C_P_G32') = 0,
+              Block(
+                FINDKEY('KRD_COMM_PAPERS_2', [vPlaceId, vID, KR_C_P_G32.G32, KR_C_P_G32.DOC_TYPE, KR_C_P_G32.DOC_COUNTER]);
+                EDIT('KRD_COMM_PAPERS_2');
+                SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                              'G32', iNewNumG32
+                );
+                POST('KRD_COMM_PAPERS_2');
+                NEXT('KR_C_P_G32');
+              )
+        );
+        
+        iNewNumG32 := iNewNumG32 - 1;
+        iNewNumGN := iNewNumGN - 1;
+        PRIOR ('DO1')
+      )
+);
+//Перекидываем нужный товар на нужное место
+FINDKEY('KRD_COMM_2', [vPlaceId, vID, 32767]);
+EDIT('KRD_COMM_2');
+SETFIELDVALUE('KRD_COMM_2',
+              'G32', iNewG32,
+              'GN' , iNewNumGN
+);
+POST('KRD_COMM_2');
+OPENQUERY('KR_C_P_G32', 'STS_DB', 'SELECT * FROM KR_C_P '+
+                                  ' WHERE PLACEID = '+ vPlaceID +
+                                  ' AND ID = '+ vID + ' AND G32 = 32767'
+);
+FIRST('KR_C_P_G32');
+//меняем KR_C_P
+WHILE(EOF('KR_C_P_G32') = 0,
+      Block(
+        FINDKEY('KRD_COMM_PAPERS_2', [vPlaceId, vID, KR_C_P_G32.G32, KR_C_P_G32.DOC_TYPE, KR_C_P_G32.DOC_COUNTER]);
+        EDIT('KRD_COMM_PAPERS_2');
+        SETFIELDVALUE('KRD_COMM_PAPERS_2',
+                      'G32', iNewG32
+        );
+        POST('KRD_COMM_PAPERS_2');
+        NEXT('KR_C_P_G32');
+      )
+);
+
+OPENQUERY('NumOnTTN', 'STS_DB', 'SELECT' +
+                               ' KC.N_TTN_G32, KC.G32 '+
+                               ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KCP.PLACEID = KP.PLACEID) AND (KCP.ID = KP.ID) AND (KCP.DOC_COUNTER = KP.COUNTER))'+
+                               ' LEFT JOIN KRD_COMM KC ON ((KCP.PLACEID = KC.PLACEID) AND (KCP.ID = KC.ID) AND (KCP.G32 = KC.G32)) '+
+                               'WHERE '+
+                               ' KCP.PLACEID = ' + vPlaceId + ' AND KCP.ID = '  + DO1.ID +
+                               ' AND KCP.DOC_TYPE = 13 '+ ' AND KP.PAPERNO = ' + char(39) + sNumBill + char(39) +
+                               ' AND KP.PAPERNAME = ' + char(39) + sNameBill + char(39) +' AND KP.PAPERCODE = ' + char(39) + sCodeBill + char(39) +
+                               ' ORDER BY KС.G32');
+FIRST('NumOnTTN');
+WHILE( EOF('NumOnTTN')=0 ,
+      BLOCK(
+        FINDKEY('KRD_COMM_2', [vPlaceId, vID, NumOnTTN.G32]);
+        nTTN := nTTN + 1;
+        EDIT('KRD_COMM_2');
+        SETFIELDVALUE('KRD_COMM_2',
+                      'N_TTN_G32', nTTN
+        );
+        POST('KRD_COMM_2');
+        NEXT('NumOnTTN');
+      )
+);

@@ -1,0 +1,195 @@
+// *****************************************************************************
+// Название: Excel-->ДО1
+// Описание: Excel-->ДО1
+// Кнопка вызова: 0
+// Подпись кнопки: Excel-->ДО1
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+{OPENDATABASE ('XLS_DB', 'Microsoft Excel Driver (*.xlsx)', 'ODBC DSN=EXCEL_DB');}
+
+
+
+VAR ('sPlaceID', String, '');
+VAR ('bPlaceIsSelected', Integer, 0);
+VAR ('iGoodDOWrite', integer, 0);
+VAR ('iBadDOWrite', integer, 0);
+
+VAR ('sLogsDirectory', string, PROGRAMPATH() + 'LOGS\');
+
+IF (DirectoryExists (sLogsDirectory),,ForceDirectories (sLogsDirectory));
+//RAISEEXCEPTION(sLogsDirectory);
+VAR ('sLogFile', string, sLogsDirectory + 'UpsExcelLog.txt');
+CREATELOGFILE (sLogFile);
+APPENDLOGFILE (sLogFile, NOW (), '-------------Начало выполнения------------');
+
+IF(BOOKOPENED (),,
+   BLOCK(
+         APPENDLOGFILE (sLogFile, NOW (), 'Закрыта книга учета. Выполнение прекращено');
+         RAISEEXCEPTION ('Закрыта книга учета. Выполнение прекращено');
+   )
+);
+
+VAR ('sFilePath', string, 'C:\Users\nerchenko.CTM\Downloads\ЗАГРУЗКА.XLSX');
+SELECTFILE ('sFilePath', 'Выберите файл', 'Файлы Excel (*.xlsx)|*.xlsx');
+APPENDLOGFILE (sLogFile, NOW (), 'Выбран файл :' + sFilePath);
+
+VAR ('sListName', string, 'Лист1$');
+
+IF (sFilePath <> '',
+    Block(
+      TRYEXCEPT(
+                BLOCK(
+                      //      OPENDATABASE ('XLS_DB', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+sFilePath+';Extended Properties="Excel 8.0;HDR=Yes;IMEX=1"');
+                      OPENDATABASE ('XLS_DB', 'ActiveX Data Objects (ADO)', 'ConnString=Provider=Microsoft.ACE.OLEDB.12.0;Data Source='+sFilePath+ ';Extended Properties="Excel 12.0;HDR=Yes";Persist Security Info=False');
+                      OPENQUERY ('tblExcel', 'SELECT * FROM ['+sListName+ ']', 'XLS_DB');
+                      IF(tblExcel."Получатель " ='Получатель НАИМЕНОВАНИЕ', NEXT('tblExcel'));
+                ),,
+                BLOCK(
+                      APPENDLOGFILE (sLogFile, NOW (), EXCEPTIONMESSAGE());
+                      SHOWLOGFILE (sLogFile);
+                      CLOSEDATABASE('XLS_DB');
+                      RAISEEXCEPTION ('Ошибка открытия EXCEL. Выполнение невозможно!');
+                )
+      );
+      OPENQUERY ('Stors', 'STS_DB', 'SELECT * FROM STORES');
+      bPlaceIsSelected := SELECTVALUES ('Выбор склада, на который будет создан документ', 'Stors',
+                                  [
+                                    ['LICENCENO', 'Номер лицензии', 15],
+                                    ['LICENCENO_EXT', '', 1],
+                                    ['STORE_NO', 'Номер склада', 15],
+                                    ['NAME', 'Название склада', 30],
+                                    ['PlaceID', '', 10]
+                                  ],
+                                  [
+                                    ['PlaceID', 'sPlaceID'],
+                                  ], '', 'STS_DB');
+
+      IF (bPlaceIsSelected = 0,
+          BLOCK(
+                APPENDLOGFILE (sLogFile, NOW (), 'Отменено пользователем');
+                RAISEEXCEPTION ('Отменено пользователем');
+          )
+      ); // IF - //
+      OPENQUERY ('Stors', 'STS_DB', 'SELECT * FROM STORES WHERE PLACEID=' + sPlaceID);
+
+      VAR ('i', integer, 0);
+      Var('iRecCount', integer, RecordCount('tblExcel'));
+
+      APPENDLOGFILE (sLogFile, NOW (), 'Загружаем ДО1. Кол-во : ' + RecordCount('tblExcel'));
+      SHOWPROGRESS ('Загружаем ДО1. Кол-во : ' + RecordCount('tblExcel'));
+      //showmessage(FIELDVALUE ('tblExcel', 'Получатель, индекс') + ' ' + FIELDVALUE ('tblExcel', 'Получатель, город') + ' ' +FIELDVALUE ('tblExcel', 'Получатель, адрес'));
+      WHILE (EOF ('tblExcel') = 0,
+        Block(
+                TRYEXCEPT(
+                          BLOCK(
+                                VAR ('dtDODate', DateTime, Now ());
+                                VAR ('sNBD', String, SOLVE (INIFILE ('Docs', 'MakeBD_No', '1')));
+                                VAR ('sVal', String, CURRENCYCODE (FIELDVALUE ('tblExcel', 'Валюта')));
+                                APPENDRECORD ('KRD_MAIN');
+                                EDITRECORD ('KRD_MAIN');
+                                SETFIELDVALUE ('KRD_MAIN',
+                                               'PLACEID', sPlaceID,
+                                               'PART_MODE', 1,
+                                               'G011', 'ИМ',
+                                               'G012', '40',
+                                               'A_MODE', 7,
+                                               'Z_MODE', 3,
+                                               'BD_DATE', NOW(),
+                                               //'G19', '0',
+                                               'BEG_KEEP', dtDODate - 1,
+                                               'ARR_DATE', dtDODate,
+                                               'DOC_STATE', 0,
+                                               'WITH_PLACE', 1,
+                                               'NBD', sNBD,
+                                               //'G210', 1,
+                                               'G221', sVal,
+                                               //'G261', '40',
+                                               'G082', FIELDVALUE ('tblExcel', 'Получатель '),
+                                               'G083', FIELDVALUE ('tblExcel', 'Получатель, индекс') + ' ' + FIELDVALUE ('tblExcel', 'Получатель, город') + ' ' +FIELDVALUE ('tblExcel', 'Получатель, адрес'),
+                                               'G142', Stors.NAME,
+                                               'G143', Stors.ADDRESS,
+                                               'G144', Stors.LICENCENO,
+                                               'G1440', CASE (TRIM (STORS.STORE_TYPE), ['СВХУТ', '1', 'СВХ', '1', 'ЗТК', '5', 'ПЗТК', '4', 'СП', '3']),
+                                               'G145', Stors.LICENCEDATE,
+                                ); // SETFIELDVALUE - //
+                                POSTRECORD ('KRD_MAIN');
+
+
+                                APPENDRECORD ('KRD_PAPERS');
+                                EDIT ('KRD_PAPERS');
+                                SETFIELDVALUE ('KRD_PAPERS',
+                                               'PLACEID', sPlaceID,
+                                               'COUNTER', '1',
+                                               'PAPERNAME', 'ОНЭД',
+                                               'PAPERNO',   FIELDVALUE ('tblExcel', 'Общая накладная'),
+                                               'PAPERCODE', '02020',
+                                               'PAPERDATE', FIELDVALUE ('tblExcel', 'Дата'),
+                                               'PAPERCURRENCY', sVal
+                                );
+                                POST ('KRD_PAPERS');
+
+                                APPENDRECORD ('KRD_COMM');
+                                EDITRECORD ('KRD_COMM');
+                                SETFIELDVALUE ('KRD_COMM',
+                                               'G312', FIELDVALUE ('tblExcel', 'Описание товара, РУС'),
+                                               'G311', FIELDVALUE ('tblExcel', 'Кол-во мест'),
+                                               'G35', FIELDVALUE ('tblExcel', 'Вес, ACT'),
+                                               'BOXNO', FIELDVALUE ('tblExcel', '14'),
+                                               'G33', FIELDVALUE ('tblExcel', 'Код ТНВЭД'),
+                                               'G42', FIELDVALUE ('tblExcel', 'Ст-ть'),
+                                               'G42_CURRENCY', sVal,
+                                               'VALCODE', FIELDVALUE ('tblExcel', 'Валюта'),
+                                               //'G313', FIELDVALUE ('tblExcel', 'вид грузовых мест'),
+                                               'ACCEPTDATE', dtDODate,
+                                               'LEG_PERIOD', 15,
+                                               'STORAGE_TYPE', 'НОР'
+                                ); // SETFIELDVALUE - //
+                                POSTRECORD ('KRD_COMM');
+
+                                iGoodDOWrite := iGoodDOWrite + 1;
+                         ),,
+                         BLOCK(
+                               APPENDLOGFILE (sLogFile, NOW (), 'Ошибка записи ДО1. Строчка:' + i + ' № накладной :' + FIELDVALUE ('tblExcel', 'Общая накладная'), EXCEPTIONMESSAGE());
+                               iBadDOWrite := iBadDOWrite + 1;
+                         )
+                );
+                i:=i + 1;
+                SETPROGRESS (i, 100, iRecCount);
+                NEXT ('tblExcel');
+           )//Block While
+      ); //While}
+      HIDEPROGRESS ();
+      APPENDLOGFILE (sLogFile, NOW (), 'Чтение завершено. Записано ДО1 :' + iGoodDOWrite + ' На записано :' + iBadDOWrite);
+      SHOWLOGFILE (sLogFile);
+      CLOSEDATASET('tblExcel');
+      CLOSEDATABASE('XLS_DB');
+      GLOBALREFRESH();
+    ),//BLOCK IF sFilePath
+    BLOCK(
+         APPENDLOGFILE (sLogFile, NOW (), 'Не выбран файл. Выполнение прекращено');
+         RAISEEXCEPTION ('Не выбран файл. Выполнение прекращено');
+    )
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

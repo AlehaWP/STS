@@ -1,0 +1,119 @@
+// *****************************************************************************
+// Название: Загрузка договоров из XML
+// Описание: Загрузка договоров из XML
+// Кнопка вызова: 1
+// Подпись кнопки: Загрузка договоров из XML
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+Var ('sFileName', string, '');
+
+If(
+   SELECTFILE ('sFileName', 'Укажите файл для загрузки', '(*.xml)|*.xml'),,
+   RaiseException ('Выполнение отменено')
+);
+
+VAR ('select', Integer, 0);
+VAR ('tmpPlaceID', String, '');
+VAR ('tmpKind', String, '');
+VAR ('tmpName', String, '');
+VAR ('tmpNumber', String, '');
+VAR ('tmpDate', String, '');
+
+OPENQUERY ('PLC', 'SELECT PLACEID, LICENCENO, LICENCEDATE, LICENCETYPE, NAME  FROM STORES WHERE ISNULL(IN_ARCHIVE,0)=0','STS_DB');
+select := SELECTVALUES ('Выберите разрешительный документ', 'PLC',
+             [['LICENCENO', 'Номер лицензии', 50],
+              ['NAME', 'Наименование СВХ', 50],
+              ['LICENCEDATE', 'Дата лицензии', 20]],
+             [['PLACEID', 'tmpPlaceId'],
+              ['LICENCENO', 'tmpNumber'],
+              ['NAME', 'tmpName'],
+              ['LICENCEDATE', 'tmpDate'], ['LICENCETYPE', 'tmpKind']], 'PLACEID', 'STS_DB');
+
+CLOSEDATASET('PLC');
+IF (select = 0,RaiseException('Выполнение отменено'));
+
+tmpKind := CASE (tmpKind, ['1', 'lic_Certificate',
+                           '2', 'lic_Licence',
+                           '3', 'lic_Permition',
+                           '4', 'lic_PermZtk',
+                           '5', 'lic_TempZtk'
+                          ], 'lic_Certificate');
+
+Var('dXML', integer, XmlDocumentCreate ());
+XmlDocumentLoad (dXML, sFileName);
+Var ('dRoot', integer, XmlDocumentRoot (dXML));
+Var ('dContracts', integer, XmlNodeChild (dRoot, 'Contracts'));
+
+If (dContracts=0, RAISEEXCEPTION('Загрузка остановлена. Формат xml отличается от шаблона'));
+
+Var ('iContractsCounter', integer, XmlNodeChildCount (dContracts));
+Var ('i', integer, 0);
+Var ('dContract', integer, 1);
+Var ('AddInfo', string, '');
+Var ('iLoadedContracts', integer, 0);
+
+ExecuteScript(ProgramPath() + 'ProcDocs\sql_insert.prd');
+SHOWPROGRESS ('Загружаем договоры');
+
+CREATELOGFILE ('log.txt');
+APPENDLOGFILE ('log.txt', 'В файле было ' + iContractsCounter + ' договоров');
+While (i < iContractsCounter,
+      BLOCK(
+            dContract := XmlNodeChild (dContracts, i);
+            {
+            if (MOD(i, 500) = 0,
+               BLOCK(
+                     showmessage(i);
+               )
+            );}
+            Insert2 ('JOURNAL_MASTER_ID', '(SELECT (ISNULL(MAX(JOURNAL_MASTER_ID),0) + 1) FROM CONTRACTINFO)', 3);
+            Insert2 ('JOURNAL_UUID', GenerateUUID());
+            Insert2 ('PLACEID', tmpPlaceId);
+            Insert2 ('WH_NAME', tmpName);
+            Insert2 ('WH_CERTKIND', tmpKind);
+            Insert2 ('WH_CERTNUMBER', tmpNumber);
+            Insert2 ('WH_CERTDATE', tmpDate, 2);
+            IF (LENGTH (XmlNodeValue(XmlNodeFind(dContract, 'CONTRACTDATE')))>8,
+               Insert2 ('DOGDATE', XmlNodeValue(XmlNodeFind(dContract, 'CONTRACTDATE')), 2)
+            );
+            Insert2 ('DOGNUMBER', XmlNodeValue(XmlNodeFind(dContract, 'CONTRACTNUMBER')));
+            Insert2 ('ORG_NAME', XmlNodeValue(XmlNodeFind(dContract, 'CustName')));
+            Insert2 ('ORG_ADDRESS', XmlNodeValue(XmlNodeFind(dContract, 'CustAddress')));
+            AddInfo := '';
+            IF (LENGTH(TRIM(XmlNodeValue(XmlNodeFind(dContract, 'CustINN')))),
+                AddInfo :=' ИНН:' +  XmlNodeValue(XmlNodeFind(dContract, 'CustINN'))
+            );
+            IF (LENGTH(TRIM(XmlNodeValue(XmlNodeFind(dContract, 'CustKPP')))),
+                AddInfo := AddInfo + ' КПП:' + XmlNodeValue(XmlNodeFind(dContract, 'CustKPP'))
+            );
+            Insert2 ('OTHERINFO', AddInfo);
+            TRYEXCEPT(
+               BLOCK(
+                     Insert2 ('','',0,'CONTRACTINFO','dbJournals');
+                     iLoadedContracts := iLoadedContracts + 1
+               ),,
+               BLOCK(
+                     APPENDLOGFILE('log.txt', 'Ошибка загрузки договора: '+XmlNodeValue(XmlNodeFind(dContract, 'ACCOUNTNum')));
+                     APPENDLOGFILE('log.txt', EXCEPTIONMESSAGE());
+               )
+            );
+
+            i:= i + 1;
+            SETPROGRESS(i, 100, iContractsCounter);
+      )
+);
+
+APPENDLOGFILE('log.txt', 'Загружено: '+iLoadedContracts);
+HIDEPROGRESS();
+SHOWLOGFILE ('log.txt');
+
+
+
+
+
+
+
+

@@ -1,0 +1,1117 @@
+// *****************************************************************************
+// Название: Перед закрытием документа
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\errors_log\errors_log.prd');
+VAR ('sErrorsListId', String, GENERATEUUID (1));
+VAR ('sGroupName', String, '');
+VAR ('bError', Integer, 0);
+VAR ('sSQL', String, '');
+
+
+FUNC ('IsUnregistered', '',
+  Block(
+    ((DocType = 1) * (KRD_MAIN.MC_STATUS_BD <> '3')) | ((DocType = 5) * (REL_MAIN.MC_STATUS <> '3'))
+  )
+), // FUNC IsUnregistered
+
+
+// ДЕКЛАРАНТ+ ==================================================================
+  IF ((DocType = 5) * (REL_MAIN.MC_STATUS <> '3') * (INIFILE ('DO2Report', 'CheckReleaseOutDate', 0) = 1),
+    Block(
+      sSQL := 'SELECT' +
+              ' COUNT(ID) AS C' +
+              ' FROM REL_COMM' +
+              ' WHERE' +
+              ' RELEASE_OUT_DATE IS NULL' +
+              ' AND PLACEID=' + REL_MAIN.PLACEID +
+              ' AND ID=' + REL_MAIN.ID +
+              ' AND COUNTER IN (' +
+              'SELECT COUNTER FROM ' + CORRECTTABLENAME ('RELEASE') + ' WHERE PLACEID=' + REL_MAIN.PLACEID + ' AND MAIN_ID=' + REL_MAIN.MAIN_ID + ' AND MAIN_COUNTER=' + REL_MAIN.MAIN_COUNTER +
+              ')';
+      OPENQUERY ('qRC', 'STS_DB', sSQL, 1);
+      IF (qRC.C > 0,
+        Block(
+          VAR ('dtReleaseOutDate', DateTime);
+          WHILE (dtReleaseOutDate <= 0,
+            Block(
+              INPUTDATE ('dtReleaseOutDate', 'Укажите дату и время выдачи товара', 1);
+            )
+          ); // WHILE
+          sSQL := 'UPDATE' +
+                  ' REL_COMM' +
+                  ' SET' +
+                  ' RELEASE_OUT_DATE=' + DBFORMATDATETIME (dtReleaseOutDate, GETDATABASETYPE ('STS_DB'), 1, 1, 1) +
+                  ' WHERE' +
+                  ' PLACEID=' + REL_MAIN.PLACEID +
+                  ' AND ID=' + REL_MAIN.ID +
+                  ' AND COUNTER IN (' +
+                  'SELECT COUNTER FROM ' + CORRECTTABLENAME ('RELEASE') + ' WHERE PLACEID=' + REL_MAIN.PLACEID + ' AND MAIN_ID=' + REL_MAIN.MAIN_ID + ' AND MAIN_COUNTER=' + REL_MAIN.MAIN_COUNTER +
+                  ')';
+          EXECUTESQL ('STS_DB', sSQL);
+        )
+      ); // IF
+      CLOSEDATASET ('qRC');
+    )
+  ); // IF
+  IF (INIFILE ('DEKLPLUS', 'docclosb', 0) = 1,
+    Block(
+
+      VAR ('LogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'do_check.log');
+      VAR ('LogFile_all', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Check_all_ ' + FORMATDATETIME ('MMYY', DATE()) + '.log');
+      VAR ('bShowLogFile', Integer, 0);
+
+      FUNC ('AddLog',
+        Block(
+          PARAM ('pFieldName', String, 0);
+          PARAM ('pErrorDescr', String, 1);
+          PARAM ('pErrorVal', String, 2);
+          PARAM ('pCorrectVal', String, 3);
+        ),
+        Block(
+          APPENDLOGFILE (LogFile, '* ' + RIGHTPAD (pFieldName, 29, ' ') + '* ' + RIGHTPAD (pErrorDescr, 79, ' ') + '* ' + RIGHTPAD (pErrorVal, 29, ' ') + '* ' + RIGHTPAD (pCorrectVal, 29, ' ') + '*');
+          APPENDLOGFILE (LogFile, CHARSTR ('*', 175));
+          bShowLogFile := 1;
+        )
+      ), // FUNC - AddLog
+
+      //SHOWMESSAGE (DocType);
+      // ДО-1 - 1
+      // ДО-2 - 5
+
+      IF (DocType = 5 * IsUnregistered(),
+        Block(
+          CREATELOGFILE (LogFile, 0);
+          APPENDLOGFILE (LogFile_all, 'Проверка ДО-2 перед закрытием: ' + Now());
+          APPENDLOGFILE (LogFile_all, '№ ' + RELEASE.RELEASE_NO + ' от ' + RELEASE.OUT_DATE);
+          APPENDLOGFILE (LogFile, 'Форма ДО-2 № ' + RELEASE.RELEASE_NO + ' от ' + RELEASE.OUT_DATE, ' ');
+          APPENDLOGFILE (LogFile, CHARSTR ('*', 175));
+          APPENDLOGFILE (LogFile, '*' + CENTER ('Поле', 30) + '*' + CENTER ('Описание ошибки', 80) + '*' + CENTER ('Ошибочное значение', 30) + '*' + CENTER ('Ожидаемое значение', 30) + '*');
+          APPENDLOGFILE (LogFile, CHARSTR ('*', 175));
+
+          // дата ДО-2 должна быть больше даты ДО-1
+          IF (RELEASE.OUT_DATE < KRD_MAIN.BD_DATE,
+            Block(
+              AddLog ('Дата ДО-2', 'Значение меньше даты ДО-1', RELEASE.OUT_DATE, '>= ' + KRD_MAIN.BD_DATE);
+              APPENDLOGFILE (LogFile_all,'Дата ДО-2', 'Значение меньше даты ДО-1', RELEASE.OUT_DATE, '>= ' + KRD_MAIN.BD_DATE);
+            )
+          ); // IF
+
+          // дата ДО-2 должна быть меньше завтра
+          IF (RELEASE.OUT_DATE > Now(),
+            Block(
+              AddLog ('Дата ДО-2', 'Значение больше текущей даты', RELEASE.OUT_DATE, '>= ' + Now());
+              APPENDLOGFILE (LogFile_all,'Дата ДО-2', 'Значение больше текущей даты', RELEASE.OUT_DATE, '>= ' + Now());
+            )
+          );
+
+          // дата выпуска должна быть меньше завтра
+          IF (RELEASE.RELEASE_GOODS_DATE > Now(),
+            Block(
+              AddLog ('Дата выпуска', 'Значение больше текущей даты', RELEASE.RELEASE_GOODS_DATE, '>= ' + Now());
+              APPENDLOGFILE (LogFile_all,'Дата выпуска', 'Значение больше текущей даты', RELEASE.RELEASE_GOODS_DATE, '>= ' + Now());
+            )
+          );
+
+          // дата выпуска товара должна быть меньше завтра
+          IF (REL_COMM.RELEASE_OUT_DATE > Now(),
+            Block(
+              AddLog ('Дата выпуска товара', 'Значение больше текущей даты', REL_COMM.RELEASE_OUT_DATE, '>= ' + Now());
+              APPENDLOGFILE (LogFile_all, 'Дата выпуска товара', 'Значение больше текущей даты', REL_COMM.RELEASE_OUT_DATE, '>= ' + Now());
+            )
+          ); // IF
+
+          IF (LENGTH (TRIM (RELEASE.RELEASE_GOODS_DATE)) > 0,
+            Block(
+              // дата ДО-2 должна быть больше даты выпуска товаров
+              IF (RELEASE.OUT_DATE < RELEASE.RELEASE_DATE,
+                Block(
+                  AddLog ('Дата ДО-2', 'Значение меньше даты выпускающего документа', FDT ('DD.MM.YYYY', RELEASE.OUT_DATE), '>= ' + RELEASE.RELEASE_DATE);
+                  APPENDLOGFILE (LogFile_all,'Дата ДО-2', 'Значение меньше даты выпускающего документа', FDT ('DD.MM.YYYY', RELEASE.OUT_DATE), '>= ' + RELEASE.RELEASE_DATE);
+                )
+              ); // IF
+              // дата выпуска товаров должна быть больше или равна, чем дата выпускающего документа
+              IF (RELEASE.RELEASE_GOODS_DATE < RELEASE.RELEASE_DATE,
+                Block(
+                  AddLog ('Дата выпуска', 'Значение меньше даты выпускающего документа', RELEASE.RELEASE_GOODS_DATE, '>= ' + RELEASE.RELEASE_DATE);
+                  APPENDLOGFILE (LogFile_all,'Дата выпуска', 'Значение меньше даты выпускающего документа', RELEASE.RELEASE_GOODS_DATE, '>= ' + RELEASE.RELEASE_DATE);
+                )
+              ); // IF
+            )
+          ); // IF
+
+          // наличие в журнале Уведомлений указанного выпускающего документа
+          OPENQUERY ('qGoodOut', 'SELECT PRDOCUMENTNAME, PRDOCUMENTNUMBER, PRDOCUMENTDATE, SendDate, SendTime FROM JRGOODOUT2 WHERE PRDOCUMENTNUMBER=' +char(39)+ RELEASE.DOC_NO +char(39), 'dbJournals');
+          IF (RECORDCOUNT ('qGoodOut') = 0,
+            Block(
+              //OPENQUERY ('qFindGoodOut', 'SELECT PRDOCUMENTNAME, PRDOCUMENTNUMBER, PRDOCUMENTDATE FROM JRGOODOUT2 WHERE ', 'dbJournals');
+              AddLog ('Номер докуменат выдачи', 'Значение не найдено в журнале Уведомлений о принятии решения о выдаче товаров', RELEASE.DOC_NO, ' ');
+              APPENDLOGFILE (LogFile_all,'Номер докуменат выдачи', 'Значение не найдено в журнале Уведомлений о принятии решения о выдаче товаров', RELEASE.DOC_NO, ' ');
+            ),
+            Block(
+              // МОЙ БЛОК
+              // проверка даты получения уведомления и времени по отношению ко времени до2
+              IF (qGoodOut.SendDate>RELEASE.OUT_DATE,
+                Block(
+                  AddLog ('Дата ДО2', 'Дата ДО2 раньше даты уведомления', RELEASE.OUT_DATE, '>= ' + qGoodOut.SendDate);
+                  APPENDLOGFILE (LogFile_all,'Дата ДО2', 'Дата ДО2 раньше даты уведомления', RELEASE.OUT_DATE, '>= ' + qGoodOut.SendDate);
+                )
+              );
+              // проверка даты получения уведомления и времени по отношению ко времени выдачи товара
+              IF (qGoodOut.SendDate>REL_COMM.RELEASE_OUT_DATE,
+                Block(
+                  AddLog ('Дата выдачи товара', 'Дата выдачи раньше даты уведомления', REL_COMM.RELEASE_OUT_DATE, '>= ' + qGoodOut.SendDate);
+                  APPENDLOGFILE (LogFile_all,'Дата выдачи товара', 'Дата выдачи раньше даты уведомления', REL_COMM.RELEASE_OUT_DATE, '>= ' + qGoodOut.SendDate);
+                )
+              );
+
+              // проверка типа документа
+              IF (qGoodOut.PrDocumentName <> RELEASE.DOC_TYPE,
+                Block(
+                  AddLog ('Тип документа выдачи', 'Не соответствует данным в Уведомлении о принятии решения о выдаче', RELEASE.DOC_TYPE, qGoodOut.PrDocumentName);
+                  APPENDLOGFILE (LogFile_all,'Тип документа выдачи', 'Не соответствует данным в Уведомлении о принятии решения о выдаче', RELEASE.DOC_TYPE, qGoodOut.PrDocumentName);
+                )
+              );
+            )
+          ); // IF
+
+          // маска выпускающего документа ПТД 0000000/000000/п00000
+          // не реализовано
+
+
+          // показываем лог, только если что-то в него писали
+          IF (bShowLogFile, SHOWLOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'do_check.log', 'Результат проверки'));
+        )
+      ); // IF
+
+      IF (DocType = 1 * IsUnregistered(),
+        Block(
+          CREATELOGFILE (LogFile, 0);
+          APPENDLOGFILE (LogFile_all, 'Проверка ДО-1 перед закрытием: ' + Now());
+          APPENDLOGFILE (LogFile_all, '№ ' + KRD_MAIN_2.NBD + ' от ' + KRD_MAIN_2.BD_DATE);
+          APPENDLOGFILE (LogFile, 'Форма ДО-1 № ' + KRD_MAIN_2.NBD + ' от ' + KRD_MAIN_2.BD_DATE, ' ');
+          APPENDLOGFILE (LogFile, CHARSTR ('*', 175));
+          APPENDLOGFILE (LogFile, '*' + CENTER ('Поле', 30) + '*' + CENTER ('Описание ошибки', 80) + '*' + CENTER ('Ошибочное значение', 30) + '*' + CENTER ('Ожидаемое значение', 30) + '*');
+          APPENDLOGFILE (LogFile, CHARSTR ('*', 175));
+
+          IF (FIELDVALUE ('KRD_MAIN.G261')<>'31',
+            Block(
+              bError := 1;
+              AddError (
+                sGroupName,
+                'ОШ.',
+                'Код транспорта',
+                FIELDVALUE('KRD_MAIN.G261'),
+                '31',
+                sErrorsListId
+              ); // AddError
+            )
+          ); // IF
+
+          IF (FINDKEY ('STORES_2', [FIELDVALUE ('KRD_MAIN_2.PLACEID')]),
+            Block(
+              IF (FIELDVALUE ('STORES_2.LICENCENO') <> FIELDVALUE ('KRD_MAIN_2.G144'),
+                Block(
+                  AddLog ('Номер СВХ/ЗТК', 'Не правильный номер СВХ/ЗТК: ', KRD_MAIN_2.G144, ' Правильный: ' + STORES_2.LICENCENO);
+                  APPENDLOGFILE (LogFile_all, 'Ошибка номера: ' + KRD_MAIN_2.G144 + ' Правильный: ' + STORES_2.LICENCENO);
+                ),
+                Block(
+                  IF (FIELDVALUE ('STORES_2.NAME') <> FIELDVALUE ('KRD_MAIN_2.G142'),
+                    Block(
+                      AddLog ('Название СВХ/ЗТК', 'Не правильное название СВХ/ЗТК: ', KRD_MAIN_2.G142, ' Правильное: ' + STORES_2.NAME);
+                      APPENDLOGFILE (LogFile_all, 'Ошибка названия: ' + KRD_MAIN_2.G142 + ' Правильное: ' + STORES_2.NAME);
+                    ),
+                    Block(
+                      IF (FIELDVALUE ('STORES_2.LICENCETYPE') <> FIELDVALUE ('KRD_MAIN_2.G1440'),
+                        Block(
+                          AddLog ('Тип СВХ/ЗТК', 'Не правильный тип СВХ/ЗТК: ', KRD_MAIN_2.G1440, ' Правильный: ' + STORES_2.LICENCETYPE);
+                          APPENDLOGFILE (LogFile_all, 'Ошибка типа: ' + KRD_MAIN_2.G1440 + ' Правильный: ' + STORES_2.LICENCETYPE);
+                        )
+                      ); // IF
+                    )
+                  ); // IF
+                )
+              ); // IF
+            ),
+          ); // IF
+
+          // дата коносамента не должна быть сильно меньше (более, чем на 2 недели), чем дата ДО-1
+          IF (KR_PAPER.PAPERDATE < KRD_MAIN.BD_DATE-15,
+            Block(
+              AddLog ('Дата Коносамента', 'Значение сильно меньше даты ДО-1', KR_PAPER.PAPERDATE, '< ' + KRD_MAIN.BD_DATE-15);
+              APPENDLOGFILE (LogFile_all,'Дата Коносамента', 'Значение сильно меньше даты ДО-1', KR_PAPER.PAPERDATE, '>= ' + KRD_MAIN.BD_DATE-15);
+            )
+          ); // IF
+
+          // Код ТНВЭД 4 знака
+          FIRST('KRD_COMM');
+          WHILE (EOF ('KRD_COMM') = 0,
+            Block(
+              EDIT('KRD_COMM');
+              IF(FIELDVALUE ('KRD_COMM.REMARK')<> 'С ВЫГРУЗКОЙ',
+                //SETFIELDVALUE ('KRD_COMM.REMARK', 'БЕЗ ВЫГРУЗКИ')
+                SETFIELDVALUE ('KRD_COMM.WITHOUT_UNLOAD', 1)
+              ); // IF
+              POST('KRD_COMM');
+              IF (LENGTH (KRD_COMM.G33) < 4,
+                Block(
+                  AddLog (
+                    'Код ТНВЭД', 
+                    'Товар: ' + FIELDVALUE ('KRD_COMM.G32') + ' меньше 6 знаков', 
+                    KRD_COMM.G33, 
+                    KRD_COMM.G33
+                  ); // AddLog
+                  APPENDLOGFILE (LogFile_all, 'Код ТНВЭД' , 'Товар: ' + FIELDVALUE ('KRD_COMM.G32') + ' меньше 6 знаков' , KRD_COMM.G33, KRD_COMM.G33);
+                )
+              ); // IF
+              NEXT('KRD_COMM');
+            )
+          ); // WHILE
+
+          // Проверка рег номера CMR
+          FIRST('KR_PAPER');
+
+          WHILE (EOF ('KR_PAPER') = 0,
+            Block(
+              IF (FIELDVALUE ('KR_PAPER.PAPERCODE') = '02015',
+                Block(
+                  IF (LENGTH (FIELDVALUE ('KR_PAPER.PAPER_REG_NO'))<>27,
+                    Block(
+                      AddLog (
+                        'рег номер CMR', 
+                        'Рег номер неверной длины', 
+                        'Длина: ' + LENGTH(FIELDVALUE ('KR_PAPER.PAPER_REG_NO')) + ' не равна 27', 
+                        27
+                      ); // AddLog
+                      //APPENDLOGFILE (LogFile_all, 'рег номера CMR' , 'Товар: ' + FIELDVALUE ('KRD_COMM.G32') + ' меньше 6 знаков' , KRD_COMM.G33, KRD_COMM.G33);
+                    )
+                  ); // IF
+
+                  IF (FIELDVALUE ('KR_PAPER.PAPER_REG_NO')='' * FIELDISNULL ('KR_PAPER.PAPER_REG_NO'),
+                    Block(
+                      AddLog (
+                        'рег номер CMR', 
+                        'Рег номер пустой', 
+                        FIELDVALUE ('KR_PAPER.PAPERCODE'), 
+                        FIELDVALUE ('KR_PAPER.PAPERCODE')
+                      ); // AddLog
+                      //APPENDLOGFILE (LogFile_all, 'рег номера CMR' , 'Товар: ' + FIELDVALUE ('KRD_COMM.G32') + ' меньше 6 знаков' , KRD_COMM.G33, KRD_COMM.G33);
+                    )
+                  ); // IF
+                )
+              ); // IF
+              NEXT ('KR_PAPER');
+            )
+          ); // WHILE
+
+          IF (bShowLogFile, SHOWLOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'do_check.log', 'Результат проверки'));
+        )
+      ); // IF
+    )
+  ); // IF
+// ДЕКЛАРАНТ+ ==================================================================
+
+
+// ПИК ЮГ ======================================================================
+  IF (INIFILE ('PY01', 'DO2_CLEAR_CUSTCODE', 0) = 1,
+    Block(
+      VAR ('sSectionName', String, IF (LENGTH (USERINFO ('', 'USERUUID')) > 0, 'Customs_' + USERINFO ('', 'USERUUID'), 'Customs'));
+      WRITEINIFILE ('Release', sSectionName, '')
+    )
+  ); // IF
+  IF (KRD_MAIN.MC_STATUS_BD <> '3',
+    Block(
+      IF (INIFILE ('PY01', 'FILL_DCD_PAPERDATE', 0) = 1,
+        Block(
+          IF (BOF ('KRD_DCD') = 0, FIRST ('KRD_DCD'));
+          WHILE (EOF ('KRD_DCD') = 0,
+            Block(
+              // по просьбе ПИК-Юг дата переписывается всегда
+              // (для документов созданных по образцу не хотят менять дату вручную)
+              VAR ('iDCDPaperNoPartsCount', Integer, SPLITSTR (KRD_DCD.PAPERNO, '/', sSQL));
+              IF ((iDCDPaperNoPartsCount = 3) | (iDCDPaperNoPartsCount = 4),
+                Block(
+                  EDIT ('KRD_DCD');
+                  SETFIELDVALUE ('KRD_DCD',
+                                'PAPERCLOSE', EXCLUDEDATE(KRD_DCD.PAPERNO, '')
+                  ); // SETFIEDLVALULE
+                  POST ('KRD_DCD');
+                )
+              ); // IF
+              NEXT ('KRD_DCD');
+            )
+          ); // WHILE
+        )
+      ); // IF
+    )
+  ); // IF
+// ПИК ЮГ ======================================================================
+
+
+FUNC ('GetLicenceTypeDescr',
+  Block(
+    PARAM ('pLicenceType', Integer, 0);
+  ),
+  Block(
+    CASE (pLicenceType,
+         [1, '"1" - свидетельство о включении владельца в реестр складов ВХ',
+          2, '"2" - лицензия склада ВХ',
+          3, '"3" - разрешение ТО на временное хранение в ином месте',
+          4, '"4" - приказ о создании постоянной зоны таможенного контроля',
+          5, '"5" - приказ о создании временной зоны таможенного контроля',
+         ], pLicenceType
+    ) // CASE
+  )
+), // FUNC GetLicenceTypeDescr
+
+
+// CTM =========================================================================
+// тем кто хочет отключить проверку
+IF ((INIFILE ('DOCCLOSB', 'Enabled', 1) = 1) * (INIFILE ('WorkPlace', 'CustomsStore', 0) = 0),
+  Block(
+    // выполняем только если документ не зарегистрирован
+    IF (IsUnregistered(),
+      Block(
+        // ГРУППИРУЕМ ПРОВЕРКИ ПО ТИПУ ДОКУМЕНТА
+        CASE (DocType, [
+            1, Block(  // ДО-1
+                // проверка номера контейнера ============================НАЧАЛО
+                sGroupName := 'ДО-1: Контейнеры';
+                IF (INIFILE ('DOCCLOSB', 'CheckContNo', 1),
+                  Block(
+                    IF (DocType = 1,
+                      Block(
+                        EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\check_contno.prd');
+                        FIRST ('KRD_CONT');
+                        WHILE (EOF ('KRD_CONT') = 0,
+                          Block(
+                            IF (CheckContNo (KRD_CONT.CONTNO) = 0,
+                              Block(
+                                bError := 1;
+                                AddError (
+                                  sGroupName,
+                                  'ОШ.',
+                                  'Номер контейнера',
+                                  KRD_CONT.CONTNO,
+                                  'Номер крупнотоннажного контейнера должен быть 11-значным, 4 буквы + 7 цифр (пример AMTU4003372).' +char(13)+ 'Номер среднетоннажного морского контейнера должен быть 9-значным и состоящим только из цифр (пример 519503660).',
+                                  sErrorsListId
+                                ); // AddError
+                              )
+                            ); // IF
+                            NEXT ('KRD_CONT')
+                          )
+                        ); // WHILE
+                      )
+                    ); // IF
+                  )
+                ); // IF
+                // проверка номера контейнера =============================КОНЕЦ
+                // проверка дублирования номера контейнера в ближайшие 10 дней =============================НАЧАЛО
+                sSQL := ' SELECT DISTINCT KM.ID, KM.NBD, KC.CONTNO FROM KRD_CONT KC ' +
+                        ' RIGHT JOIN KRD_MAIN KM ON KM.PLACEID = KC.PLACEID AND KM.ID = KC.ID ' +
+                        ' WHERE KC.ID <> ' + KRD_MAIN.ID +
+                        ' AND KM.BD_DATE >= ' + DBFORMATDATETIME (KRD_MAIN.BD_DATE - INIFILE ('DOCCLOSB', 'ContDuplicateDayLimit', 10), GETDATABASETYPE ('STS_DB'), 0, 1) +
+                        ' AND KC.CONTNO IN (SELECT DISTINCT CONTNO FROM KRD_CONT WHERE ID=' + KRD_MAIN.ID + ' AND PLACEID = ' + KRD_MAIN.PLACEID + ') ';
+                OPENQUERY ('qDoublContNo', 'STS_DB', sSQL, 1);
+                FIRST ('qDoublContNo');
+                IF (FIELDISNULL ('qDoublContNo', 'ID') <> 1,
+                  BLOCK (
+                    WHILE (EOF ('qDoublContNo') = 0,
+                      BLOCK(
+                        bError := 1;
+                        AddError (
+                          sGroupName,
+                          'ПР.',
+                          'Повтор № контейнера',
+                          qDoublContNo.CONTNO,
+                          'Контейнер с указанным номером уже помещался на СВХ в течении 10 дней (В ДО1: ' + qDoublContNo.NBD + ')',
+                          sErrorsListId
+                        ); // AddError
+                        NEXT ('qDoublContNo');
+                      )
+                    ); // WHILE
+                  )
+                ); // IF
+                CLOSEDATASET('qDoublContNo');
+                // проверка дублирования номера контейнера в ближайшие 10 дней =============================КОНЕЦ
+                // проверка размера и типа контейнера ====================НАЧАЛО
+                FIRST ('KRD_CONT');
+                WHILE (EOF ('KRD_CONT') = 0,
+                  Block(
+                    IF ((LENGTH (KRD_CONT.CONTSIZE) > 0) * (LENGTH (KRD_CONT.CONTTYPE) = 0),
+                      Block(
+                        bError := 1;
+                        AddError (
+                          sGroupName,
+                          'ПР.',
+                          'Тип контейнера',
+                          KRD_CONT.CONTTYPE,
+                          'Буквенное обозначение типа контейнера (ожидается так как указан размер контейнера: ' + KRD_CONT.CONTSIZE + ')',
+                          sErrorsListId
+                        ); // AddError
+                      )
+                    ); // IF
+                    IF ((LENGTH (KRD_CONT.CONTSIZE) = 0) * (LENGTH (KRD_CONT.CONTTYPE) > 0),
+                      Block(
+                        bError := 1;
+                        AddError (
+                          sGroupName,
+                          'ПР.',
+                          'Размер контейнера',
+                          KRD_CONT.CONTSIZE,
+                          'Цифровое обозначение размера контейнера (ожидается так как указан тип контейнера: ' + KRD_CONT.CONTTYPE + ')',
+                          sErrorsListId
+                        ); // AddError
+                      )
+                    ); // IF
+                    NEXT ('KRD_CONT')
+                  )
+                ); // WHILE
+                // проверка размера и типа контейнера =====================КОНЕЦ
+                // проверка номера вагона ================================НАЧАЛО
+                sGroupName := 'ДО-1: Транспортные средства';
+                EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\check_vagon.prd');
+                FIRST ('KR_TRANS');
+                WHILE (EOF ('KR_TRANS') = 0,
+                  Block(
+                    IF ((KR_TRANS.TRANSP_CODE = '20') * (LENGTH (KR_TRANS.NTRAILER) > 0),
+                      Block(
+                        IF (CheckNumVagon(KR_TRANS.NTRAILER) = 0,
+                          Block(
+                            AddError (
+                              sGroupName,
+                              'ПР.',
+                              'Номер вагона',
+                              KR_TRANS.NTRAILER,
+                              'В соответствии правилами нумерации вагонов',
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      )
+                    ); // IF
+                    NEXT ('KR_TRANS');
+                  )
+                ); // WHILE
+                // проверка номера вагона =================================КОНЕЦ
+                // проверка информации о документе СВХ ===================НАЧАЛО
+                sGroupName := 'ДО-1: Место хранения';
+                sSQL := 'SELECT' +
+                        ' LICENCENO, NAME, ADDRESS, LICENCETYPE, LICENCEDATE' +
+                        ' FROM STORES' +
+                        ' WHERE' +
+                        ' PLACEID=' + KRD_MAIN.PLACEID;
+                OPENQUERY ('qStoreInformation', 'STS_DB', sSQL, 1);
+
+                IF (KRD_MAIN.G142 <> qStoreInformation.NAME,
+                  Block(
+                    bError := 1;
+                    AddError (
+                      sGroupName,
+                      'ОШ.',
+                      'Наименование организации владельца',
+                      KRD_MAIN.G142,
+                      qStoreInformation.NAME,
+                      sErrorsListId
+                    ); // AddError
+                  )
+                );  // IF
+                IF (KRD_MAIN.G143 <> qStoreInformation.ADDRESS,
+                  Block(
+                    bError := 1;
+                    AddError (
+                      sGroupName,
+                      'ОШ.',
+                      'Адрес места хранения',
+                      KRD_MAIN.G143,
+                      qStoreInformation.ADDRESS,
+                      sErrorsListId
+                    ); // AddError
+                  )
+                );  // IF
+                IF (KRD_MAIN.G1440 <> qStoreInformation.LICENCETYPE,
+                  Block(
+                    bError := 1;
+                    AddError (
+                      sGroupName,
+                      'ОШ.',
+                      'Тип документа разрешающего хранение',
+                      GetLicenceTypeDescr (KRD_MAIN.G1440),
+                      GetLicenceTypeDescr (qStoreInformation.LICENCETYPE),
+                      sErrorsListId
+                    ); // AddError
+                  )
+                );  // IF
+                IF (KRD_MAIN.G144 <> qStoreInformation.LICENCENO,
+                  Block(
+                    bError := 1;
+                    AddError (
+                      sGroupName,
+                      'ОШ.',
+                      'Номер документа разрешающего хранение',
+                      KRD_MAIN.G144,
+                      qStoreInformation.LICENCENO,
+                      sErrorsListId
+                    ); // AddError
+                  )
+                );  // IF
+                IF (KRD_MAIN.G145 <> qStoreInformation.LICENCEDATE,
+                  Block(
+                    bError := 1;
+                    AddError (
+                      sGroupName,
+                      'ОШ.',
+                      'Дата документа разрешающего хранение',
+                      KRD_MAIN.G145,
+                      qStoreInformation.LICENCEDATE,
+                      sErrorsListId
+                    ); // AddError
+                  )
+                );  // IF
+                CLOSEDATASET ('qStoreInformation');
+                // проверка информации о документе СВХ ====================КОНЕЦ
+                // проверка таможенных документов ========================НАЧАЛО
+                VAR ('iCustomDocIndex', Integer, 1);
+                sGroupName := 'ДО-1: Таможенные документы';
+                IF (BOF ('KRD_DCD') = 0, FIRST ('KRD_DCD'));
+                WHILE (EOF ('KRD_DCD') = 0,
+                  Block(
+                    // ПРОВЕРКА КОДА НА ЗАПОЛНЕННОСТЬ
+                    VAR ('bHasCode', Integer, LENGTH (KRD_DCD.PAPERCODE) > 0);
+                    // ПРОВЕРКА НОМЕРА НА ЗАПОЛНЕННОСТЬ
+                    VAR ('bHasNumber', Integer, LENGTH (KRD_DCD.PAPERNO) > 0);
+                    // ПРОВЕРКА НАИМЕНОВАНИЯ НА ЗАПОЛНЕННОСТЬ
+                    VAR ('bHasName', Integer, LENGTH (KRD_DCD.PAPERNAME) > 0);
+                    // ПРОВЕРКА ДАТЫ НА ЗАПОЛНЕННОСТЬ
+                    VAR ('bHasDate', Integer, LENGTH (KRD_DCD.PAPERCLOSE) > 0);
+                    // ПРОВЕРКА НА СООТВЕТСТВИЕ КОДА СПРАВОЧНИКУ
+                    VAR ('bCodeInRef', Integer, CONVERT (REFERENCE ('PAPERS', 'PAPER_T_DOC_CODE', KRD_DCD.PAPERCODE, 'PAPER_T_DOC_CODE'), String) = KRD_DCD.PAPERCODE);
+                    // ПРОВЕРКА НА СООТВЕТСТВИЕ НАИМЕНОВАНИЯ СПРАВОЧНИКУ
+                    VAR ('bNameInRef', Integer, CONVERT (REFERENCE ('PAPERS', 'PAPERNAME', KRD_DCD.PAPERNAME, 'PAPERNAME'), String) = KRD_DCD.PAPERNAME);
+
+
+                    IF (bHasCode * (bCodeInRef = 0),
+                      Block(
+                        IF (bHasName * bNameInRef * (CONVERT (REFERENCE ('PAPERS', 'PAPERNAME', KRD_DCD.PAPERNAME, 'PAPER_T_DOC_CODE'), String) <> KRD_DCD.PAPERCODE),
+                          Block(
+                            bError := 1;
+                            // используем переменную для формирования текста сообщения
+                            sSQL := 'Код из справочника программы в соответствии с наименованием документа';
+                            IF (LENGTH (CONVERT (REFERENCE ('PAPERS', 'PAPERNAME', KRD_DCD.PAPERNAME, 'PAPER_T_DOC_CODE'), String)) > 0,
+                              sSQL := sSQL + ' (' + CONVERT (REFERENCE ('PAPERS', 'PAPERNAME', KRD_DCD.PAPERNAME, 'PAPER_T_DOC_CODE'), String)  + ')'
+                            ); // IF
+                            AddError (
+                              sGroupName + ': #' + iCustomDocIndex,
+                              'ПР.',
+                              'Код документа',
+                              KRD_DCD.PAPERCODE,
+                              sSQL,
+                              sErrorsListId
+                            ); // AddError
+                          ),
+                          Block(
+                            bError := 1;
+                            AddError (
+                              sGroupName + ': #' + iCustomDocIndex,
+                              'ПР.',
+                              'Код документа',
+                              KRD_DCD.PAPERCODE,
+                              'Код документа из справочника программы',
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      ),
+                      Block(
+                        IF (bHasName * bNameInRef * (CONVERT (REFERENCE ('PAPERS', 'PAPERNAME', KRD_DCD.PAPERNAME, 'PAPER_T_DOC_CODE'), String) <> KRD_DCD.PAPERCODE),
+                          Block(
+                            bError := 1;
+                            AddError (
+                              sGroupName + ': #' + iCustomDocIndex,
+                              'ПР.',
+                              'Код документа',
+                              KRD_DCD.PAPERCODE,
+                              'Код из справочника программы в соответствии с наименованием документа (' + CONVERT (REFERENCE ('PAPERS', 'PAPERNAME', KRD_DCD.PAPERNAME, 'PAPER_T_DOC_CODE'), String)  + ')',
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      )
+                    );
+                    IF (bHasNumber = 0,
+                      Block(
+                        bError := 1;
+                        AddError (
+                          sGroupName + ': #' + iCustomDocIndex,
+                          'ПР.',
+                          'Номер документа',
+                          '',
+                          'Номер документа не указан, убедитесь, что это не ошибка',
+                          sErrorsListId
+                        ); // AddError
+                      )
+                    ); // IF
+                    IF (bHasName,
+                      Block(
+                        IF (bHasCode * bCodeInRef * (bNameInRef = 0),
+                          Block(
+                            bError := 1;
+                            AddError (
+                              sGroupName + ': #' + iCustomDocIndex,
+                              'ПР.',
+                              'Наименование документа',
+                              KRD_DCD.PAPERNAME,
+                              'Наименование из справочника в соответствии с кодом (' + CONVERT (REFERENCE ('PAPERS', 'PAPER_T_DOC_CODE', KRD_DCD.PAPERCODE, 'PAPERNAME'), String) + ')',
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      ),
+                      Block(
+                        bError := 1;
+                        AddError (
+                          sGroupName + ': #' + iCustomDocIndex,
+                          'ПР.',
+                          'Наименование документа',
+                          '',
+                          'Наименование документа не указано, убедитесь, что это не ошибка',
+                          sErrorsListId
+                        ); // AddError
+                      )
+                    ); // IF
+                    IF (bHasDate = 0,
+                      Block(
+                        bError := 1;
+                        AddError (
+                          sGroupName + ': #' + iCustomDocIndex,
+                          'ПР.',
+                          'Дата документа',
+                          '',
+                          'Дата документа не указана, убедитесь, что это не ошибка',
+                          sErrorsListId
+                        ); // AddError
+                      )
+                    ); // IF
+
+                    // проверка, что срок доставки больше или равен дате документа
+                    IF ((FIELDISNULL ('KRD_DCD', 'PAPERDATE') = 0) * (FIELDISNULL ('KRD_DCD', 'PAPERCLOSE') = 0),
+                      Block(
+                        IF (KRD_DCD.PAPERCLOSE > KRD_DCD.PAPERDATE,
+                          Block(
+                            bError := 1;
+                            AddError(
+                              sGroupName + ': #' + iCustomDocIndex,
+                              'ПР.',
+                              'Срок доставки',
+                              KRD_DCD.PAPERDATE,
+                              'Срок доставки не раньше,чем ' + FDT ('DD.MM.YYYY', KRD_DCD.PAPERCLOSE),
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      )
+                    ); // IF
+
+                    iCustomDocIndex := iCustomDocIndex + 1;
+                    NEXT ('KRD_DCD');
+                  )
+                );  // WHILE
+                // проверка таможенных документов =========================КОНЕЦ
+                // проверка транспортных документов ======================НАЧАЛО
+                sGroupName := 'Товаросопроводительные документы';
+                sSQL := 'SELECT KM.*, KP.* ' +
+                        ' FROM KR_PAPER KP, KRD_MAIN KM' +
+                        ' WHERE' +
+                        ' KP.ID IN' +
+                        '(' +
+                        ' SELECT KM2.ID' +
+                        ' FROM KRD_MAIN KM2' +
+                        ' WHERE' +
+                        ' KM2.PLACEID=' + KRD_MAIN.PLACEID +
+                        ' AND KM2.MAIN_ID=' + KRD_MAIN.MAIN_ID +
+                        ')' +
+                        ' AND (SELECT MAX(P.PAPER_IS_WAYBILL) FROM PAPERS P WHERE P.PAPER_DOCG44_CODE=KP.PAPERCODE OR P.PAPERNAME=KP.PAPERNAME) = 1' +
+                        ' AND KM.PLACEID=KP.PLACEID AND KM.ID=KP.ID' +
+                        ' AND (SELECT COUNT (*) FROM KRD_COMM KC WHERE KC.PLACEID=KP.PLACEID AND KC.ID=KP.ID AND KC.N_TTN=KP.COUNTER) > 0';
+
+                OPENQUERY ('qTransportDocs', 'STS_DB', sSQL, 1);
+                IF (BOF ('qTransportDocs') = 0, FIRST ('qTransportDocs'));
+                VAR ('iKrdPapersIndex', Integer, 1);
+                WHILE (EOF ('qTransportDocs') = 0,
+                  Block(
+                    IF (LENGTH (qTransportDocs.PAPER_REG_NO) > 0,
+                      Block(
+                        VAR ('sTmp', String, '');
+                        VAR ('iPaperRegNoPartCount', Integer, SPLITSTR (qTransportDocs.PAPER_REG_NO, '/', 'sTmp'));
+                        CASE (iPaperRegNoPartCount,
+                             [3, Block( ),
+                              4, Block( ),
+                              ],
+                              Block(
+                                bError := 1;
+                                AddError (
+                                  sGroupName + ': #' + iKrdPapersIndex,
+                                  'ПР.',
+                                  'Рег. номер',
+                                  qTransportDocs.PAPER_REG_NO,
+                                  'Регистрационный номер должен иметь вид 11111111/222222/3333333/444. Указанный в другом формате номер не будет передан в таможню',
+                                  sErrorsListId
+                                ); // AddError
+                              )
+                        ); // CASE
+                      )
+                    ); // IF
+                    IF ((qTransportDocs.PAPERCODE = '02017') | (UPPERSTR (qTransportDocs.PAPERNAME) = 'АВН'),
+                      Block(
+                        IF (VAREXISTS ('sTmp') = 0, VAR ('sTmp', String, ''));
+                        IF (REGEXMATCH (qTransportDocs.PAPERNO, '(^\d{3}-\d{8}$)|(^\d{8}$)', 1, 'sTmp') = 0,
+                          Block(
+                            bError := 1;
+                            AddError (
+                              sGroupName + ': #' + iKrdPapersIndex,
+                              'ПР.',
+                              'Номер документа ' + qTransportDocs.PAPERNAME,
+                              qTransportDocs.PAPERNO,
+                              'Ожидается номер документа в формате "333-88888888" или "88888888". Требуется для корректной связи ДО-1 и выпускающего документа (ДТ)',
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      )
+                    ); // IF
+                    iKrdPapersIndex := iKrdPapersIndex + 1;
+                    NEXT ('qTransportDocs');
+                  )
+                ); // WHILE
+                // проверка транспортных документов =======================КОНЕЦ
+                // проверка товаров ======================================НАЧАЛО
+                sGroupName := 'Список товаров';
+                IF (BOF ('KRD_COMM') = 0, FIRST ('KRD_COMM'));
+                WHILE (EOF ('KRD_COMM') = 0,
+                  Block(
+                    IF (FIELDISNULL ('KRD_COMM', 'G42') = 0,
+                      Block(
+                        IF (FIELDISNULL ('KRD_COMM', 'G42_CURRENCY'),
+                          Block(
+                            bError := 1;
+                            AddError (
+                              sGroupName + ': Товар #' + KRD_COMM.GN,
+                              'ПР.',
+                              'Стоимость: Код валюты',
+                              KRD_COMM.G42_CURRENCY,
+                              'Значение кода валюты',
+                              sErrorsListId
+                            ); // AddError
+                          )
+                        ); // IF
+                      )
+                    ); // IF
+                    NEXT ('KRD_COMM');
+                  )
+                ); // WHILE
+                // проверка товаров ======================================НАЧАЛО
+            ),
+            5, Block(  // ДО-2
+              // Сравнение данных ДО2 с данными ДТ. Если проект с проверкой есть, запускается
+              IF (RELEASE.MC_STATUS <> '3',
+                 IF (FileExists (PROGRAMPATH() + 'procdocs\CheckDO2\Project1.ssproj'),
+                     ExecuteProject (PROGRAMPATH() + 'procdocs\CheckDO2\Project1.ssproj', )
+                 )
+              );
+              IF (FIELDISNULL ('RELEASE', 'DOC_TYPE') = 0,
+                Block(
+                  // проверка наличия незарегистрированных комм. актов ===НАЧАЛО
+                  sSQL := 'SELECT' +
+                          ' DOC_NO,DOC_DATETIME,DOC_ORDER_NUMBER,DOC_REG_STATUS' +
+                          ' FROM KRD_DOP' +
+                          ' WHERE' +
+                          ' PLACEID=' + KRD_MAIN.PLACEID +
+                          ' AND ID=' + KRD_MAIN.ID +
+                          ' AND (DOC_REG_STATUS <> ' +char(39)+ '3' +char(39)+ ' OR DOC_REG_STATUS IS NULL)';
+                  OPENQUERY ('qUnregisteredCommActs', 'STS_DB', sSQL, 1);
+                  
+                  IF (FIELDISNULL ('qUnregisteredCommActs', 'DOC_NO') = 0,
+                    Block(
+                      bError := 1;
+                      sGroupName := 'ДО-2: Связанные документы';
+                      AddError (
+                        sGroupName,
+                        'ОШ.',
+                        'Отсутствует регистрация в коммерческих актах',
+                        'КА №№ ' + UNIONVALUES ('qUnregisteredCommActs', ['DOC_NO'], ',', ''),
+                        'Данные о товарах в программе инспектора могут отличаться. Рекомендуется сначала дождаться регистрации коммерчески актов и только потом переходить к оформлению ДО-2',
+                        sErrorsListId
+                      ); // AddError
+                    )
+                  ); // IF
+                  CLOSEDATASET ('qUnregisteredCommActs');
+                  // проверка наличия незарегистрированных комм. актов ====КОНЕЦ
+
+                  // проверка добулирования номера ДТ ====================НАЧАЛО
+                  sSQL := 'SELECT' +
+                          ' DOC_NO, RELEASE_NO, OUT_DATE' +
+                          ' FROM ' + CORRECTTABLENAME ('RELEASE') +
+                          ' WHERE' +
+                          ' DOC_NO=' +char(39)+ REL_MAIN.DOC_NO +char(39)+
+                          ' AND PLACEID=' + REL_MAIN.PLACEID +
+                          ' AND MAIN_ID <> ' + REL_MAIN.MAIN_ID;
+                  OPENQUERY ('qDuplicateRelease', 'STS_DB', sSQL, 1);
+                  IF (FIELDISNULL ('qDuplicateRelease', 'DOC_NO') = 0,
+                    Block(
+                      bError := 1;
+                      sGroupName := 'ДО-2: Выпускающий документ';
+                      AddError (
+                        sGroupName,
+                        'ПР.',
+                        'Номер выпускающего документа',
+                        REL_MAIN.DOC_NO,
+                        'Выпускающий документ уже был использован в ДО-2 №№ ' + COPY (UNIONVALUES ('qDuplicateRelease', ['RELEASE_NO'], ',', ''), 1, 166) + ' (допустимо при частичной выдаче)',
+                        sErrorsListId
+                      ); // IF
+                    )
+                  ); // IF
+                  CLOSEDATASET ('qDuplicateRelease');
+                  // проверка добулирования номера ДТ =====================КОНЕЦ
+
+                  // проверка даты ДО-2 и даты направления Уведомления =========НАЧАЛО
+                  IF (RELEASE.DOC_TYPE = 'ДТ',
+                    Block(
+                      sSQL := 'SELECT' +
+                              ' JOURNAL_MASTER_ID,SENDDATE,SENDTIME' +
+                              ' FROM JRGOODOUT2' +
+                              ' WHERE' +
+                              ' PrDocumentNumber=' +char(39)+ RELEASE.DOC_NO +char(39)+
+                              ' AND DOCUMENTKIND=' +char(39)+ 'GoodOutDecision' +char(39);
+                      OPENQUERY ('qSendDateTime', sSQL, 'dbJournals');
+                      IF (FIELDISNULL ('qSendDateTime', 'JOURNAL_MASTER_ID') = 0,
+                        Block(
+                          VAR ('dSendDateTime', DateTime, qSendDateTime.SENDDATE);
+                          IF (dSendDateTime > RELEASE.OUT_DATE,
+                            Block(
+                              bError := 1;
+                              sGroupName := 'ДО-2: Документ';
+                              AddError (
+                                sGroupName,
+                                'ОШ.',
+                                'Дата ДО-2',
+                                FDT ('DD.MM.YYYY HH:NN:SS', RELEASE.OUT_DATE),
+                                'Позже, чем дата направления Уведомления: ' + FDT ('DD.MM.YYYY HH:NN:SS', dSendDateTime),
+                                sErrorsListId
+                              ); // AddError
+                            ),
+                            DEBUGMESSAGE (FDT ('Уведомление: DD.MM.YYYY HH:NN:SS', dSendDateTime) +char(13)+ FDT ('ДО-2: DD.MM.YYYY HH:NN:SS', RELEASE.OUT_DATE), 1)
+                          ); // IF
+                        )
+                      ); // IF
+                      CLOSEDATASET ('qSendDateTime');
+                    )
+                  ); //IF
+                  // проверка даты ДО-2 и даты направления Уведомления =========КОНЕЦ
+
+                  // проверка заполненности рег. номера Уведомления ===========НАЧАЛО
+                  IF (LENGTH (TRIM (REL_MAIN.REG_NU)) = 0,
+                    Block(
+                      // рег. номер не заполнен, пробуем найти номер в журнале для указания его как "Ожидаемого" значения
+                      VAR ('sExpectedValue', String, 'Присвоенный таможенной системой рег. номер уведомления');
+                      sSQL := 'SELECT' +
+                              ' REGISTER_NUMBER' +
+                              ' FROM ' + 'JRGOODOUT2' +
+                              ' WHERE' +
+                              ' PRDOCUMENTNUMBER=' +char(39)+ RELEASE.DOC_NO +char(39)+
+                              ' AND DOCUMENTKIND=' +char(39)+ 'GoodOutDecision' +char(39)+
+                              ' AND REGISTER_NUMBER IS NOT NULL';
+                      OPENQUERY ('qJRGoodOutRegisterNumber', 'dbJournals', sSQL, 1);
+                      IF (FIELDISNULL ('qJRGoodOutRegisterNumber', 'REGISTER_NUMBER') = 0,
+                        sExpectedValue := qJRGoodOutRegisterNumber.REGISTER_NUMBER;
+                      ); // IF
+                      CLOSEDATASET ('qJRGoodOutRegisterNumber');
+                      bError := 1;
+                      sGroupName := 'ДО-2: Основание выдачи товара';
+                      AddError (
+                          sGroupName,
+                          'ОШ.',
+                          'Рег. номер уведомления',
+                          REL_MAIN.REG_NU,
+                          sExpectedValue,
+                          sErrorsListId
+                      ); // AddError
+                    ),
+                    Block(
+                      // TODO!!
+                      {
+                      // рег. номер заполнен, пробуем сравнить его с номером в журнале
+                      VAR ('sExpectedValue', String, 'Присвоенный таможенной системой рег. номер уведомления');
+                      sSQL := 'SELECT' +
+                              ' REGISTER_NUMBER' +
+                              ' FROM ' + 'JRGOODOUT2' +
+                              ' WHERE' +
+                              ' PRDOCUMENTNUMBER=' +char(39)+ RELEASE.DOC_NO +char(39)+
+                              ' AND DOCUMENTKIND=' +char(39)+ 'GoodOutDecision' +char(39)+
+                              ' AND REGISTER_NUMBER IS NOT NULL';
+                      OPENQUERY ('qJRGoodOutRegisterNumber', 'dbJournals', sSQL, 1);
+                      IF (FIELDISNULL ('qJRGoodOutRegisterNumber', 'REGISTER_NUMBER') = 0,
+                        sExpectedValue := qJRGoodOutRegisterNumber.REGISTER_NUMBER;
+                      ); // IF
+                      CLOSEDATASET ('qJRGoodOutRegisterNumber');
+                      bError := 1;
+                      sGroupName := 'ДО-2: Основание выдачи товара';
+                      AddError (
+                          sGroupName,
+                          'ОШ.',
+                          'Рег. номер уведомления',
+                          REL_MAIN.REG_NU,
+                          sExpectedValue,
+                          sErrorsListId
+                      ); // AddError
+                      }
+                    )
+                  );
+                  // проверка заполненности рег. номера Уведомления ============КОНЕЦ
+
+                  // проверка ДО-2 =============================================НАЧАЛО
+                  sGroupName := 'ДО-2: Документ';
+                  IF (REL_MAIN.OUT_DATE < KRD_MAIN.BD_DATE,
+                    Block(
+                      bError := 1;
+                      AddError (
+                        sGroupName,
+                        'ОШ.',
+                        'Дата отчета',
+                        FDT ('DD.MM.YYYY HH:NN:SS', REL_MAIN.OUT_DATE),
+                        'Позже, чем дата ДО-1: ' + FDT ('DD.MM.YYYY HH:NN:SS', KRD_MAIN.BD_DATE),
+                        sErrorsListId
+                      ); // AddError
+                    )
+                  ); // IF
+                  IF (STRTODATE (FDT('DD.MM.YYYY', REL_MAIN.OUT_DATE), 'DD.MM.YYYY', '.') > Date(),
+                    Block(
+                      bError := 1;
+                      AddError (
+                        sGroupName,
+                        'ПР.',
+                        'Дата отчета',
+                        FDT ('DD.MM.YYYY HH:NN:SS', REL_MAIN.OUT_DATE),
+                        'Не позже текущей даты: ' + FDT ('DD.MM.YYYY', Date()),
+                        sErrorsListId
+                      ); // AddError
+                    )
+                  ); // IF
+                  // проверка ДО-2 =============================================КОНЕЦ
+
+                  // проверка товаров ДО-2 ===============================НАЧАЛО
+                  IF (BOF ('REL_COMM') = 0, FIRST ('REL_COMM'));
+                  WHILE (EOF ('REL_COMM') = 0,
+                    Block(
+                      sGroupName := 'Список выдаваемых товаров';
+                      // проверяем, что вес брутто\объем без контейнера не больше веса брутто
+                      IF (REL_COMM.RELEASE_G35_CLEAN > REL_COMM.RELEASE_G35,
+                        Block(
+                          bError := 1;
+                          AddError (
+                            sGroupName + ': #' + REL_COMM.G32,
+                            'ОШ.',
+                            'Вес брутто, кг (без контейнера и иного т/о)',
+                            REL_COMM.RELEASE_G35_CLEAN,
+                            '<= ' + REL_COMM.RELEASE_G35,
+                            sErrorsListId
+                          ); // AddError
+                        )
+                      ); // IF
+                      // проверяем, что объем без контейнера и т/о не больше объема
+                      IF (REL_COMM.RELEASE_G315C_CLEAN > REL_COMM.RELEASE_G315C,
+                        Block(
+                          bError := 1;
+                          AddError (
+                            sGroupName + ': #' + REL_COMM.G32,
+                            'ОШ.',
+                            'Физический объем (без контейнера и иного транспортного оборудования)',
+                            REL_COMM.RELEASE_G315C_CLEAN,
+                            '<= ' + REL_COMM.RELEASE_G315C,
+                            sErrorsListId
+                          ); // AddError
+                        )
+                      ); // IF
+                      NEXT ('REL_COMM');
+                    )
+                  ); // WHILE
+                  // проверка товаров ДО-2 ================================КОНЕЦ
+                )
+              ); // IF
+            )
+          ],
+        ); // CASE
+
+        // ОБЩИЕ ПРОВЕРКИ
+        // проверка наличия документа в базе ===================================НАЧАЛО
+        VAR ('dtYearStart', DateTime, '01.01.' + FDT ('YYYY', Date()) + ' 00:00');
+        VAR ('dtYearEnd',   DateTime, '31.12.' + FDT ('YYYY', Date()) + ' 23:59');
+
+        CASE (DocType,
+          [1,
+            Block(
+              sSQL := 'SELECT COUNT(PLACEID) AS CT FROM KRD_MAIN WHERE' +
+                      ' PLACEID=' + KRD_MAIN.PLACEID +
+                      ' AND NBD=' +char(39)+ KRD_MAIN.NBD +char(39)+
+                      ' AND BD_DATE BETWEEN ' + DBFormatDateTime (dtYearStart, GetDatabaseType ('STS_DB'), 1, 0) +
+                      ' AND ' + DBFormatDateTime (dtYearEnd, GetDatabaseType ('STS_DB'), 1, 0) +
+                      ' AND MAIN_ID <> ' + KRD_MAIN.MAIN_ID;
+            ),
+            5,
+            Block(
+              sSQL := 'SELECT COUNT(PLACEID) AS CT FROM ' +
+                      IF (UPPERSTR(GetDatabaseType('STS_DB')) = 'INTERBASE', 'RELEASE_', 'RELEASE') +
+                      ' WHERE' +
+                      ' PLACEID=' + REL_MAIN.PLACEID +
+                      ' AND RELEASE_NO=' +char(39)+ REL_MAIN.RELEASE_NO +char(39)+
+                      ' AND OUT_DATE BETWEEN ' + DBFormatDateTime (dtYearStart, GetDatabaseType ('STS_DB')) +
+                      ' AND ' + DBFormatDateTime (dtYearEnd, GetDatabaseType ('STS_DB'), 1, 0) +
+                      ' AND MAIN_ID <> ' + REL_MAIN.MAIN_ID;
+            )
+          ], sSQL := ''
+        ); // CASE
+
+        IF (LENGTH (sSQL) > 0,
+          Block(
+            OPENQUERY ('qCheckDate', 'STS_DB', sSQL, 1);
+            IF (qCheckDate.CT > 0,
+              Block(
+                bError := 1;
+                sGroupName := CASE (DocType, [1,'ДО-1', 5, 'ДО-2'], 'ДО') + ': Документ';
+                AddError (
+                  sGroupName,
+                  'ПР.',
+                  'Номер отчета',
+                  CASE (DocType, [1, KRD_MAIN.NBD, 5, REL_MAIN.RELEASE_NO, '']),
+                  'Уникальный в пределах года номер ' + CASE (DocType, [1,'ДО-1', 5, 'ДО-2'], 'ДО'),
+                  sErrorsListId
+                ); // AddError
+              )
+            ); // IF
+            CLOSEDATASET ('qCheckDate');
+          )
+        ); // IF
+        // проверка наличия документа в базе ==================================КОНЕЦ
+
+        IF (bError,
+          Block(
+            ShowErrorsLog (sErrorsListId);
+          )
+        );  // IF
+      )
+    ); // IF
+
+  )
+); // IF
+
+  // помечаем документ, как только что созданный
+  // (чтобы не фиксировать его отмену его создания как удаление)
+  WRITEINIFILE ('JUSTCREATED', IF (LENGTH (UserInfo ('', 'USERUUID')) > 0, UserInfo ('', 'USERUUID'), 'ADMIN'), 0);
+// CTM =========================================================================

@@ -1,0 +1,54 @@
+// *****************************************************************************
+// Название: Нумерация товаров в документе (поле GN)
+// Описание: Скрипт нумерует товары в текущем документе (во всех его партиях) в книге учета по порядку - заполняет поле "GN"
+// Кнопка вызова: 1
+// Подпись кнопки: Нум. тов.
+// *****************************************************************************
+//
+Const('strDocType', String, '');
+Const('intDocType', Integer, 0);
+
+Var('vMainId', Integer);    
+Var('vPlaceId', Integer);    
+Const('vGN', Integer, 0);  
+Const('vCounter', Integer, 0);
+Var('vCounterDocs', Integer, 0);
+Const('intPartNo', Integer, 0);  
+{>> ================================================================================================}
+
+if(BOOKOPENED() < 1, RAISEEXCEPTION('Книга учета закрыта'));
+
+
+
+  vPlaceId := KRD_MAIN.PLACEID;
+  vMainId := KRD_MAIN.MAIN_ID;
+
+  vCounter := 0;
+  vGN := 0;
+  OPENQUERY('DO1MV', 'STS_DB', 'SELECT KM.ID, KM.PART_NO, KC.G32, KC.GN  ' +
+                               'FROM KRD_MAIN KM LEFT JOIN KRD_COMM KC ON (KM.PLACEID=KC.PLACEID AND ' +
+                                                                          'KM.ID=KC.ID) ' +
+                               'WHERE KM.PLACEID=' + vPlaceId + ' AND ' +
+                               'KM.MAIN_ID=' + vMainId +
+                               ' ORDER BY KM.PART_NO, KC.G32');
+                               
+  FIRST('DO1MV');
+  WHILE(EOF('DO1MV')=0, Block(
+    vGN := vGN + 1 ;
+    FINDKEY('KRD_COMM_2', [vPlaceId, FIELDVALUE('DO1MV', 'ID'), FIELDVALUE('DO1MV', 'G32')]);
+    EDIT('KRD_COMM_2');
+    SETFIELDVALUE('KRD_COMM_2', 'GN', vGN);
+    POST('KRD_COMM_2');
+    //vCounter := vCounter + 1;
+    NEXT('DO1MV');
+  ));
+  CLOSEDATASET('DO1MV');
+
+  vCounterDocs := vCounterDocs + 1;
+
+
+
+SHOWMESSAGE('Результат: обработано ' + Trim(vCounterDocs) + ' партий' + CHAR(13));
+            //' пронумеровано ' + CONVERT(vCounter, String) + ' товаров.');
+
+  

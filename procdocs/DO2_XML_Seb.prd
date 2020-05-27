@@ -1,0 +1,454 @@
+// *****************************************************************************
+// Название: Создать ДО2 из XML
+// Описание: Создать ДО2 из XML
+// Кнопка вызова: 1
+// Подпись кнопки: Создать ДО2 из XML
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR('sConsignee', string);
+VAR('sConsigneeAdress', string);
+VAR('sConsigneeCountry', string);
+VAR('sConsigneeOGRN', string);
+VAR('sConsigneeINN', string);
+VAR('sConsigneeKPP', string);
+VAR('sDT', string, '');
+VAR('sDT_DATE', string,'');
+VAR('dDT_DATE', datetime);
+
+VAR ('sSQL', Memo, '');
+VAR ('sBDPath', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'STS_TMP\');
+VAR ('sLogFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())  + 'FindCreatOut.log');  { имя файла журнала }
+
+FUNC ('ClearTMP_BD', ,
+  Block(
+    //DELETEFILE (sFilePath+'tmpMAIN.DBF');
+    DELETEFILE (sBDPath+'tmpCOMM.DBF');
+  );
+), {FUNC - ClearTMP_BD() }
+
+//СОЗДАНИЕ ВРЕМЕННЫХ DBF-ФАЙЛОВ ================================================
+FUNC ('CreateDBF', ,
+  Block(
+    //sFilePath := INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ());
+  //создаём tmpMAIN
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sBDPath);
+
+
+  //создаём tmpCOMM
+    sSQL := 'CREATE TABLE '+CHAR(39)+sBDPath+'tmpCOMM.DBF'+CHAR(39)+' ';
+    sSQL := sSQL + '(';
+      sSQL := sSQL + 'LINENUM INTEGER, ';
+      sSQL := sSQL + 'PLACEID INTEGER, ';
+      sSQL := sSQL + 'ID INTEGER, ';
+      sSQL := sSQL + 'G32_DO1 INTEGER, ';
+      sSQL := sSQL + 'DT CHAR(30), ';
+      sSQL := sSQL + 'DT_OLD CHAR(30), ';
+      sSQL := sSQL + 'G32 INTEGER, ';
+      sSQL := sSQL + 'SPR_NUM CHAR(25), ';
+      sSQL := sSQL + 'G33_DO1 CHAR(25), ';
+      sSQL := sSQL + 'G315A_DO1 FLOAT, ';
+      sSQL := sSQL + 'G315_DO1 CHAR(25), ';
+      sSQL := sSQL + 'G311_DO1 FLOAT, ';
+      sSQL := sSQL + 'G35_DO1 FLOAT, ';
+      sSQL := sSQL + 'G42_DO1 FLOAT, ';
+      sSQL := sSQL + 'G315_DO2 CHAR(25), ';
+      sSQL := sSQL + 'G315A_DO2 FLOAT, ';
+      sSQL := sSQL + 'G311_DO2 FLOAT, ';
+      sSQL := sSQL + 'G35_DO2 FLOAT, ';
+      sSQL := sSQL + 'G42_DO2 FLOAT, ';
+      sSQL := sSQL + 'G315A_OST FLOAT, ';
+      sSQL := sSQL + 'G311_OST FLOAT, ';
+      sSQL := sSQL + 'G35_OST FLOAT, ';
+      sSQL := sSQL + 'G42_OST FLOAT, ';
+      sSQL := sSQL + 'PRICH CHAR(254), ';
+      sSQL := sSQL + 'ToSts INTEGER ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+  );
+), {FUNC - CreateDBF() }
+
+FUNC('CloseBase',,
+     BLOCK(
+        //CLOSEDATASET('TmpMAIN');
+        CLOSEDATASET('tmpCOMM');
+        CLOSEDATABASE ('TMP_DB');
+     )
+),
+
+VAR('sFilePath', string);
+
+
+IF(SELECTFILE ('sFilePath', 'Выберите файл', 'XML - файлы(*.xml)|*.xml'),
+       BLOCK(
+         ClearTMP_BD();
+         CreateDBF();
+         OPENTABLE('tmpCOMM', sBDPath+'tmpCOMM.DBF', 'DT', 'TMP_DB', 1);
+         //OPENTABLE('TmpMAIN', sBDPath+'tmpMAIN.DBF', 'tmpID', 'TMP_DB', 1);
+       ),
+       RAISEEXCEPTION ('Вайл не выбран выполнение прекращено')
+);
+CreateLogFile(sLogFile, '');                                    { создание журнала }
+//showmessage(1);
+AppendLogFile(sLogFile, 'Начало обработки документов: '+FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+AppendLogFile(sLogFile, 'ДО2 не может быть создан из-за следующих ошибок в товарах:');
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------');
+
+
+
+VAR ('XmlFile', Integer, XMLDOCUMENTCREATE ());
+XMLDOCUMENTLOAD(XmlFile, sFilePath);
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+VAR ('Order', Integer, XMLNODECHILD (XmlRoot, 'Order'));
+SHOWMESSAGE(XMLNODENAME(Order));
+CloseBase();
+RAISEEXCEPTION ('1');
+
+VAR ('ED_Container', Integer, XMLNODECHILD (XmlRoot, 'ED_Container'));
+VAR('iCountConteinerDoc', integer, XMLNODECHILDCOUNT (ED_Container));
+VAR('iCounterCont', integer, 0);
+WHILE(iCounterCont < iCountConteinerDoc,
+      BLOCK(
+           VAR ('ContainerDoc', Integer, XMLNODECHILD (ED_Container, iCounterCont));
+           VAR ('DocBody', Integer, XMLNODECHILD (ContainerDoc, 'DocBody'));
+           VAR ('TypeInfo', Integer, XMLNODECHILD (DocBody, 0));
+           CASE (XMLNODENAME (TypeInfo),
+                [
+                  'ESADout_CU', BLOCK(
+                     VAR('GoodsShipment', integer, XMLNODECHILD(TypeInfo, 'ESADout_CUGoodsShipment'));
+                     VAR('iCounterGS', integer, 0);
+                     VAR('iLineNum', integer,0);
+                     WHILE(iCounterGS < XMLNODECHILDCOUNT (GoodsShipment),
+                          BLOCK(
+                            VAR('sGSChildName',string, XMLNODENAME(XMLNODECHILD(GoodsShipment, iCounterGS)));
+                            CASE(sGSChildName,
+                                [
+                                  'ESADout_CUGoods', BLOCK(
+                                     VAR('GoodsDescript', integer, XMLNODECHILD(GoodsShipment, iCounterGS));
+                                     VAR('iCounterGoodsChild', integer, 0);
+                                     APPENDRECORD('tmpCOMM');
+                                     EDIT('tmpCOMM');
+                                     iLineNum := iLineNum + 1;
+                                     SETFIELDVALUE('tmpCOMM', 'LINENUM', iLineNum);
+                                     
+                                     WHILE(iCounterGoodsChild < XMLNODECHILDCOUNT (GoodsDescript),
+                                           BLOCK(//showmessage(1);
+                                              VAR('sGoodsChildName', string, XMLNODENAME(XMLNODECHILD(GoodsDescript, iCounterGoodsChild)));
+
+                                              CASE(sGoodsChildName,
+                                                   [    'catESAD_cu:GoodsNumeric', BLOCK(
+                                                                SETFIELDVALUE('tmpCOMM', 'G32', XMLNODEVALUE(XMLNODECHILD(GoodsDescript, iCounterGoodsChild))
+                                                                );
+                                                                
+                                                                //showmessage(GoodsNum);
+                                                        ),
+                                                        //'catESAD_cu:GrossWeightQuantity', SETFIELDVALUE('tmpCOMM', 'G35_DO2', XMLNODEVALUE(XMLNODECHILD(GoodsDescript, iCounterGoodsChild))),
+                                                        'catESAD_cu:GoodsTNVEDCode', SETFIELDVALUE('tmpCOMM', 'G33', XMLNODEVALUE(XMLNODECHILD(GoodsDescript, iCounterGoodsChild))),
+                                                        //'catESAD_cu:CustomsCost', SETFIELDVALUE('tmpCOMM', 'G42_DO2', XMLNODEVALUE(XMLNODECHILD(GoodsDescript, iCounterGoodsChild))),
+                                                        'SupplementaryGoodsQuantity',BLOCK(
+                                                                SETFIELDVALUE('tmpCOMM', 'G315A_DO2', XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD(GoodsDescript, iCounterGoodsChild), 'cat_ru:GoodsQuantity')));
+                                                                SETFIELDVALUE('tmpCOMM', 'G315_DO2', XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD(GoodsDescript, iCounterGoodsChild), 'cat_ru:MeasureUnitQualifierName')));
+                                                        ),
+                                                        'ESADout_CUPrecedingDocument', BLOCK(
+                                                                 VAR('PrecedingDocument', string, XMLNODECHILD(GoodsDescript, iCounterGoodsChild));
+                                                                 VAR('sDT_OLD', string, '');
+                                                                 sDT_OLD := XMLNODEVALUE(XMLNODECHILD(PrecedingDocument, 'catESAD_cu:PrecedingDocumentCustomsCode')) + '/' +
+                                                                        FDT('DDMMYY',XMLNODEVALUE(XMLNODECHILD(PrecedingDocument, 'catESAD_cu:PrecedingDocumentDate'))) + '/' +
+                                                                        XMLNODEVALUE(XMLNODECHILD(PrecedingDocument, 'catESAD_cu:PrecedingDocumentNumber'));
+                                                                 IF(tmpCOMM.DT_OLD <> '',
+                                                                    BLOCK(
+                                                                       SETFIELDVALUE('tmpComm','ToSTS', 0, 'PRICH', ' найдено несколько предшествующих ДТ')
+                                                                       //RAISEEXCEPTION ('В товаре номер ' + convert(GoodsNum, string) + ' найдено несколько предшествующих ДТ');
+                                                                    )
+                                                                 );
+                                                                 SETFIELDVALUE('tmpCOMM', 'DT_OLD', sDT_OLD);
+                                                                 SETFIELDVALUE('tmpCOMM', 'SPR_NUM', XMLNODEVALUE(XMLNODECHILD(PrecedingDocument, 'catESAD_cu:PrecedingDocumentGoodsNumeric')));
+                                                                 
+                                                        )
+                                                   ],
+                                              );
+                                              
+                                              iCounterGoodsChild := iCounterGoodsChild + 1;
+                                           )
+                                     );
+                                     OPENQUERY('GETDO1', 'STS_DB', ' SELECT KC.G32, KC.G315A, KC.G315, KC.PLACEID, KC.G33,  KC.ID, KC.G311, KC.G35, KC.G42, SUM(RC.RELEASE_G315A) as RELEASE_G315A, '+
+                                                                   ' SUM(RC.RELEASE_G311) as RELEASE_G311, SUM(RC.RELEASE_G42) as RELEASE_G42, SUM(RC.RELEASE_G35) as RELEASE_G35 '+
+                                                                   ' FROM KRD_COMM KC ' +
+                                                                   ' LEFT JOIN KRD_DCD KD ON (KD.PLACEID = KC.PLACEID AND KD.ID = KC.ID) '+
+                                                                   ' LEFT JOIN REL_COMM RC ON (RC.PLACEID = KC.PLACEID AND RC.ID = KC.ID AND RC.G32 = KC.G32) '+
+                                                                   ' WHERE '+
+                                                                   ' KC.SPR_NUM = ' + char(39) + tmpCOMM.SPR_NUM + char(39)+
+                                                                   ' AND KD.PAPERNO = '+ char(39) + tmpCOMM.DT_OLD + char(39) +
+                                                                   ' GROUP BY KC.G32, KC.G315A, KC.G315, KC.PLACEID, KC.G33,  KC.ID, KC.G311, KC.G35, KC.G42 '
+                                              );
+                                     {showmessage(' SELECT KC.G32, KC.G315A, KC.G315, KC.PLACEID, KC.G33,  KC.ID, KC.G311, KC.G35, KC.G42, SUM(RC.RELEASE_G315A) as RELEASE_G315A, '+
+                                                                   ' SUM(RC.RELEASE_G311) as RELEASE_G311, SUM(RC.RELEASE_G42) as RELEASE_G42, SUM(RC.RELEASE_G35) as RELEASE_G35 '+
+                                                                   ' FROM KRD_COMM KC ' +
+                                                                   ' LEFT JOIN KRD_DCD KD ON (KD.PLACEID = KC.PLACEID AND KD.ID = KC.ID) '+
+                                                                   ' LEFT JOIN REL_COMM RC ON (RC.PLACEID = KC.PLACEID AND RC.ID = KC.ID AND RC.G32 = KC.G32) '+
+                                                                   ' WHERE '+
+                                                                   ' KC.SPR_NUM = ' + char(39) + tmpCOMM.SPR_NUM + char(39)+
+                                                                   ' AND KD.PAPERNO = '+ char(39) + tmpCOMM.DT_OLD + char(39) +
+                                                                   ' GROUP BY KC.G32, KC.G315A, KC.G315, KC.PLACEID, KC.G33,  KC.ID, KC.G311, KC.G35, KC.G42 '
+                                              );}
+
+                                     IF(RECORDCOUNT('GETDO1') <> 0,
+                                        SETFIELDVALUE('tmpCOMM',
+                                                      'ToSTS', 1,
+                                                      'ID', GETDO1.ID,
+                                                      'PLACEID', GETDO1.PLACEID,
+                                                      'G32_DO1', GETDO1.G32,
+                                                      'G311_DO1',GETDO1.G311,
+                                                      'G315_DO1', GETDO1.G315,
+                                                      'G315A_DO1', GETDO1.G315A,
+                                                      'G42_DO1', GETDO1.G42,
+                                                      'G33_DO1', GETDO1.G33,
+                                                      'G315A_OST', GETDO1.G315A - GETDO1.RELEASE_G315A,
+                                                      'G311_OST',GETDO1.G311-GETDO1.RELEASE_G311,
+                                                      'G35_OST',GETDO1.G35 - GETDO1.RELEASE_G35,
+                                                      'G42_OST',GETDO1.G42 - GETDO1.RELEASE_G42,
+                                                      'G311_DO1',GETDO1.G311,
+                                                      'G35_DO1',GETDO1.G35,
+                                                      'G42',GETDO1.G42,
+                                                      'G311_DO2', GETDO1.G311*(tmpComm.G315A_DO2/GETDO1.G315A),
+                                                      'G35_DO2',GETDO1.G35*(tmpComm.G315A_DO2/GETDO1.G315A),
+                                                      'G42_DO2',GETDO1.G42*(tmpComm.G315A_DO2/GETDO1.G315A)
+                                        ),
+                                         SETFIELDVALUE('tmpComm', 'ToSTS', 0, 'PRICH', ' не найден в ДО1')
+                                     );
+                                     
+                                     //Ищем нет ли у нас такого же товара в таблице tmpComm? если есть то суммируем и ранее записанному товару пристваиваем значение 2 в TOSTS
+                                     IF((tmpComm.ToSTS = 1),
+                                       BLOCK(
+                                         OPENQUERY('Double_GOODS', 'SELECT * FROM tmpComm WHERE PLACEID='+tmpComm.PLACEID+' AND ID='+tmpComm.ID+' AND G32_DO1='+tmpComm.G32_DO1+' AND DT_OLD='+char(39)+tmpComm.DT_OLD+char(39)+' AND LINENUM <> '+tmpComm.LineNum+' order by PLACEID, ID', 'TMP_DB');
+                                         VAR('i', integer,1);
+                                         WHILE(EOF('Double_GOODS')=0,
+                                           BLOCK(
+                                             IF(Double_GOODS.TOSTS=0,
+                                                SETFIELDVALUE('tmpComm',
+                                                              'TOSTS',0,
+                                                              'PRICH',Double_GOODS.PRICH
+                                                ),
+                                                BLOCK(
+                                                   i:=i+1;
+                                                   SETFIELDVALUE('tmpComm',
+                                                                 'G311_DO2', tmpComm.G311_DO2+Double_GOODS.G311_DO2,
+                                                                 'G35_DO2',tmpComm.G35_DO2+Double_GOODS.G35_DO2,
+                                                                 'G42_DO2',tmpComm.G42_DO2+Double_GOODS.G42_DO2
+                                                   );
+                                                   //Ставим признак TOSTS = 2... Главное чтоб не 1. Потом в ДО2 будем добавлять только те товары у которых TOSTS=1
+                                                   EXECUTESQL('TMP_DB','UPDATE TMPCOMM SET TOSTS='+i+' WHERE LINENUM='+Double_GOODS.LINENUM);
+                                                   
+                                                )
+                                              );
+                                              NEXT('Double_GOODS');
+                                           )
+                                         );
+
+                                       )
+                                      );
+
+                                      IF((tmpComm.ToSTS = 1),
+                                        IF((STRPOS (COPY(tmpComm.G33_DO1, 0, 4), tmpComm.G33)=0), SETFIELDVALUE('ToSTS', 0, 'PRICH', 'Несоответствие кода ТНВЭД в ДО1:' + tmpComm.G33_DO1 + ' в ДТ ' + tmpComm.G33))
+                                      );
+                                      IF((tmpComm.ToSTS = 1),
+                                          IF((tmpComm.G315A_OST < tmpComm.G315A_DO2 ), Block(
+                                            SETFIELDVALUE('tmpComm','ToSTS', 0, 'PRICH', 'Остаток количества меньше указанного к выдаче значения. Остаток:' + convert(tmpComm.G315A_OST, string) + ' К выдаче: ' + convert(tmpComm.G315A_DO2,string));
+                                            //ShowMessage(GETDO1.ID);
+                                          ))
+                                      );
+                                      IF((tmpComm.ToSTS = 1),
+                                          IF((tmpComm.G35_OST < tmpComm.G35_DO2 ), SETFIELDVALUE('tmpComm','ToSTS', 0, 'PRICH', 'Остаток веса  меньше указанного к выдаче значения. Остаток:' + convert(tmpComm.G35_OST, string) + ' К выдаче: ' + convert(tmpComm.G35_DO2,string)))
+                                      );
+                                      IF((tmpComm.ToSTS = 1),
+                                          IF((tmpComm.G311_OST< tmpComm.G311_DO2 ), SETFIELDVALUE('tmpComm','ToSTS', 0, 'PRICH', 'Остаток грузовых мест  меньше указанного к выдаче значения. Остаток:' + convert(tmpComm.G311_OST, string) + ' К выдаче: ' + convert(tmpComm.G311_DO2,string)))
+                                      );
+                                      IF((tmpComm.ToSTS = 1),
+                                          IF((tmpComm.G42_OST < tmpComm.G42_DO2 ), SETFIELDVALUE('tmpComm','ToSTS', 0, 'PRICH', 'Остаток стоимости товара меньше указанного к выдаче значения. Остаток:' + convert(tmpComm.G42_OST, string) + ' К выдаче: ' + convert(tmpComm.G42_DO2,string)))
+                                      );
+
+                                      IF(0<(tmpComm.G315A_OST - tmpComm.G315A_DO2)< 0.01, SETFIELDVALUE('tmpComm', 'G315A_DO2',tmpComm.G315A_OST) );
+                                      IF(0<(tmpComm.G42_OST - tmpComm.G42_DO2)< 0.01, SETFIELDVALUE('tmpComm', 'G42_DO2',tmpComm.G42_OST) );
+                                      IF(0<(tmpComm.G35_OST - tmpComm.G35_DO2)< 0.01, SETFIELDVALUE('tmpComm', 'G35_DO2',tmpComm.G35_OST) );
+                                      IF(0<(tmpComm.G311_OST - tmpComm.G311_DO2)< 1, SETFIELDVALUE('tmpComm', 'G311_DO2',tmpComm.G311_OST) );
+
+                                     POST('tmpCOMM');
+                                     CLOSEDATASET('GETDO1');
+                                  ),//'ESADout_CUGoods', BLOCK(
+                                  'ESADout_CUConsignee',
+                                  BLOCK(
+                                     VAR('ConsDescript', integer, XMLNODECHILD(GoodsShipment, iCounterGS));
+                                     sConsignee := XMLNODEVALUE(XMLNODECHILD(ConsDescript, 'cat_ru:OrganizationName'));
+                                     VAR('AdressDescript', integer, XMLNODECHILD(ConsDescript,'cat_ru:Address'));
+                                     sConsigneeAdress := XMLNODEVALUE(XMLNODECHILD(AdressDescript, 'cat_ru:PostalCode')) + ' ' +
+                                                         XMLNODEVALUE(XMLNODECHILD(AdressDescript, 'cat_ru:CounryName')) + ' ' +
+                                                         XMLNODEVALUE(XMLNODECHILD(AdressDescript, 'cat_ru:City')) + ' ' +
+                                                         XMLNODEVALUE(XMLNODECHILD(AdressDescript, 'cat_ru:StreetHouse'))
+                                     ;
+                                     sConsigneeCountry := REFERENCE('OKSMT', 'ABC2', XMLNODEVALUE (XMLNODEFIND (AdressDescript, 'cat_ru:CountryCode')), 'KOD');
+                                     VAR('OrganizationDescript', integer, XMLNODECHILD(ConsDescript,'cat_ru:RFOrganizationFeatures'));
+                                     sConsigneeOGRN := XMLNODEVALUE(XMLNODECHILD(OrganizationDescript, 'cat_ru:OGRN'));
+                                     sConsigneeINN := XMLNODEVALUE(XMLNODECHILD(OrganizationDescript, 'cat_ru:INN'));
+                                     sConsigneeKPP:= XMLNODEVALUE(XMLNODECHILD(OrganizationDescript, 'cat_ru:KPP'));
+                                     sConsigneeCountry := REFERENCE('OKSMT', 'ABC2', XMLNODEVALUE (XMLNODEFIND (AdressDescript, 'cat_ru:CountryCode')), 'KOD');
+                                  )
+                                ],
+                            );//CASE(sGSChildName,
+                            iCounterGS := iCounterGS + 1;
+                          )
+                     );//WHILE(iCounterGS < iCountGS,
+                     //VAR('GoodsShipment', integer, XMLNODECHILD(GoodsShipment, 'ESADout_CUGoodsShipment'));
+                  ),//'ESADout_CU', BLOCK(
+                  'Inventory', BLOCK(
+                         
+                         VAR('GTDNUM', integer, XMLNODECHILD(TypeInfo, 'GTDNumber'));
+                         sDT := XMLNODEVALUE(XMLNODECHILD(GTDNum, 'cat_ru:CustomsCode')) + '/' +
+                                                                        FDT('DDMMYY',XMLNODEVALUE(XMLNODECHILD(GTDNum, 'cat_ru:RegistrationDate'))) + '/' +
+                                                                        XMLNODEVALUE(XMLNODECHILD(GTDNum, 'cat_ru:GTDNumber'));
+                         //sDT_Time :=  FDT('MM:HH:00', TIME());
+                         sDT_DATE := FDT('DD.MM.YYYY',XMLNODEVALUE(XMLNODECHILD(GTDNum, 'cat_ru:RegistrationDate')));
+                         dDT_DATE := ENCODEDATE (EXTRACTSTR (sDT_DATE, 3, '.'), EXTRACTSTR (sDT_DATE, 2, '.'), EXTRACTSTR (sDT_DATE, 1, '.'));
+                         OPENQUERY('FIND_DT', 'STS_DB', 'SELECT R.RELEASE_NO, K.NBD FROM RELEASE R LEFT JOIN KRD_MAIN K ON(K.PLACEID=R.PLACEID AND K.ID=R.ID) WHERE DOC_NO = '+char(39)+ sDT + char(39));
+                         IF(RECORDCOUNT('FIND_DT') <>0,
+                            BLOCK(
+                               FIRST('FIND_DT');
+                               AppendLogFile(sLogFile, 'ДТ № ' + sDT + ' не может быть добавлена, т.к. на её основе уже созданы следующие документы отчета :');
+                               AppendLogFile(sLogFile, '----------------------------------------');
+                               AppendLogFile(sLogFile, '|        ДО1        |         ДО2      |');
+                               AppendLogFile(sLogFile, '----------------------------------------');
+                               WHILE(EOF('FIND_DT')=0,
+                                     BLOCK(
+                                       AppendLogFile(sLogFile, RIGHTPAD (FIND_DT.NBD, 21, ' ') + FIND_DT.RELEASE_NO);
+                                       NEXT('FIND_DT');
+                                     )
+                               );
+                               SHOWLOGFILE (sLogFile, 'Нет возможности создать ДО2');
+                               CloseBase();
+                               RAISEEXCEPTION ('Выполнение прекращено');
+                               
+                            )
+                         );
+                  )//'Inventory', BLOCK(
+                ],//закончили CASE
+
+           );
+           iCounterCont := iCounterCont + 1;
+      )
+);
+
+SETFILTER('tmpComm','ToSTS = 0');
+IF(RECORDCOUNT('tmpComm')<>0,
+   BLOCK(
+
+      FIRST('tmpComm');
+      WHILE(EOF('tmpComm')=0,
+            BLOCK(
+               AppendLogFile(sLogFile, 'Товар номер ' + convert(tmpComm.G32, string) + ' : ' + tmpComm.Prich);
+               NEXT('tmpComm');
+            )
+      );
+      SHOWLOGFILE (sLogFile, 'Нет возможности создать ДО2');
+      CloseBase();
+      RAISEEXCEPTION ('Выполнение прекращено');
+   ),
+   BLOCK(
+     SETFILTER('tmpComm','');
+     OPENQUERY('SORT_GOODS', 'SELECT * FROM tmpComm WHERE TOSTS=1 order by PLACEID, ID', 'TMP_DB');
+     
+     OPENTABLE ('REL_MAIN_5', 'STS_DB', 'RELEASE', 'PLACEID;ID;COUNTER');
+     OPENTABLE ('REL_COMM_5', 'STS_DB', 'REL_COMM', 'PLACEID;ID;G32');
+
+     FIRST('SORT_GOODS');
+     VAR('iTEC_ID', integer, 0);
+     VAR('iCounter', integer, 0);
+     WHILE(EOF('SORT_GOODS')=0,
+           BLOCK(
+              IF(iTec_ID <> SORT_GOODS.ID,
+                 BLOCK(
+                   iTec_ID := SORT_GOODS.ID;
+                   
+                   OPENQUERY('GET_MAX_COUNTER', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM RELEASE WHERE PLACEID='+convert(SORT_GOODS.PLACEID, string)+' AND ID='+convert(SORT_GOODS.ID, string));
+                   OPENQUERY('PAPER', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID='+convert(SORT_GOODS.PLACEID, string)+' AND ID='+convert(SORT_GOODS.ID, string) + ' ORDER BY PAPERCODE' );
+                   FIRST('PAPER');
+                   VAR('sPaper', string, '');
+                   WHILE(EOF('PAPER') = 0,
+                     BLOCK(
+                        IF(sPaper <> '', sPaper := sPaper + ', ');
+                        sPaper := sPaper +  PAPER.PAPERNAME + ' ' + PAPER.PAPERNO + ' от ' + FDT('DD.MM.YYYY', PAPER.PAPERDATE);
+                        NEXT('PAPER');
+                     )
+                   );
+                   iCounter:=GET_MAX_COUNTER.COUNTER + 1;
+                   LOCATE('KRD_MAIN_2', 'PLACEID;ID',[SORT_GOODS.PLACEID, SORT_GOODS.ID]);
+                   APPENDRECORD('REL_MAIN_5');
+                   EDIT('REL_MAIN_5');
+                   SETFIELDVALUE('REL_MAIN_5',
+                                 'PLACEID', SORT_GOODS.PLACEID,
+                                 'ID', SORT_GOODS.ID,
+                                 'COUNTER', iCounter,
+                                 'RELEASE_NO', SOLVE (INIFILE('Docs','MakeRelease_No','')),
+                                 'DOC_TYPE', 'ДТ',
+                                 'DOC_NO', sDT,
+                                 'RELEASE_DATE',dDT_DATE,
+                                 'OUT_DATE', NOW(),//sDT_DATE + ' ' + sDT_TIME,
+                                 'OUT_DOC_DATE',dDT_DATE,
+                                 'MAIN_ID', SORT_GOODS.ID,
+                                 'MAIN_COUNTER', 1,
+                                 'MAIN_NO', 1,
+                                 'G082', sConsignee,
+                                 'G083', sConsigneeAdress,
+                                 'G084C', sConsigneeINN,
+                                 'G08_KPP', sConsigneeKPP,
+                                 'G08_OGRN', sConsigneeOGRN,
+                                 'G08_COUNTRY', sConsigneeCountry,
+                                 'G022', KRD_MAIN_2.G022,
+                                 'G023', KRD_MAIN_2.G023,
+                                 'G02_COUNTRY', KRD_MAIN_2.G15A,
+                                 'G042', KRD_MAIN_2.G042,
+                                 'G043', KRD_MAIN_2.G043,
+                                 'G04_COUNTRY', KRD_MAIN_2.G04_COUNTRY,
+                                 'TRANSPDOCS', sPaper,
+                                 'DELIVERYDOCS', SORT_GOODS.DT_OLD,
+                                 'RELEASE_GOODS_DATE', DATE()
+                                 
+                                 
+                   );
+                   POST('REL_MAIN_5');
+                   
+                   CLOSEDATASET('GET_MAX_COUNTER');
+                   CLOSEDATASET('PAPER');
+                 )
+              );
+              
+              VAR('sREL_G35', float, );
+              VAR('sREL_G311', integer,);
+              VAR('sREL_G42', integer,);
+              APPENDRECORD('REL_COMM_5');
+              EDIT('REL_COMM_5');
+              SETFIELDVALUE('REL_COMM_5',
+                            'PLACEID', SORT_GOODS.PLACEID,
+                            'ID',SORT_GOODS.ID,
+                            'COUNTER',iCounter,
+                            'G32',SORT_GOODS.G32_DO1,
+                            'RELEASE_GTD_G32', SORT_GOODS.G32,
+                            'RELEASE_G311', SORT_GOODS.G311_DO2,
+                            'RELEASE_G35',SORT_GOODS.G35_DO2,
+                            'RELEASE_G42',SORT_GOODS.G42_DO2,
+                            'RELEASE_G315A', SORT_GOODS.G315A_DO2,
+                            'RELEASE_OUT_DATE', NOW()
+                            
+              );
+              POST('REL_COMM_5');
+              NEXT('SORT_GOODS');
+           )
+     );
+     
+     CLOSEDATASET('REL_MAIN_5');
+     CLOSEDATASET('REL_COMM_5');
+   )
+);
+CloseBase();
+GLOBALREFRESH();
+

@@ -1,0 +1,50 @@
+// *****************************************************************************
+// Название: DO3Error
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO3Error
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('vPlaceID',  String, 0);
+VAR ('vID', String, '0');
+VAR ('strStatus', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DocId', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime);
+VAR ('sSubStatus', String, '');
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'DO3Error'));
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlDoc, 'dodt'));
+VAR ('tmpSubStatus', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'ErrorDsc')));
+
+  DocID     := XMLNODEATTRIBUTE (XmlDoc, 'do3id');
+  sSubStatus := COPY (tmpSubStatus, (STRPOS ('Причины отказа:', tmpSubStatus) + 16), LENGTH (tmpSubStatus));
+  
+  OPENTABLE ('JRDO3_2', 'JRDO3', '', 'dbJournals', 1);
+
+  IF (LOCATE ('JRDO3_2', 'RefDocumentId', [DocID]),
+    Block(
+      EDITRECORD ('JRDO3_2');
+      SETFIELDVALUE ('JRDO3_2', 'CustomState', 'Отказ в регистрации');
+      POSTRECORD ('JRDO3_2');
+
+      vPlaceID := JRDO3_2.PLACEID;
+      DocId   := JRDO3_2.RefDocumentId;
+      DoType   := 'ДО-3';
+      DoNo     := JRDO3_2.REPORTNUMBER;
+      DoDate   := JRDO3_2.REPORTDATE;
+      strStatus:= 'Отказ в регистрации';
+      dRegDate := Date () + Time (1);
+      sJourGuid := DocId;
+
+    )
+  ); // IF - //
+
+  CLOSEDATASET ('JRDO3_2');
+

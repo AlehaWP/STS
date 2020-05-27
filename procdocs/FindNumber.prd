@@ -1,0 +1,78 @@
+// *****************************************************************************
+// Название: Поиск номера в строке
+// Описание: Поиск номера в строке
+// Кнопка вызова: 0
+// Подпись кнопки: Поиск номера в строке
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC('FindNumber',
+     BLOCK(
+       PARAM('sStrokaParam', string, 0),
+       PARAM('PriznakiNahozdenia', string,1), // Если возможных признаков несколько указываем их через ; без пробелов. Первый который подойдет и будет признаком
+       //PARAM('KolvoSimvolov', integer, 2)
+     ),
+     BLOCK(
+        VAR('sStr', string);
+        VAR('PriznakNahozdenia', string, '');
+        //Ищем подходящий признак. Ведь в строке могут быть к примеру КГ кг Кг
+        VAR('iCountPriznaki', integer, SPLITSTR(PriznakiNahozdenia, '^', sStr) );
+        VAR('iCounter', integer, 1);
+
+        WHILE((iCounter<=iCountPriznaki)*(PriznakNahozdenia=''),
+              BLOCK(
+                sStr :=EXTRACTSTR (PriznakiNahozdenia, iCounter, '^');
+                IF(STRPOS(sStr, sStrokaParam), PriznakNahozdenia := sStr);
+                iCounter:=iCounter + 1;
+              )
+        );
+
+
+         VAR('sStroka', string, sStrokaParam);
+//                Пока отключено, но если надо будет искать по нескольким частям, нужно включить и убрать *(dNumber=0) из  WHILE((iCounter<=iCountPart)*(dNumber=0),
+//                  VAR('sPlus', string, '^');
+//                  IF (STRPOS(sPlus, PriznakNahozdenia), sPlus:=char(96));
+//                 sStroka := sStroka + sPlus;
+        //sPlus добавляется дя исключения, что в последней части есть признак нахождения.
+        //Без добавления спец. символа из строки '1234кг' вернется кол-во частей = 1 значение первой части = 1234
+        //После добавления спец. символа из строки '1234кг^' вернется кол-во частей = 2 значение первой части = 1234 второй = ^
+        //Если строка была '1234кг12другое' вернется 1часть = 1234, 2 часть = 12другое . В итоге при последующей обработке из 12другое мы получим число 12. Нам же надо, чтобы учитывались только те цифры, которые находятся левее признака нахождения
+        //Нужно просто откинуть поледнюю часть. Но тогда в стоке вида '1234кг' мы потеряем и не учтем '1234'. Ведь вернется кол-во частей = 1 и последнюю мы откинем
+        // При добавлении спец символа, мы исключаем ситуацию когда признак нахлждения оказывается последним в строке и в последнюю часть попадают нужные нам значения.
+
+        VAR('sPart', string, '');
+        VAR('iCountPart', integer, IF ( PriznakNahozdenia<>'',SPLITSTR (sStroka, PriznakNahozdenia, sPart), 0));
+
+        iCounter:=1;
+        VAR('dNumber', float, 0);
+        VAR('sNumber', string, '');
+        VAR('iLengthPart', integer, 0);
+        VAR('sLetter', string, '');
+
+        WHILE((iCounter<=iCountPart)*(dNumber=0),//бежим по частям пока не найдем число //WHILE(iCounter<=iCountPart,// если ищем во всех частях
+              BLOCK(
+                sPart:= TRIM (EXTRACTSTR (sStroka, iCounter, PriznakNahozdenia));
+                //IF(STRPOS (Подстрока, Строка),iLengthPart := LENGTH (sPart),iLengthPart := 0);
+                iLengthPart := LENGTH (sPart);
+                sNumber := '';
+                While(iLengthPart>0,
+                      BLOCK(
+                        sLetter := COPY(sPart, iLengthPart, 1);
+                        IF(sLetter=',', sLetter:='.'); 
+
+                        IF(STRPOS (sLetter, '0123456789.'),
+                             sNumber := sLetter + sNumber,
+                             IF((sNumber<>'')*(sLetter<>' '), iLengthPart:=0)// Если число закончилось и начались буквы(исключая пробелы), прекращаем чтение
+                        );
+                        iLengthPart :=iLengthPart-1;
+                      )
+                );
+                IF(STRPOS ('.', sNumber)=1, sNumber:=DELETE (sNumber, 1, 1)); //Если перед цифрой стояла запятая(Дерево,35КГ), то без проверки получается 0.35                //showmessage(sNumber);
+                IF(sNumber<>'', dNumber:=convert(sNumber, float));  //IF(sNumber<>'', dNumber:=dNumber + convert(sNumber, float)); //если надо по нескольким частям
+                 iCounter:=iCounter+1;
+              );
+        );
+        dNumber
+        //showmessage(EXTRACTSTR (sStroka, 1, PriznakNahozdenia));
+     )
+)

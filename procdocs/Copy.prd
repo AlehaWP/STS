@@ -1,0 +1,12 @@
+// *****************************************************************************
+// Название: Копирование записи
+// Описание: Копирование записи
+// Кнопка вызова: 0
+// Подпись кнопки: Копирование записи
+// *****************************************************************************
+//
+OPENQUERY('QUERY1', 'STS_DB', 'SELECT * FROM KRD_MAIN WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID);
+//DELETERECORD ('KRD_MAIN');
+EXECUTESQL ('STS_DB', 'Delete  from  KRD_MAIN WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID);
+COPYRECORD ('QUERY1', 'KRD_MAIN_2');
+GLOBALREFRESH();

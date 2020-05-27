@@ -1,0 +1,38 @@
+// *****************************************************************************
+// Название: Создание БД
+// Описание: Создание БД
+// Кнопка вызова: 0
+// Подпись кнопки: Создание БД
+// *****************************************************************************
+//
+
+FUNC('CreateTable', ,
+     BLOCK(
+        VAR ('sSQL', Memo, '');
+        VAR ('sFilePath', String, PROGRAMPATH() + '\DATA\');
+            sSQL := 'CREATE TABLE '+CHAR(39)+'CreateDocLog.DB'+CHAR(39);
+            sSQL := sSQL + ' (';
+              sSQL := sSQL + 'ID INT, ';
+              sSQL := sSQL + 'PLACEID INT, ';
+              sSQL := sSQL + 'BD_DATE Date, ';
+              sSQL := sSQL + 'TypeDoc CHAR(254), ';
+              sSQL := sSQL + 'UserName CHAR(254) ';
+            sSQL := sSQL + ')';
+            sSQL := sSQL + '';
+            EXECUTESQL ('STS_DB', sSQL);
+
+            sSQL := 'CREATE TABLE '+CHAR(39)+'DocIsNew.DB'+CHAR(39);
+            sSQL := sSQL + ' (';
+              sSQL := sSQL + 'ID INT, ';
+              sSQL := sSQL + 'PLACEID INT, ';
+              sSQL := sSQL + 'BD_DATE Date, ';
+              sSQL := sSQL + 'TypeDoc CHAR(254), ';
+              sSQL := sSQL + 'New INT ';
+            sSQL := sSQL + ')';
+            sSQL := sSQL + '';
+            EXECUTESQL ('STS_DB', sSQL);
+     )
+),
+//showmessage(TABLELIST ('/', 'STS_DB'));
+//IF(TABLEEXISTS ('CreateDocLog', 'STS_DB'), showmessage(1));
+

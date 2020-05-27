@@ -1,0 +1,39 @@
+// *****************************************************************************
+// Название: Занести данные пользователя в ДО1
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//showmessage(KRD_MAIN.ID);
+//showmessage(KRD_MAIN.NBD);
+//showmessage(DocType);
+//showmessage(USERINFO(,'UserName'));
+
+IF(DocType=1,
+   EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET AUTHOR='+
+                         char(39)+USERINFO(,'UserName')+char(39)+
+                         ', AUTHOR_POST='+char(39)+USERINFO(,'UserPost')+char(39) +
+                         ' WHERE ID='+KRD_MAIN.ID+ ' AND PLACEID=' + KRD_MAIN.PLACEID
+   )
+
+);
+
+
+IF(DocType=5,
+   BLOCK(
+       EXECUTESQL('STS_DB', 'UPDATE RELEASE SET RELEASE_GIVE='+
+                             char(39)+USERINFO(,'UserName')+char(39)+
+                             ', RELEASE_GIVE_POST='+char(39)+USERINFO(,'UserPost')+char(39) +
+                             ' WHERE ID='+KRD_MAIN.ID+ ' AND PLACEID=' + KRD_MAIN.PLACEID + ' AND COUNTER='+REL_MAIN.COUNTER
+       );
+       REFRESH('REL_MAIN');
+       //showmessage(REL_MAIN.RELEASE_GIVE)
+   )
+
+);
+   //SETFIELDVALUE('KRD_MAIN', 'AUTHOR', char(39)+USERINFO(,'UserName')+char(39), 'AUTHOR_POST', char(39)+USERINFO(,'UserPost')+char(39))
+//);
+//EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET AUTHOR='+char(39)+USERINFO(,'UserName')+char(39)+ ', AUTHOR_POST='+char(39)+USERINFO(,'UserPost')+char(39)));

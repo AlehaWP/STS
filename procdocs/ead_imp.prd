@@ -1,0 +1,463 @@
+// *****************************************************************************
+// Название: Импорт из ЕАД (Пр.№ 762 от 11 августа 2006 года)
+// Описание: Импорт из ЕАД (Пр.№ 762 от 11 августа 2006 года)
+// Кнопка вызова: 1
+// Подпись кнопки: Импорт из ЕАД
+// *****************************************************************************
+//
+BLOCK (
+VAR('sSQL', String);
+VAR('sFileName', String);
+VAR('sFileHead', String);
+VAR('sFileTovar', String);
+VAR('sFileTovarPK', String);
+VAR('sFileTrans', String);
+VAR('sFileTechd', String);
+VAR('sFilePredd', String);
+Var('vTemp', Integer);
+Var('sPlaceid', Integer);
+Var('sId', Integer);
+Var('vG32', Integer);
+Var('vCounterDCD', Integer);
+Var('vCounterPAPER_TTN', Integer);
+Var('vCounterPAPER_INV', Integer);
+Var('vCounterPAPER', Integer);
+Var('sNum', String);
+
+VAR('SumAdress', String);
+VAR('SumAdress1', String);
+VAR('SumAdress2', String);
+
+Var('vG221', String);
+
+Var('DocType', Integer);
+Var('vCreateNu', Integer);
+
+Var('tpPaper', String);
+VAR('vG071', String);
+VAR('vG072', DateTime);
+VAR('vG073', String);
+VAR('KodStrOtpr', String);
+VAR('KodStrPoluch', String);
+
+Let('sFileName', INIFILE ('ProcDocs', 'Path', ''));
+Let('sPlaceid', 0);
+{ выбор каталога с ГТД  }
+  IF (SelectDirectory('sFileName'),  BLOCK (
+      Let('sFileName',INCLUDETRAILINGBACKSLASH(sFileName));
+      WRITEINIFILE ('ProcDocs', 'Path', sFileName);
+      OPENDATABASE('SourceDB', 'STANDARD', 'PATH='+sFileName);
+      OPENDATABASE ('dbRefs', 'STANDARD', 'PATH='+PROGRAMPATH() + 'REFS\'),
+      OPENTABLE ('OKSMT', 'OKSMT.DBF', 'KOD', 'dbRefs'),
+      OPENTABLE ('VIDUPAK', 'VIDUPAK.DBF', '', 'dbRefs'),
+      
+     {DBRHEAD.DBF "ГТД- общие сведения(гр. 1-28,49,50,54 ф. ТД-1)"
+      DBRTOVAR.DBF "ГТД - товары (гр. 2/8, 31-39, 41-42, 45, 46 ф. ТД-1,2)"
+      DBRTRANS.DBF "ГТД - графы 18, 21, 25, 26, 29, 31 форм ТД-1,2"
+      DBRTECHD.DBF "ГТД-доп. инф./представляемые док. (гр.44 ф.ТД-1,ТД-2)"
+      DBRPREDD.DBF "ГТД - предшествующие документы (гр.40 ф. ТД-1,ТД-2 )"  }
+      Let('sFileHead', sFileName+'DBRHEAD.DBF');
+      Let('sFileTovar', sFileName+'DBRTOVAR.DBF');
+      Let('sFileTovarPK', sFileName+'DBRPK.DBF');
+      Let('sFileTrans', sFileName+'DBRTRANS.DBF');
+      Let('sFileTechd', sFileName+'DBRTECHD.DBF');
+      Let('sFilePredd', sFileName+'DBRPREDD.DBF');
+
+{***************************Основная инф-ия******************}
+      If (FileExists(sFileHead), Block(
+
+      SELECTRECORDS('Выбор ГТД', sFileHead,
+                     [['G071', '', 10],
+                      ['G072', '', 10],
+                      ['G073', '', 10],
+                      ['G022', 'Наименование отправителя', 25],
+                      ['G082', 'Наименование получателя', 25]],
+
+                      'DBRHEAD', '', 'SourceDB');
+
+      IF (RECORDCOUNT ('DBRHEAD') = 0,  RAISEEXCEPTION ('ГТД не выбрана(-ы)!'));
+      OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES');
+
+      if(SelectValues ('Выбор склада, на который будет создан документ', 'Stors',
+                                                [
+                                                 ['LICENCENO',   'Номер лицензии', 15],
+                                                 ['LICENCENO_EXT',   ' ', 1],
+                                                 ['STORE_NO',   'Номер склада', 15],
+                                                 ['NAME',   'Название склада', 30],
+                                                 ['PlaceId',   '', 10]
+                                                ],
+                                                [ ['PlaceId', 'sPlaceId'],
+                                                ],
+
+               '', 'STS_DB') = 0, RAISEEXCEPTION ('Склад не выбран!'));
+
+
+      Let('DocType', 6+ChoiceVariant('Вид документа', 3, 0,
+             'ДО1', 'ДО1мв', 'ДУ ЗТК'));
+{      Let('vCreateNu', ChoiceVariant('Coздaть нoмep пoдтвepждeния o пpибытии ?', 2, 1, 'Да', 'Нет'));}
+{          DebugMessage('01');}
+      FIRST('DBRHEAD');
+      While(EOF('DBRHEAD')=0,
+        block(
+
+          Let('vG071',FieldValue('DBRHEAD.G071'));
+          Let('vG072',FieldValue('DBRHEAD.G072'));
+          Let('vG073',FieldValue('DBRHEAD.G073'));
+
+          SumAdress:=DBRHEAD.G023SUBD+' '+DBRHEAD.G023CITY+' '+DBRHEAD.G023STREET;
+          SumAdress1:=DBRHEAD.G083SUBD+' '+DBRHEAD.G083CITY+' '+DBRHEAD.G083STREET;
+          SumAdress2:=DBRHEAD.G093SUBD+' '+DBRHEAD.G093CITY+' '+DBRHEAD.G093STREET;
+
+          Let('KodSTROtpr', '');
+          Let('KodSTRPoluch', '');
+
+          If(FieldExists('OKSMT', 'ABC2'), Block(
+            Let('KodSTROtpr', REFERENCE('OKSMT', 'ABC2', DBRHEAD.G15A, 'KOD')),
+            Let('KodSTRPoluch', REFERENCE('OKSMT', 'ABC2', DBRHEAD.G17A, 'KOD'))
+            )
+          );
+         
+        { DebugMessage(SumAdress);}
+
+
+          appendrecord('KRD_MAIN');
+ {         If(vCreateNu=0, Post('KRD_MAIN'));}
+
+          EDITRECORD('KRD_MAIN');
+
+          SETFIELDVALUE ('KRD_MAIN', 'PLACEID', sPlaceid);
+          SETFIELDVALUE ('KRD_MAIN', 'A_MODE', DocType);
+{            DebugMessage(sPlaceid);    }
+
+          vG221 := CURRENCYCODE (FieldValue('DBRHEAD.G221'));
+          if (vG221 = '', vG221 := FieldValue('DBRHEAD.G221'));
+
+          COPYRECORD('DBRHEAD', 'KRD_MAIN',
+
+            'G011=DCLHEAD.G011',
+            {'G012=DCLHEAD.G012',}
+            'G024D=DBRHEAD.G020',  {//ОГРН отправителя}
+            'G024C=DBRHEAD.G021',     {//ИНН}
+            'G022=DBRHEAD.G022',
+            'G023=SumAdress',
+{            'G024A=DCLHEAD.G024A',   } { //категория}
+{            'G024B=DCLHEAD.G024B',   } {//СОАТО}
+            'G06=DBRHEAD.G06',
+
+            'G084D=DBRHEAD.G080', {//ОГРН получателя}
+            'G084С=DBRHEAD.G081',     {//ИНН}
+            'G082=DBRHEAD.G082',
+            'G083=SumAdress1',
+{            'G084A=DCLHEAD.G084A',  }  {//категория}
+{            'G084B=DCLHEAD.G084B',  } {//СОАТО}
+
+
+            'G094D=DBRHEAD.G090', {//ОГРН плательщика}
+            'G094С=DBRHEAD.G091',     {//ИНН}
+            'G092=DBRHEAD.G092',
+            'G093=SumAdress2',
+{            'G094A=DCLHEAD.G094A',}  {//категория}
+{            'G094B=DCLHEAD.G094B', } {//СОАТО}
+
+    //        'G281=DBRHEAD.G281',
+     //       'G282=DBRHEAD.G282',
+       //     'G283=DBRHEAD.G283',
+         //   'G284=DBRHEAD.G284',
+            'G15A=KodSTROtpr',
+            'G17A=KodSTRPoluch',
+            'G19=DBRHEAD.G19',
+        //    'G210=DBRHEAD.G210',
+            'G221=vG221',      {//Код валюты контракта}
+            'G222=DBRHEAD.G222',      {//Общая фактурная стоимость}
+            'G23=DBRHEAD.G23',        {//Курс валюты}
+       //     'G251=DCLHEAD.G25',      {//резерв код вида транспорта на границе}
+      //      'G261=DCLHEAD.G26',      {//резерв внутри страны}
+{            'G29=DCLHEAD.G29',}     {//код таможни на границе}
+{            'AUTHOR=DCLHEAD.G5441',}  {//автор ГТД}
+
+);
+      {  Let('sNum', INIFILE('Docs','MAKEBD_NO', 'LEFTPAD(KRD_MAIN.ID, 8, '+Char(39)+'0'+Char(39)+')'));
+        SetFieldValue('KRD_MAIN', 'NBD', Compute(sNum));}
+        SETFIELDVALUE ('KRD_MAIN', 'G012', IF(UPPERSTR(FieldValue('DBRHEAD.G011')) = 'ЭК', '10', '40'));
+        SETFIELDVALUE ('KRD_MAIN', 'BEG_KEEP', NOW());
+        Let('sId', FieldValue('KRD_MAIN.ID')),
+        POSTRECORD('KRD_MAIN');
+        FindKey('KRD_MAIN_2',[sPlaceId,sId]);
+        EDITRECORD('KRD_MAIN_2');  {присваиваем номер ДО1}
+        POSTRECORD('KRD_MAIN_2');
+
+{        Let('tpPaper', FieldValue('KRD_MAIN_2.NBD')),
+        DebugMessage(tpPaper),}
+
+{***************************Товары******************}
+
+      If (FileExists(sFileTovar), Block(
+          Let('sSQL','Select * from '+Char(39)+sFileTovar+Char(39)+' where (G071='+Char(39)+vG071+Char(39)+') and (G072='+Char(39)+vG072+Char(39)+') and (G073='+Char(39)+vG073+Char(39)+') order by g32');
+          OPENQUERY ('DBRTOVAR', sSQL, 'SourceDb');
+          Let('vG32', 1);
+          Let('vCounterDCD', 0);
+          Let('vCounterPAPER', 0);
+          Let('vCounterPAPER_TTN', 0);
+          Let('vCounterPAPER_INV', 0);
+          SetRange('KRD_COMM_2', [sPlaceId, sId]);
+          WHILE(EOF('DBRTOVAR')=0,
+            block(
+            appendrecord('KRD_COMM_2');
+            EDITRECORD('KRD_COMM_2');
+
+         COPYRECORD('DBRTOVAR','KRD_COMM_2',
+                 { 'GTD_G32=DCLTOVAR.G32',}  {//номер товара по ГТД}
+                  'G33=DBRTOVAR.G33',       {//Код товара по ТН ВЭД }
+                  'G312=DBRTOVAR.G31_1',   {//Описание и характеристика товара}
+                //  'G313=DCLTOVAR.G31_21',{//Вид грузовых мест и маркировки товара}
+                  'G311=DBRTOVAR.G31_2', {//Количество мест товара}
+                  'G315A=DBRTOVAR.G31_7',{//Кол-во товара (в дополнительной единице измерения)}
+                  'G315=DBRTOVAR.G31_71', {//Наименование дополнительной единицы измерения}
+                  'G41A=DBRTOVAR.G41A',  {//Код дополнительной единицы измерения}
+
+                  'G315C=DBRTOVAR.G31_8', {// кол-во (физ. объем)}
+                  'G315CN=DBRTOVAR.G31_81', {// наим. (физ. объем)}
+                //  'G317IZG=DCLTOVAR.G31_11',       {//Наименование фирмы изготовителя}
+               //   'G31_4=DCLTOVAR.G31_4',    {//N серии марок акцизного сбора}
+               //   'G31_41=DCLTOVAR.G31_41',  {//Кол-во марок акцизного сбора}
+
+                  'G35=DBRTOVAR.G35',    {//Вес брутто (кг)}
+                  'G38=DBRTOVAR.G38',  {//Вес нетто (кг)}
+                  'G42=DBRTOVAR.G42',
+                  'G42_CURRENCY=vG221',
+                  'G46=DBRTOVAR.G46',
+
+              {    'FACT_G311=DCLTOVAR.G31_2',
+                  'FACT_G42=DCLTOVAR.G42',
+                  'FACT_G315C=DCLTOVAR.G31_8',
+                  'FACT_G35=DCLTOVAR.G35'}
+                  );
+        SETFIELDVALUE ('KRD_COMM_2', 'PlaceId', sPlaceId);
+        SETFIELDVALUE ('KRD_COMM_2', 'Id', sId);
+        SETFIELDVALUE ('KRD_COMM_2', 'G32', vG32);
+        SETFIELDVALUE ('KRD_COMM_2', 'STORAGE_DATE', NOW()+60);
+        SETFIELDVALUE ('KRD_COMM_2', 'ACCEPTDATE', NOW());
+        
+       {**************************Тов.-сопровод. документы******************}
+        SETRANGE ('KRD_DCD_2', [sPlaceId, sId]);
+        SETRANGE ('KRD_PAPERS_2', [sPlaceId, sId]);
+       If (FileExists(sFileTechd), Block(
+          Let('sSQL','Select * from '+Char(39)+sFileTechd+Char(39)+' where (G071='+Char(39)+vG071+Char(39)+') and (G072='+Char(39)+vG072+Char(39)+') and (G073='+Char(39)+vG073+Char(39)+') and (G32='+Char(39)+Trim("DBRTOVAR"."G32")+Char(39)+') order by G32, G4401, G4402');
+{          DebugMessage(sSQL);}
+          OPENQUERY ('DBRTechd', sSQL, 'SourceDb');
+          While(EOF('DBRTechd')=0 , Block({ДКД}
+                 if (FieldValue('DBRTechd.G4401')=2,
+                      if(((FieldValue('DBRTechd.G4402')=1)|(FieldValue('DBRTechd.G4402')=2)|(FieldValue('DBRTechd.G4402')=3)|(FieldValue('DBRTechd.G4402')=4)),
+                        Block(
+                          Let('tpPaper', CASE(FieldValue('DBRTechd.G441'), [
+                            '2024','TIR',
+                            ],'ДКД')),
+
+                   if(Locate ('KRD_DCD_2',['PAPERNO', 'PAPERNAME'],[FIELDVALUE ('DBRTechd.G442'), tpPaper])= 0, Block(
+                     Let('vCounterDCD', vCounterDCD+1);
+                     appendrecord('KRD_DCD_2');
+                     EDITRECORD('KRD_DCD_2');
+                     SETFIELDVALUE ('KRD_DCD_2', 'PlaceId', sPlaceId);
+                     SETFIELDVALUE ('KRD_DCD_2', 'Id', sId);
+                     SETFIELDVALUE ('KRD_DCD_2', 'Counter', vCounterDCD);
+                     SETFIELDVALUE ('KRD_DCD_2','PAPERNAME',tpPaper);   {тип документа(код вида в ГТД)}
+                     SETFIELDVALUE ('KRD_DCD_2','PAPERCODE',REFERENCE('PAPERS', 'PAPERNAME', tpPaper, 'PAPERCODE'));   {тип документа(код вида в ГТД)}
+                     SETFIELDVALUE ('KRD_DCD_2','PAPERNO', FIELDVALUE ('DBRTechd.G442')); {//номер документа}
+                     If (FieldIsNull('DBRTechd','G443')=0,SETFIELDVALUE ('KRD_DCD_2','PAPERCLOSE', FIELDVALUE ('DBRTechd.G443'))); {//дата документа}
+                     POSTRECORD('KRD_DCD_2');
+                   ));
+                   {**************************Связь товаров и документов******************}
+                   APPENDRECORD('KRD_COMM_PAPERS_2');
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'PLACEID', sPlaceId);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'ID', sId);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'G32', vG32);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_TYPE', 12);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_COUNTER', vCounterDCD);
+                   POSTRECORD('KRD_COMM_PAPERS_2');
+                 ),
+             Block({// накладные}
+             Let('tpPaper', CASE(FieldValue('DBRTechd.G441'), [
+                            '2011','КОН',
+                            '2012','КНСМ',
+                            '2013','ЖДН',
+                            '2014','ЖДН',
+                            '2015','CMR',
+                            '2017','АВН',
+                            ],'ТТН')),
+             if(Locate ('KRD_PAPERS_2',['PAPERNO', 'PAPERNAME'],[FIELDVALUE ('DBRTechd.G442'), tpPaper])= 0,
+               Block(
+                   vCounterPAPER := vCounterPAPER + 1;
+                   vCounterPAPER_TTN := vCounterPAPER;
+                   appendrecord('KRD_PAPERS_2');
+                   EDITRECORD('KRD_PAPERS_2');
+                   SETFIELDVALUE ('KRD_PAPERS_2', 'PlaceId', sPlaceId);
+                   SETFIELDVALUE ('KRD_PAPERS_2', 'Id', sId);
+                   SETFIELDVALUE ('KRD_PAPERS_2', 'Counter', vCounterPAPER_TTN);
+                   SETFIELDVALUE ('KRD_PAPERS_2','PAPERNAME',tpPaper);   {тип документа(код вида в ГТД)}
+                   SETFIELDVALUE ('KRD_PAPERS_2','PAPERCODE', FIELDVALUE ('DBRTechd.G441')); {//код документа}
+                   SETFIELDVALUE ('KRD_PAPERS_2','PAPERNO', FIELDVALUE ('DBRTechd.G442')); {//номер документа}
+                   If (FieldIsNull('DBRTechd','G443')=0,SETFIELDVALUE ('KRD_PAPERS_2','PAPERDATE', FIELDVALUE ('DBRTechd.G443'))); {//дата документа}
+                  // SETFIELDVALUE ('KRD_PAPERS_2','PAPER_REG_NO', FIELDVALUE ('DBRTechd.G442R'));{//рег номер}
+                   POSTRECORD('KRD_PAPERS_2');
+                            ),
+                   vCounterPAPER_TTN := KRD_PAPERS_2.COUNTER;
+                            );
+                   {**************************Связь товаров и документов******************}
+                   APPENDRECORD('KRD_COMM_PAPERS_2');
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'PLACEID', sPlaceId);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'ID', sId);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'G32', vG32);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_TYPE', 13);
+                   SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_COUNTER', vCounterPAPER_TTN);
+                   POSTRECORD('KRD_COMM_PAPERS_2');
+                   // связть товара и накладной
+                   SETFIELDVALUE ('KRD_COMM_2', 'N_TTN', vCounterPAPER_TTN);
+                            ),
+		),
+				 {инвойсы}
+                               if ((FieldValue('DBRTechd.G4401')=4)&(FieldValue('DBRTechd.G4402')=1),  Block(
+                                   Let('tpPaper','ИНВ');
+                                   if(Locate ('KRD_PAPERS_2',['PAPERNO', 'PAPERNAME'],[FIELDVALUE ('DBRTechd.G442'), tpPaper])=0,
+                                     Block(
+                                       vCounterPAPER := vCounterPAPER + 1;
+                                       vCounterPAPER_INV := vCounterPAPER;
+                                       appendrecord('KRD_PAPERS_2');
+                                       EDITRECORD('KRD_PAPERS_2');
+                                       SETFIELDVALUE ('KRD_PAPERS_2', 'PlaceId', sPlaceId);
+                                       SETFIELDVALUE ('KRD_PAPERS_2', 'Id', sId);
+                                       SETFIELDVALUE ('KRD_PAPERS_2', 'Counter', vCounterPAPER_INV);
+                                       SETFIELDVALUE ('KRD_PAPERS_2','PAPERNAME',tpPaper);
+                                       SETFIELDVALUE ('KRD_PAPERS_2','PAPERNO', FIELDVALUE ('DBRTechd.G442'));
+                                       SETFIELDVALUE ('KRD_PAPERS_2','PAPERCODE', FIELDVALUE ('DBRTechd.G441'));
+                                       If (FieldIsNull('DBRTechd','G443')=0,SETFIELDVALUE ('KRD_PAPERS_2','PAPERDATE', FIELDVALUE ('DBRTechd.G443'))); {//дата документа}
+    {                                  SETFIELDVALUE ('KRD_PAPERS','PAPERDATE', FIELDVALUE ('DCLTechd.G443'));}
+                                       //SETFIELDVALUE ('KRD_PAPERS_2','PAPER_REG_NO', FIELDVALUE ('DBRTechd.G442R'));
+                                       POSTRECORD('KRD_PAPERS_2');
+                                  ),
+                                    vCounterPAPER_INV := KRD_PAPERS_2.COUNTER;
+                                  );
+                                 APPENDRECORD('KRD_COMM_PAPERS_2');
+                                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'PLACEID', sPlaceId);
+                                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'ID', sId);
+                                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'G32', vG32);
+                                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_TYPE', 13);
+                                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_COUNTER', vCounterPAPER_INV);
+                                 POSTRECORD('KRD_COMM_PAPERS_2');
+                             ))
+                      ),
+          NEXT('DBRTechd');
+               )),
+      ),
+        SHOWMESSAGE ('Не найден файл '+sFileTechd, 2)
+      ); // If (FileExists(sFileTechd),
+      CancelRANGE ('KRD_DCD_2');
+      CancelRANGE ('KRD_PAPERS_2');
+
+        Let('vG32', vG32+1),
+
+        POSTRECORD('KRD_COMM_2');
+        NEXT('DBRTOVAR');
+        //NEXT('KRD_COMM_2');
+      )),
+      CancelRange('KRD_COMM_2');
+
+      ),
+        SHOWMESSAGE ('Не найден файл '+sFileTovar, 2)
+      );
+
+{**************************Упаковка (виды мест)******************}
+      If (FileExists(sFileTovarPK), Block(
+          // Коды упаковок контейнеров
+          Var('sContUpaks', Memo, "");
+          sContUpaks := JOINVALUES ('VIDUPAK', '|', ['KOD'], STRPOS('Контейнер', "VIDUPAK"."NAIM_R") <> 0);
+          sContUpaks := "|" + sContUpaks+ "|";
+          
+          Var('vCounterCont', Integer, 0);
+          Let('sSQL','Select * from '+Char(39)+sFileTovarPK+Char(39)+' where (G071='+Char(39)+vG071+Char(39)+') and (G072='+Char(39)+vG072+Char(39)+') and (G073='+Char(39)+vG073+Char(39)+') order by g32');
+          OPENQUERY ('DBRPK', sSQL, 'SourceDb');
+          WHILE(EOF('DBRPK') = 0, Block(
+            vG32 := FIELDVALUE ('DBRPK','G32');
+            IF(FINDKEY('KRD_COMM_2', [sPlaceId, sId, vG32]), Block(
+              EDITRECORD('KRD_COMM_2');
+              
+              IF(STRPOS('|' + "DBRPK"."PKVID" + '|', sContUpaks) <> 0, Block(
+                vCounterCont := vCounterCont + 1;
+                appendrecord('KRD_CONT_2');
+                EDITRECORD('KRD_CONT_2');
+                SETFIELDVALUE ('KRD_CONT_2', 'PlaceId', sPlaceId);
+                SETFIELDVALUE ('KRD_CONT_2', 'Id', sId);
+                SETFIELDVALUE ('KRD_CONT_2', 'COUNTER', vCounterCont);
+                SETFIELDVALUE ('KRD_CONT_2', 'CONTNO', "DBRPK"."PKINF");
+                POSTRECORD('KRD_CONT_2');
+                SETFIELDVALUE ('KRD_COMM_2', 'N_CONT', vCounterCont);
+                
+                 APPENDRECORD('KRD_COMM_PAPERS_2');
+                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'PLACEID', sPlaceId);
+                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'ID', sId);
+                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'G32', vG32);
+                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_TYPE', 11);
+                 SETFIELDVALUE ('KRD_COMM_PAPERS_2', 'DOC_COUNTER', vCounterCont);
+                 POSTRECORD('KRD_COMM_PAPERS_2');
+              ));
+              
+              SETFIELDVALUE ('KRD_COMM_2', 'G313', REFERENCE('VIDUPAK.DBF', 'KOD', FIELDVALUE ('DBRPK','PKVID'), 'NAIM_R'));
+              POSTRECORD('KRD_COMM_2');
+            ));
+            NEXT('DBRPK');
+          ));
+      ),
+        SHOWMESSAGE ('Не найден файл '+sFileTovarPK, 2)
+      );
+
+{**************************Трансп. средства******************}
+       If (FileExists(sFileTrans), Block(
+
+          Let('sSQL','Select * from '+Char(39)+sFileTrans+Char(39)+' where (G071='+Char(39)+vG071+Char(39)+') and (G072='+Char(39)+vG072+Char(39)+') and (G073='+Char(39)+vG073+Char(39)+') AND NGR ='+Char(39)+'18'+Char(39)+ ' order by NUMREC');
+          OPENQUERY ('DBRTrans', sSQL, 'SourceDb');
+          Let('vCounterDCD', 1);
+          SetRange('KRD_TRANSP_2', [sPlaceId, sId]);
+          WHILE(EOF('DBRTrans')=0,
+            block(
+            appendrecord('KRD_TRANSP_2');
+            EDITRECORD('KRD_TRANSP_2');
+            SETFIELDVALUE ('KRD_Transp_2', 'PlaceId', sPlaceId);
+            SETFIELDVALUE ('KRD_Transp_2', 'Id', sId);
+            SETFIELDVALUE ('KRD_Transp_2', 'Counter', vCounterDCD);
+            COPYRECORD('DBRTrans','KRD_TRANSP_2',
+
+                  'CARNO=DBRTrans.NTRANS',       {//Описание транспортного средства}
+                  'TRANSP_CODE=DBRTrans.VIDTRANS',   {//Код вида транспорта}
+                  'TRANSP_COUNTRY=DBRTrans.G212' {// Код страны принадлежности транспорта}
+                  );
+          POSTRECORD('KRD_TRANSP_2');
+          Let('vCounterDCD', vCounterDCD+1);
+          NEXT('DBRTrans');
+          NEXT('KRD_TRANSP_2');
+            )
+            ),
+          CancelRange('KRD_TRANSP_2')
+      ),
+        SHOWMESSAGE ('Не найден файл '+sFileTrans, 2)
+      );
+
+
+
+        Next('KRD_MAIN'),
+        Next('DBRHEAD')
+        ) );
+
+     CLOSEDATABASE('SourceDatabase');
+     CLOSEDATABASE('dbRefs');
+      );
+      SHOWMESSAGE ('Не найден файл '+sFileHead, 2)
+      ),{file exists}
+
+     )
+
+    ),
+SHOWMESSAGE('Обработка документов завершена.')
+  ),
+('2'
+)
+
+

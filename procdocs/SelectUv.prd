@@ -1,0 +1,63 @@
+// *****************************************************************************
+// Название: Выбор уведомления
+// Описание: Выбор уведомления
+// Кнопка вызова: 0
+// Подпись кнопки: Выбор уведомления
+// Вызов по событию: 
+// *****************************************************************************
+//
+Func('FindTTNinUvedomlenia',,
+     BLOCK(
+          OPENQUERY('GET_TTN', 'STS_DB', ' SELECT PAPERNO, PAPERDATE FROM KR_PAPER WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID+ ' AND PAPERCODE LIKE ' +char(39)+ '02%'+char(39)+
+                                         ' UNION '+
+                                         ' SELECT PAPERNO, PAPERDATE FROM KRD_DCD WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID
+          );
+
+          VAR('TTNList', string, '');//UNIONVALUES возвращал значения с пробелами char(39)+ TRIM(UNIONVALUES ('GET_TTN', ['PAPERNO'], char(39)+','+char(39), ''))+char(39));
+          FIRST('GET_TTN');
+          WHILE(EOF('GET_TTN')=0,
+                BLOCK(
+                  TTNList := TTNList + IF(TTNList<>'', ',') + char(39) + Get_TTN.PAPERNO + char(39);
+                  NEXT('GET_TTN');
+                )
+          );
+          IF(TTNList = '', RAISEEXCEPTION('В указанном ДО отсутствуют транспортные документы'));
+          // Получаем список уведомлений где встречаются ТТН из текущего ДО1
+          OPENQUERY('GET_UV_ID', 'SELECT DISTINCT JOURNAL_MASTER_ID as JMI FROM TransportDoc2 WHERE PrDocumentNumber IN ('+TTNList+')', 'dbJournals');
+          IF(RECORDCOUNT('GET_UV_ID')=0, RAISEEXCEPTION ('Уведомления к текущему ДО-1 не найдены'));
+
+          VAR('JMIDList', string, TRIM(UNIONVALUES('GET_UV_ID', ['JMI'], '', ',')));
+
+          OPENQUERY('GET_DT', 'SELECT JOURNAL_MASTER_ID as JMID, PrDocumentNumber, prDocumentDate, PrDocumentName FROM jrGoodOut2 WHERE JOURNAL_MASTER_ID IN ('+JMIDList+')', 'dbJournals');
+
+     )
+),
+
+
+FUNC('Dialog',,
+     BLOCK(
+        //Предлагаем пользователю выбрать уведомления на основании которых создадим ДО
+        IF (SELECTVALUES ('Выберите ДТ для просмотра', 'GET_DT', [['PrDocumentNumber', 'Номер ДТ', 30], ['PrDocumentDate', 'Дата ДТ', 15]], [['JMID', 'vJMID']], '', 'STS_DB')=0,
+           RAISEEXCEPTION('Не выбраны ДТ. Выполнение прекращено')
+        );
+
+
+     )
+),
+
+FUNC('NoFilter',,SETFILTER('TRANSPORT2',''));
+
+GLOBALVAR('vJMID', String);
+findttninuvedomlenia();
+
+IF(RECORDCOUNT('GET_DT')=0, RAISEEXCEPTION ('Уведомления к текущему ДО-1 не найдены'));
+IF(RECORDCOUNT('GET_DT') > 1,
+  dialog(),
+  vJMID :=GET_DT.JMID
+);
+
+
+
+//TRYEXCEPT (VAR('iJrMastId', integer, JRGoodOut2.JOURNAL_MASTER_ID),,OPENTABLE ('JrGOODOUT2', 'JrGOODOUT2', , 'dbJournals'));
+
+

@@ -1,0 +1,418 @@
+// *****************************************************************************
+// Название: Загрузка статуса ДО-1
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO1StatusChanged
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+//VAR ('XmlRoot', Integer, GETXMLDOCUMENT ());
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+
+FUNC ('GENERATEUUID_2', ,
+  Block(
+    Var('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+  )
+), // FUNC - GENERATEUUID_2() //
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'DO1StatusChanged'));
+VAR ('sSQL', String);
+VAR ('sNewDocumentID', String, GENERATEUUID_2 ());
+VAR ('vPlaceID',       String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+VAR ('vDO1Id',         String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlDoc, 'dodt'));
+VAR ('vID', String, '');
+
+// Проверяем статус сообщения:
+// -1: статус не изменился
+// 20: отправлен запрос на открытие процедуры
+// 30: процедура открыта, отчётность отправлена
+// 35: процедура открыта, отчётность не отправлена
+// 42: отказ в открытии процедуры
+// 50: отчётность предоставлена
+// 70: отчётность зарегистрирована
+// 80: отправлен запрос отмены отчетности
+// 85: запрос на отмену отчености доставлен в АСТО
+// 90: отчетность отменена
+// 160: в регистрации отчётности отказано
+
+FUNC ('IsNewStatus', '',
+  Block(
+    VAR ('return', Integer, 0);
+    // проверяем не загружен ли в базу более "высокий" статус ЭПС
+    sSQL := 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DODT > ' +char(39)+ DoDt +char(39);
+    OPENQUERY ('qCheck', sSQL, 'dbJournals');
+    IF (FIELDISNULL ('qCheck', 'JOURGUID') = 0,
+      Block(
+        return := 0;
+      ),
+      Block(
+        return := 1
+      )
+    ); // IF - //
+    return
+  )
+), // FUNC - IsNewStatus () //
+
+
+IF (XmlDoc,
+  Block(
+    VAR ('strStatus', String, '');
+    VAR ('DoType', String, '');
+    VAR ('DoNo', String, '');
+    VAR ('DoDate', DateTime);
+    VAR ('dRegDate', DateTime);
+    VAR ('sSubStatus', String, '');
+    VAR ('iReaded', Integer, 1);
+    
+    
+    sSQL := 'SELECT ID, NBD, BD_DATE, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+    //showmessage (sSQL);
+    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+    vID := qFindID.ID;
+    VAR ('DocId', String, qFindID.DOCUMENTID);
+    
+    CASE (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'StatusId')),
+      ['20',  strStatus := 'Отправлен запрос на открытие процедуры',
+       //'30',  strStatus := 'Процедура открыта',
+       '35',  strStatus := 'Процедура открыта, ДО-1 не отправлена',
+       '50',  strStatus := 'ДО-1 доставлена инспектору',
+       //'70',  strStatus := 'ДО-1 зарегистрирована', // обрабатывается в событии do_reg_info.imp
+       '160', strStatus := 'Отказ в регистрации ДО-1'
+      ]
+    );
+    
+    CASE (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'StatusId')),
+      ['160',
+        Block(
+         IF ((vPlaceID <> '') * (vID <> ''),
+           Block(
+             VAR ('sSSText', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText')));
+
+             IF (LENGTH (sSSText) > 0,
+               Block(
+                 sSSText := EXTRACTSTR (REPLACECR (sSSText), 3, ':');
+                 sSubStatus := COPY (sSSText, 1, (LENGTH (sSSText) - 17));
+               )
+             ); // IF - //
+
+             // поменяли статус на "отказ в регистрации"
+             // и сгенерировали новый DocumentID
+             OPENQUERY ('qMCStatus', 'STS_DB', 'SELECT MC_STATUS_BD FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+             IF ((qMCStatus.MC_STATUS_BD <> '3') * IsNewStatus (),
+               Block(
+                 sSQL := 'UPDATE KRD_MAIN SET ' +
+                         ' MC_STATUS_BD=' +char(39)+ '1' +char(39)+
+                         ', STATUS_EPS=' +char(39)+ 'Получен отказ в регистрации ДО-1' +char(39)+
+                         ' WHERE PLACEID=' + vPlaceId +' AND MAIN_ID=' + vId;
+                 //showmessage(sSQL);
+                 EXECUTESQL ('STS_DB', sSQL);
+                 Block(
+                       VAR ('sRZD', String, INIFILE ('RZD', 'RZD', '0'));
+                   IF ( sRZD ,
+                            Block(
+                                  EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'ProcDocs/SendToFillBill.prd');
+                                  SendInfoToFillBill( PID(vPlaceId, vID), 'ДО1. Отказан №' + qFindID.NBD);
+                           ),
+                   ); //IF
+                 ); //Block
+               )
+             ); // IF - //
+             iReaded := 0;
+           )
+         ); // IF - //
+        ),
+        '20',
+        Block(
+          IF (IsNewStatus (),
+            Block(
+              sSubStatus := 'DocumentId= ' + vDO1Id;
+              // фиксируем статус "Отправлен запрос на открытие процедуры"
+              sSQL := 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Отправлен запрос на открытие процедуры' +char(39)+' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID;
+              EXECUTESQL ('STS_DB', sSQL);
+            )
+          ); // IF - //
+        ),
+        '30',
+        Block(
+{
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          IF (IsNewStatus (),
+            Block(
+              // фиксируем статус "Процедура открыта"
+          EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Процедура открыта' +char(39)+' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+            )
+          ); // IF - //
+}
+        ),
+        '35',
+        Block(
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          IF (IsNewStatus (),
+            Block(
+          // фиксируем статус "Процедура открыта"
+          EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Процедура открыта, ДО-1 не отправлена' +char(39)+' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+            )
+          ); // IF - //
+        ),
+        '42',
+        Block(
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          IF (IsNewStatus (),
+             Block(
+              WriteEpsLog (vPlaceId,
+                vId,
+          0,
+          vDO1Id,
+          'ДО-1',
+          qFindID.NBD, // № ДО
+          qFindID.BD_DATE, // дата ДО
+          'Отказ в открытии процедуры', // статус
+          Date() + Time(1),
+          GENERATEUUID_2 (),
+          REPLACECR(XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))), // подробности
+          IF (VAREXISTS ('sFileList'), EXTRACTSTR (sFileList, i, '|') , ''), // имя файла
+          '0',
+          DoDt // dodt
+              ); // WriteEpsLog
+              // фиксируем статус "Отказ в открытии процедуры"
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+ '1' +char(39)+ ', STATUS_EPS=' +char(39)+ 'Отказ в открытии процедуры' +char(39)+ ' WHERE PLACEID=' + vPlaceId + ' AND MAIN_ID=' + vId);
+            )
+          ); // IF
+        ),
+        '50',
+        Block(
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          IF (IsNewStatus (),
+            Block(
+              // фиксируем статус "ДО-1 доставлена инспектору"
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-1 доставлена инспектору' +char(39)+' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+
+              Block(
+                VAR ('sRZD', String, INIFILE ('RZD', 'RZD', '0'));
+                IF (sRZD,
+                  Block(
+                    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'ProcDocs/SendToFillBill.prd');
+                    SendInfoToFillBill( PID(vPlaceId, vID), 'ДО1. Доставлен в таможню №' + qFindID.NBD);
+                  ),
+                ); //  IF
+              ) // ОТДЕЛЬНЫЙ БЛОК
+
+            )
+          ); // IF
+          iReaded := 1;
+        ),
+        '85',
+        Block(
+          IF (IsNewStatus (),
+            Block(
+              sSQL := 'UPDATE KRD_MAIN' +
+                      ' SET' +
+                      ' STATUS_EPS=' +char(39)+ 'Отмена отчетности ДО-1 доставлена в АСТО' +char(39)+
+                      ' WHERE' +
+                      ' PLACEID=' + vPlaceId +
+                      ' AND MAIN_ID=' + vId;
+              EXECUTESQL ('STS_DB', sSQL);
+            )
+          ); // IF
+          iReaded := 1;
+        ),
+        '90',
+        Block(
+{
+          IF (IsNewStatus (),
+            Block(
+              sSQL := 'UPDATE KRD_MAIN' +
+                      ' SET' +
+                      ' STATUS_EPS=' +char(39)+ 'Отчетность ДО-1 отменена' +char(39)+
+                      ' MC_STATUS_DB=' +char(39)+ '1' +char(39)+
+                      ' WHERE' +
+                      ' PLACEID=' + vPlaceId +
+                      ' AND MAIN_ID=' + vId;
+              EXECUTESQL ('STS_DB', sSQL);
+            )
+          ); // IF
+}
+        ),
+        '-1',
+        Block(
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          
+          // фиксируем статус "Запрос на открыте процедуры доставлен в АСТО"
+          IF (STRPOS ('АСТО: подтверждена доставка запроса на открытие процедуры обмена по ДО-1', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Запрос на открытие процедуры доставлен в АСТО' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                )
+              ); // IF - //
+              strStatus := 'Запрос на открытие процедуры доставлен в АСТО';
+            )
+          );
+          
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          
+          // фиксируем статус "ДО-1 отправлена"
+          IF (STRPOS ('Отправлен ДО-1 №', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-1 отправлена' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+              Block(
+               VAR ('sRZD', String, INIFILE ('RZD', 'RZD', '0'));
+               if ( sRZD ,
+                   Block(
+                         EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'ProcDocs/SendToFillBill.prd');
+                         SendInfoToFillBill( PID(vPlaceId, vID), 'ДО1. Отправлена №' + qFindID.NBD);
+                   ),
+               );
+              );
+                )
+              ); // IF - //
+              strStatus := 'ДО-1 отправлена';
+            )
+          );
+
+          // проверяем не загружен ли в базу более "высокий" статус ЭПС
+          
+          // фиксируем статус "Получен отказ в регистрации добавочного листа к ДО-1
+          IF (STRPOS ('В регистрации дополнительного листа к отчетности ДО-1 отказано.', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              OPENQUERY ('MaxDOP', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_DOP WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' + MaxDOP.MC);
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Получен отказ в регистрации доб. листа к ДО-1' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                )
+              ); // IF - //
+              strStatus := 'Получен отказ в регистрации доб. листа к ДО-1';
+              
+              VAR ('sSSText', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText')));
+
+              IF (LENGTH (sSSText) > 0,
+                Block(
+                  sSSText := EXTRACTSTR (REPLACECR (sSSText), 3, ':');
+                  sSubStatus := COPY (sSSText, 1, (LENGTH (sSSText) - 17));
+                )
+              ); // IF - //
+              iReaded := 0;
+            )
+          );
+          
+          // фиксируем статус "Комм. акт к ДО-1 отправлен"
+          IF (STRPOS ('Отправлен добавочный лист/коммерческий акт к ДО-1', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Комм. акт к ДО-1 отправлен' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                )
+              ); // IF - //
+              strStatus := 'Комм. акт к ДО-1 отправлен';
+            )
+          );
+          
+          // фиксируем статус "Доб. лист к ДО-1 обработан АСТО"
+          {IF (STRPOS ('АСТО: обработан дополнительный лист ДО-1', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Доб. лист к ДО-1 обработан АСТО' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+              strStatus := 'Доб. лист к ДО-1 обработан АСТО';
+            )
+          );}
+          
+          // фиксируем статус "Доб. лист к ДО-1 зарегистрирован"
+          {IF (STRPOS ('Добавочный лист к отчетности ДО-1 №', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Доб. лист к ДО-1 зарегистрирован' +char(39)+ ', MC_STATUS_BD=' +char(39)+ '3' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+              strStatus := 'Доб. лист к ДО-1 зарегистрирован';
+              iReaded := 0;
+            )
+          );}
+          
+          // фиксируем статус "ЗПСХ передано в АСТО"
+          IF (STRPOS ('Запрос на продление сроков временного хранения товаров передан в АСТО', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ЗПСХ передано в АСТО' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                )
+              ); // IF - //
+              strStatus := 'ЗПСХ передано в АСТО';
+            )
+          );
+
+          // фиксируем статус "ЗПСХ обработано АСТО"
+          IF (STRPOS ('АСТО: обработан запрос на продление сроков временного хранения товаров', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ЗПСХ обработано АСТО' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                )
+              ); // IF - //
+              strStatus := 'ЗПСХ обработано АСТО';
+              iReaded := 0;
+            )
+          );
+
+          // фиксируем статус "ЗПСХ зарегистрировано в АСТО"
+          IF (STRPOS ('АСТО: запрос на продление сроков временного хранения товаров зарегистрирован', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText'))) <> 0,
+            Block(
+              IF (IsNewStatus (),
+                Block(
+              EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ЗПСХ зарегистрировано в АСТО' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                )
+              ); // IF - //
+              strStatus := 'ЗПСХ зарегистрировано в АСТО';
+              iReaded := 0;
+            )
+          );
+          
+          // фиксируем статус "Письмо об ошибках, выявленных в ДО-1 передано в АСТО"
+          IF (STRPOS ('Письмо об ошибках, выявленных в ДО-1 передано в АСТО', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'SubStatusText')));
+            Block(
+              IF (IsNewStatus (),
+                Block(
+                  EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Письмо об ошибках отправлено' +char(39)+ ' WHERE PLACEID=' + vPlaceId + ' AND MAIN_ID=' + vId);
+                )
+              ); // IF
+              strStatus := 'Письмо об ошибках отправлено';
+              iReaded := 1;
+            )
+          ); // IF
+
+          
+        )
+      ],
+    ); // CASE
+    
+    If(strStatus <> '',
+      Block(
+        sSQL := 'SELECT NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vPlaceID +  ' AND ID=' + vID;
+
+        OPENQUERY ('qDO1', 'STS_DB', sSQL);
+
+        If(FIELDISNULL ('qDO1', 'NBD') = 0,
+          Block(
+            DoNo := qDO1.NBD;
+            DoDate := qDO1.BD_DATE;
+            DoType   := 'ДО-1';
+            dRegDate := DATE()+TIME(1);
+            OPENQUERY ('qryNUM', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+            sJourGuid := qryNUM.JOURGUID;
+          )
+        );
+        CLOSEDATASET('qDO1');
+      )
+    );
+         
+  )
+);
+
+

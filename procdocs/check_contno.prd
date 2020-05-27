@@ -1,0 +1,91 @@
+// *****************************************************************************
+// Название: check_contno
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: check_contno
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+FUNC ('ConvertLetter',
+  Block(
+    PARAM ('pLetter', String, 0);
+  ),
+  Block(
+    VAR ('sMass', String, 'A:10|B:12|C:13|D:14|E:15|F:16|G:17|H:18|I:19|J:20|K:21|L:23|M:24|N:25|O:26|P:27|Q:28|R:29|S:30|T:31|U:32|V:34|W:35|X:36|Y:37|Z:38');
+    VAR ('iIter', Integer, 1);
+    VAR ('sTmp', String, '');
+    VAR ('sItem', String, '');
+    VAR ('oRetVal', Integer, 0);
+    WHILE (iIter < 27,
+      Block(
+        sItem := EXTRACTSTR (sMass, iIter, '|');
+        IF (pLetter = EXTRACTSTR (sItem, 1, ':'),
+          Block(
+            oRetVal := EXTRACTSTR (sItem, 2, ':');
+            iIter := 27;
+          ),
+          Block(
+            iIter := iIter + 1;
+          )
+        );
+      )
+    ); // WHILE
+    oRetVal;
+  )
+),
+
+FUNC ('CheckContNo',
+  Block(
+    PARAM ('pContNo', String, 0);
+  ),
+  Block(
+    pContNo := TRIM(pContNo);
+    VAR ('i', Integer, 1);
+    VAR ('iLength', Integer, LENGTH (pContNo));
+    VAR ('iValue', Integer, 0);
+    VAR ('iSum', Integer, 0);
+    VAR ('oCheckResult', Integer, 0);
+
+    IF (iLength = 11,
+      Block(
+        VAR ('iControl', Integer, CONVERT (COPY (pContNo, 11, 1), Integer));
+
+        WHILE (i < 11,
+          Block(
+            IF (i < 5, iValue := ConvertLetter(UPPERSTR(COPY (pContNo, i, 1))), iValue := COPY (pContNo, i, 1));
+            CASE (i, [1, iSum := iValue * 1,
+                      2, iSum := iSum + (iValue * 2),
+                      3, iSum := iSum + (iValue * 4),
+                      4, iSum := iSum + (iValue * 8),
+                      5, iSum := iSum + (iValue * 16),
+                      6, iSum := iSum + (iValue * 32),
+                      7, iSum := iSum + (iValue * 64),
+                      8, iSum := iSum + (iValue * 128),
+                      9, iSum := iSum + (iValue * 256),
+                      10, iSum := iSum + (iValue * 512),]
+            );
+            i := i + 1;
+          )
+        );
+
+        iSum := MOD(iSum, 11);
+        IF ((iSum = iControl) | ((iSum = 10) * (iControl = 0)), oCheckResult := 1, oCheckResult := 0);
+      ),
+      Block(
+        oCheckResult := 0;
+      )
+    ); // IF
+    oCheckResult
+  )
+),
+
+{
+showmessage (CheckContNo ('CMAU7211951'));
+showmessage (CheckContNo ('TGHU6787591'));
+showmessage (CheckContNo ('TGHU6787592'));
+showmessage (CheckContNo ('TGHU6787592213'));
+}

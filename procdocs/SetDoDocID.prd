@@ -1,0 +1,49 @@
+// *****************************************************************************
+// Название: Установить DocumentID
+// Описание: Установить DocumentID
+// Кнопка вызова: 0
+// Подпись кнопки: Установить DocumentID
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (KRD_MAIN.ID='Null', RAISEEXCEPTION ('Не выбрана ДО1'));
+VAR('iDocType', integer, CHOICEVARIANT ('Укажите тип документа. Документ должен быть выбран в книге учета!', 3, 0, ['ДО-1', 'Ком.акт', 'ДО-2'], 'ChangeDoDocID'));
+IF(iDocType=-1, RAISEEXCEPTION (''));
+
+VAR ('sInputText', string, '');
+CASE (iDocType,
+     [0,
+        sInputText := 'ДО1 № ' +KRD_MAIN.NBD+ '. Изменить DOCUMENTID',
+     1,
+       sInputText := 'Ком. акт № ' +KRD_DOP.DOC_NO+ '. Изменить DOCUMENTID',
+     2,
+       sInputText := 'ДО2 № ' +RELEASE.RELEASE_NO+ '. Изменить DOCUMENTID'],
+     RAISEEXCEPTION ('Неизвестный документ')
+);
+
+VAR ('sDocID', string, INPUTTEXT (sInputText, 'новый DOCUMENTID:'));
+IF (LENGTH(sDocID) <= 0, RAISEEXCEPTION (''));
+IF ((LENGTH(sDocID)< 32)*(LENGTH(sDocID) > 36), RAISEEXCEPTION ('Не верная длина нового DOCUMENTID'));
+
+CASE (iDocType,
+     [0,
+     EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET DOCUMENTID='+
+                              char(39) + sDocID + char(39)+
+                              ' WHERE '+
+                              ' ID='+KRD_MAIN.ID
+         ),
+     1,
+     EXECUTESQL('STS_DB', 'UPDATE KRD_DOP SET DOCUMENTID='+
+                              char(39) + sDocID + char(39)+
+                              ' WHERE '+
+                              ' ID='+KRD_MAIN.ID+ ' AND COUNTER=' + KRD_DOP.COUNTER
+     ),
+     2,
+     EXECUTESQL('STS_DB', 'UPDATE RELEASE SET DOCUMENTID='+
+                          char(39) + sDocID + char(39)+
+                          ' WHERE '+
+                          ' ID='+KRD_MAIN.ID+ ' AND COUNTER=' + RELEASE.COUNTER)],
+'');

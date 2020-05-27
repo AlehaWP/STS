@@ -1,0 +1,48 @@
+// *****************************************************************************
+// Название: Информация о недоставке ДО-3 в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO3TechError
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Var('sNumber', String);
+
+VAR ('vPlaceID', String);
+VAR ('vID', String, '0');
+VAR ('vDocID', String);
+VAR ('strStatus', String, '');
+VAR ('strSubStatus', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime);
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'dodt'));
+IF (VAREXISTS ('iRecordType') = 0, VAR ('iRecordType', Integer, 0));
+
+OPENTABLE ('JRDO3_2', 'JRDO3', '', 'dbJournals', 1);
+
+IF(LOCATE('JRDO3_2', ['RefDocumentId'], [XMLNODEATTRIBUTE (XMLNODECHILD (XmlRoot, 0), 'do3id')]),
+Block(
+    VAR ('sSubStatus', String, XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'ErrorDsc')));
+    EDITRECORD ('JRDO3_2');
+    SETFIELDVALUE('JRDO3_2', 'CustomState', 'ДО-3 отвергнут сервером АСТО');
+    PostRecord('JRDO3_2');
+
+    vPlaceID := JRDO3_2.PLACEID;
+    vDocId   := JRDO3_2.RefDocumentId;
+    DoType   := 'ДО-3';
+    DoNo     := JRDO3_2.REPORTNUMBER;
+    DoDate   := JRDO3_2.REPORTDATE;
+    strStatus:= 'ДО-3 отвергнут сервером АСТО';
+    dRegDate := DATE()+TIME(1);
+    sJourGuid := vDocId; 
+    iRecordType := 0;
+),
+// Скрипты должны работать в  "тихом" режиме, без сообщений
+//!  ShowMessage('ДО-3 с идентификатором '+XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'id'))+' не найдено!')
+);
+CLOSEDATASET ('JRDO3_2');                     
+
+

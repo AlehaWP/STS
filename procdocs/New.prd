@@ -1,0 +1,36 @@
+// *****************************************************************************
+// Название: Заготовка
+// Описание: Заготовка
+// Кнопка вызова: 0
+// Подпись кнопки: Заготовка
+// *****************************************************************************
+//
+
+{FUNC('',
+     BLOCK(
+       param('', string, 0);
+       param('', integer, 1);
+       param('', string, 2);
+       param('', string, 3);
+       param('', string, 4);
+       param('', integer, 5);
+     ),
+     BLOCK(
+     )
+),}
+{FUNC('',
+     BLOCK(
+       param('', string, 0);
+       param('', integer, 1);
+       param('', string, 2);
+       param('', string, 3);
+       param('', string, 4);
+       param('', integer, 5);
+     ),
+     BLOCK(
+     )
+),}
+
+//OPENQUERY ('Query', 'STS_DB', 'Select ');
+//OPENQUERY ('Query', 'Select ', 'OtherDB, dbJournals');
+

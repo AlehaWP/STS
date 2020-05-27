@@ -1,0 +1,341 @@
+   Func('AddRelComm',
+      Block(),  
+      Block(                                                   
+        AppendRecord('REL_COMM_2');
+        EDITRECORD('REL_COMM_2');
+        Let('vG32', FieldValue('qryRelCheck.g32'));
+        SETFIELDVALUE ('REL_COMM_2', 'PlaceId', vPlaceId);
+        SETFIELDVALUE ('REL_COMM_2', 'Id', vId);
+        SETFIELDVALUE ('REL_COMM_2', 'Counter', vCounter);
+        SETFIELDVALUE ('REL_COMM_2', 'G32', vG32);
+        SETFIELDVALUE ('REL_COMM_2', 'RELEASE_GTD_G32', vG32);
+        IF(FindKey('KRD_COMM_2', [vPlaceId, vId, vG32]),
+          SETFIELDVALUE ('REL_COMM_2', 'RELEASE_G315C', FieldValue('KRD_COMM_2.G315C'))
+        );
+        SETFIELDVALUE ('REL_COMM_2', 'RELEASE_G311', 1);
+        POSTRECORD('REL_COMM_2');
+
+        {DebugMessage('|'+vG32+'|'+sTemp+'|'+vCounter);}
+        if(FindKey('KRD_CMAP_2',[vPLaceId, vId, vG32, FIELDVALUE('qryRelCheck', 'Counter')]),
+          Block(
+            EDITRECORD('KRD_CMAP_2');
+            SETFIELDVALUE ('KRD_CMAP_2', 'RELEASE_COUNTER', vCounter);
+            SETFIELDVALUE ('KRD_CMAP_2', 'OUT_TRANSP_NO', vTransp);
+            POSTRECORD('KRD_CMAP_2');
+          )
+        );
+
+        Next('REL_COMM_2');
+        {Let('sqltext', 'New (Placeid='+vPlaceId+') (Id='+vId+') G32 ='+ vG32+ 
+             ' ForestType = "'+strPoroda+'" ForestSort = '+curForestSort+' ForestLength = '+curForestLength+' ForestDiameter = '+Diam);
+        DebugMessage(sqlText);  }      
+      )   
+   ),  
+  
+   Func('AddRelMain',
+      Block(),  
+      Block(
+           Let('vTransp', INPUTTEXT ('Транспортное средство выпуска', 'Введите № транспортного средства', vTransp));
+           WRITEINIFILE('ProcDocs', 'Transp', vTransp);                         
+           Appendrecord('REL_MAIN');  
+          { debugMessage('test');}
+           POSTRECORD('REL_MAIN');
+           EDITRECORD('REL_MAIN');
+           SETFIELDVALUE ('REL_MAIN', 'PLACEID', vPlaceid);
+           SETFIELDVALUE ('REL_MAIN', 'ID', vId);
+           SETFIELDVALUE ('REL_MAIN', 'COUNTER', vCounter);
+           SETFIELDVALUE ('REL_MAIN', 'OUT_DATE', actDate);
+           SETFIELDVALUE ('REL_MAIN', 'RELEASE_DATE', actDate);                                      
+           SETFIELDVALUE ('REL_MAIN', 'DOC_TYPE', 'ГТД');
+	   Let('sNum', UPPERSTR (INIFILE('Docs','MAKERELEASE_NO', 'KRD_MAIN.NBD + "/" + REL_MAIN.MAIN_COUNTER')));
+           Let('sNum', Solve(sNum));
+           SETFIELDVALUE ('REL_MAIN', 'RELEASE_NO', sNum);
+           IF(FindKey('KRD_MAIN_2', [vPlaceId, vId]),
+             BLOCK(  
+               SETFIELDVALUE ('REL_MAIN', 'G082', FieldValue('KRD_MAIN_2.G082'));
+               SETFIELDVALUE ('REL_MAIN', 'G083', FieldValue('KRD_MAIN_2.G083'));
+               SETFIELDVALUE ('REL_MAIN', 'G084C', FieldValue('KRD_MAIN_2.G084C'));  
+               SETFIELDVALUE ('REL_MAIN', 'G08_KPP', FieldValue('KRD_MAIN_2.G08_KPP'));
+               SETFIELDVALUE ('REL_MAIN', 'G08_OGRN', FieldValue('KRD_MAIN_2.G08_OGRN'));
+             )  
+           ); 
+           { DebugMessage('Not Found PlaceId = '+vPlaceId+' Id = '+ vId);                   }  
+           POSTRECORD('REL_MAIN');
+           Next('REL_MAIN');        
+        {Let('sqltext', 'New (Placeid='+vPlaceId+') (Id='+vId+') G32 ='+ vG32+ 
+             ' ForestType = "'+strPoroda+'" ForestSort = '+curForestSort+' ForestLength = '+curForestLength+' ForestDiameter = '+Diam);  
+        DebugMessage(sqlText);  }      
+      )   
+   ),  
+    
+{открыть txt}
+{идем по бревнам}
+      {смотрим krd_cmap->krd_main->organiz -> add placeid+id+sender в строку, если его там нет + add orgname(№ ДУ) в строку + n=n+1}
+{строку orgname показываем в choicevariants (количество колонок = n)}
+{полученную маску разбираем}
+      {для каждой организации по n находим placeid id}
+            {идем по бревнам}
+                 {смотрим krd_cmap->krd_main}
+                     {если наша организация, смотрим выпущено ли бревно}
+                         {не выпущено - IsUniqueMark=1}
+	                    {если выпуска еще нет, добавляем Выпуск}
+	                    {добавляем бревно в выпуск}
+            {end brevna}
+              
+{======================================================================================================================
+                     Объявление переменных  
+======================================================================================================================}    
+VAR('sFileName', String);             { объявление переменной для имени файла данных }
+VAR('vRec', Integer);  
+VAR('vNumRec', Integer);  
+VAR('vBad', Integer);
+VAR('sTemp', String);  
+
+{текущие значения соотв. полей}
+VAR('vPlaceId', Integer);
+
+VAR('vId', Integer);
+VAR('vG32', Integer);
+Var('vCounter', Integer);
+Var('vTransp', String);
+
+Const('curPlaceid', String, '');  
+Const('curOrgName', String, '');  
+Const('strPlaceids', Memo, '');  {}
+Const('strOrgs', Memo, '');
+Const('numOrg', Integer, 0); {номер организации}
+Const('vMask', Integer, 0);  {маска выбранных орг-ий}
+Const('NN', Integer, 0);  
+  
+Const('actDate', DateTime, Now());
+Var('sNum', String); {выражение номера выпуска}
+
+Const('IsUniqueMark', integer, 0); {есть ли вообще в файле новое бревно}
+Const('IsReleaseCreate', integer, 0);
+Const('sCheckLog1', Memo, '');
+Const('sCheckLog2', Memo, '');  
+
+{======================================================================================================================
+                         Начало начал  
+======================================================================================================================}      
+
+Let('sFileName', INIFILE ('ProcDocs', 'WoodOutPath', 'C:\Temp\1.otg'));
+IF (SelectFile('sFileName', 'Выбор файла', 'Файлы отгрузки терминала (*.otg)|*.otg'), { выбор файла }
+  BLOCK (  
+     WRITEINIFILE ('ProcDocs', 'WoodOutPath', sFileName);
+{предварительно необходимо добавить в источниках ODBC 
+пользовательский источник с именем Wood и указать каталог установки Склада}       
+     COPYFILE(sFileName, PROGRAMPATH()+'\woodout.txt');      
+     WRITEINIFILE ('woodout.txt', 'ColNameHeader', 'False', PROGRAMPATH()+'\schema.ini');  
+     WRITEINIFILE ('woodout.txt', 'MaxScanRows', '25', PROGRAMPATH()+'\schema.ini');    
+     WRITEINIFILE ('woodout.txt', 'Format', 'Delimited(;)', PROGRAMPATH()+'\schema.ini');  
+     WRITEINIFILE ('woodout.txt', 'CharacterSet', 'ANSI', PROGRAMPATH()+'\schema.ini');  
+     WRITEINIFILE ('woodout.txt', 'Col1', 'Mark Char Width 30', PROGRAMPATH()+'\schema.ini');  
+             
+     OPENDATABASE ('Wood_DB', 'Microsoft Text Driver (*.txt; *.csv)', 'ODBC DSN=wood');  
+
+    { DebugMessage('test');  }
+     openQuery  ('qryWood', 'select distinct Mark from woodout#txt order by Mark', 'Wood_DB');
+
+     {проверка неповторяемости номеров бирок в файле}  
+     openQuery  ('qryWoodCheck', 'select Mark, Count(Mark) as MarkCount from woodout#txt group by Mark', 'Wood_DB'); 
+     First('qryWoodCheck');
+     Let('vBad', 0);  
+     While(Eof('qryWoodCheck')=0,
+       Block(  
+         If(FieldValue('qryWoodCheck.MarkCount') > 1, Block(  
+           If(sCheckLog2 = '',
+              Let('sCheckLog2', '| ' + RIGHTPAD('Сведения о бревне с таким № бирки содержатся в файле неоднократно', 64, ' ') + ' | ' + 
+                                   CENTER(FieldValue('qryWoodCheck.Mark'), 12) + '|'),
+              Let('sCheckLog2', sCheckLog2 + Char(13)+Char(10)+ '| ' + RIGHTPAD('Сведения о бревне с таким № бирки содержатся в файле неоднократно', 64, ' ') + ' | ' + 
+                                   CENTER(FieldValue('qryWoodCheck.Mark'), 12) + '|')
+           ),
+           Let('vBad', 1)
+           )
+         );
+         Next('qryWoodCheck')
+       )   
+     ); 
+
+     First('qryWood');       
+
+     While (Eof('qryWood')=0,
+       Block(                                                     
+      {хождение по бревнам}   
+        {проверка наличия номеров бирок в базе}  
+         Let('sTemp', FieldValue('qryWood.Mark'));
+         Const('sqlText', Memo, 'Select kc.placeid, kc.id, kc.g32, kc.mark, rc.counter from KRD_CMAP kc, REL_COMM rc'+ CHAR (13) + Char(10));
+         Let('sqlText', sqlText + ' where (kc.mark="'+sTemp+'") and kc.placeid=rc.placeid and kc.id=rc.id and kc.g32=rc.g32');  
+
+         OPENQUERY ('qryCheckMark', 'STS_DB', sqltext);    
+         Let('vRec', RECORDCOUNT ('qryCheckMark'));                     
+         {DebugMessage(sTemp+' |'+vRec);}
+         If (vRec > 0,
+           Block(  {уже выпущено - не добавляем в базу}
+            If(sCheckLog1 = '',  
+              Let('sCheckLog1', '| ' + RIGHTPAD('Бревно с таким № бирки уже выпущено из ПЗТК', 64, ' ') + '  | ' + 
+                                   CENTER(sTemp, 12) + '|'),
+              Let('sCheckLog1', sCheckLog1 + Char(13)+Char(10)+'| ' + RIGHTPAD('Бревно с таким № бирки уже выпущено из ПЗТК', 64, ' ') + '  | ' + 
+                                   CENTER(sTemp, 12) + '|');                                     
+            ) 
+           ),
+           Block( {работаем}
+             Let('IsUniqueMark', 1),
+
+             Let('sqlText', 'Select kc.placeid, kc.id, kc.g32, kc.mark, km.sender, km.G022 from KRD_CMAP kc, KRD_MAIN km, ORGANIZ o '+ CHAR (13) + Char(10));
+             Let('sqlText', sqlText + ' where (kc.mark="'+sTemp+'") and (km.placeid=kc.placeid) and (o.placeid=km.placeid) and (km.id=kc.id) and (o.orgid=km.sender)');  
+             {DebugMessage(sqlText);                      }
+             OPENQUERY ('qryMain', 'STS_DB', sqltext);      
+             Let('vRec', RECORDCOUNT ('qryMain'));                                                   
+             {DebugMessage(vrec);}
+             
+             If( vRec>0, 
+	       Block( 
+                 First('qryMain');
+                 Let('curPlaceId', Convert(FieldValue('qryMain.PlaceId'), String)+'_'+Convert(FieldValue('qryMain.Id'), String));
+                 Let('curOrgname', FieldValue('qryMain.G022'));
+                 If(StrPos(curPlaceId, strPlaceids)=0,
+                   Block(
+                     if(strPlaceids='',
+                       Block(
+                         Let('strPlaceIds', curPlaceId),
+                         Let('numOrg', 1);
+                       );                                                          
+                       Block(
+                         Let('strPlaceIds', strPlaceIds+ ';'+curPlaceId);
+                         Let('numOrg', numOrg+1);
+                       )
+                     );
+                     if(strOrgs='',
+                               Let('strOrgs', ReplaceCR(curOrgName)),
+                               Let('strOrgs', strOrgs+ ';'+curOrgName)
+                     )  
+                   )
+                 )
+               ),
+               Block({вообще нет в базе}
+		 If(sCheckLog1 = '',  
+	           Let('sCheckLog1', '| ' + RIGHTPAD('Бревна с таким № бирки нет в базе ВЭД-Склад', 64, ' ') + '  | ' + 
+                                   CENTER(sTemp, 12) + '|'),
+        	   Let('sCheckLog1', sCheckLog1 + Char(13)+Char(10)+'| ' + RIGHTPAD('Бревна с таким № бирки нет в базе ВЭД-Склад', 64, ' ') + '  | ' + 
+                                   CENTER(sTemp, 12) + '|');                                     
+	         )
+               )
+             )  
+           )
+         );
+
+         NEXT('qryWood')
+       )    {закрытие Block бревен}  
+     );       {закрытие While бревен}    
+
+     if(IsUniqueMark = 1,  
+       Block( {есть не выпущенные бревна} 
+             
+         {DebugMessage(strOrgs);    }
+         If(numOrg > 0,                                             
+           Let('vMask', CHOICEVARIANTS ('Выберите отправителя', 1, 0, strOrgs, ';'))
+         );
+         {DebugMessage(vMask);}
+         Const('checkMask', Integer, 1);
+         Const('numCheck', Integer, 1);
+           
+         While (numCheck < 32,
+           block(
+            if(BitAnd(vMask, CheckMask)=CheckMask,
+               Block(  
+                 Let('curPlaceId', EXTRACTSTR(strPlaceIds, numCheck, ';'));
+                 Let('vPlaceId', EXTRACTSTR(curPlaceId, 1, '_'));
+                 Let('vId', EXTRACTSTR(curPlaceId, 2, '_'));               
+                  
+                 {вычисляем номер последнего выпуска}  
+                 OPENQUERY ('RelMax', 'STS_DB', 
+                 'Select Max(Counter) as MaxCounter from RELEASE where Placeid='+vPlaceId+' and Id='+vId);    
+                 If(FIELDISNULL ('RelMax', 'MaxCounter'),
+                    Let('vCounter', vCounter+1),
+                    Let('vCounter', FieldValue('RelMax.MaxCounter')+1)
+                 );    
+                 {добавляем выпуcк}  
+		 Let('vTransp', INIFILE ('ProcDocs','Transp',''));
+                 AddRelMain();
+
+                 {добавляем выпускаемый лес}                       
+                 First('qryWood');                     
+                 While (Eof('qryWood')=0,
+                   Block(                                                     
+                  {хождение по бревнам}                       
+                     Let('sTemp', FieldValue('qryWood.Mark'));
+                     Let('sqlText', 'Select COUNT(*) as ReleaseCount from KRD_CMAP kc1, REL_COMM rc'+ CHAR (13) + Char(10));
+                     Let('sqlText', sqlText + ' where kc1.mark="'+sTemp+'" and kc1.placeid=rc.placeid and kc1.id=rc.id and kc1.g32=rc.g32');                         
+                     OPENQUERY ('qryCheck', 'STS_DB', sqltext);
+                     Let('vRec', FieldValue('qryCheck.ReleaseCount'));   
+                     {DebugMessage(vrec); } 
+                     If( vRec = 0, Block(                                          
+                         Let('sqlText', 'Select kc.placeid, kc.id, kc.g32, kc.counter, kc.mark from KRD_CMAP kc'+ CHAR (13) + Char(10));
+                         Let('sqlText', sqlText + ' where (kc.mark="'+sTemp+'") and kc.placeid = '+vPlaceid+' and kc.id='+vId);
+                        { DebugMessage(sqltext);}
+                         OPENQUERY ('qryRelCheck', 'STS_DB', sqltext);
+                         First('qryRelCheck');
+{                         Let('vRec', RECORDCOUNT ('qryRelCheck'));
+                         Let('vRec', vRec + ' ' + Convert(FieldValue('qryRelCheck.g32'), string));
+                           DebugMessage(vRec);}  
+                         If(FIELDISNULL ('qryRelCheck', 'g32')=0,
+                            AddRelComm()
+                         );                                                                             
+                       )
+                     );                      
+                     NEXT('qryWood')  
+                   )
+                 );  
+                 Let('vCounter', 0);                                                
+                   
+               )             
+            ),  
+            Let('numCheck', numCheck+1); 
+            Let('CheckMask', CheckMask*2);          
+           )  {end block}
+         ); {end while}
+                     
+        ),
+       Block({все бревна выпущены})   
+     ); 
+
+     CLOSEDATABASE('SourceDB');      
+     CLOSEDATABASE('Wood_DB');       {закрытие временной базы}   
+{показ журнала}  
+
+      VAR ('sLogFile', String, TempDirectory() + 'CommChk.log'),  { имя файла журнала }
+      CreateLogFile(sLogFile),                                    { создание журнала }
+                              {         1         2         3         4         5         6         7         8         9          }
+                              {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+      AppendLogFile(sLogFile, '-----------------------------------------------------------------------------------'),
+      AppendLogFile(sLogFile, '|                               Сообщение                           |   № бирки   |'),
+      AppendLogFile(sLogFile, '-----------------------------------------------------------------------------------'),  
+  
+  
+     If( IsUniqueMark = 0,
+       AppendLogFile(sLogFile, 'Все бревна из этого файла уже выпущены из ПЗТК'),
+       Block(  
+         if(sCheckLog1 <> '',
+           if(sCheckLog2 <> '',  
+             AppendLogFile(sLogFile, sCheckLog1+Char(13)+Char(10)+sCheckLog2),
+             AppendLogFile(sLogFile, sCheckLog1)
+           ),  
+           if(sCheckLog2 <> '',  
+             AppendLogFile(sLogFile, sCheckLog2)
+           )
+         )
+       )
+     );
+
+
+       
+     AppendLogFile(sLogFile, '----------------------------------------------------------------------------------');                              
+     IF(StopPressed() = 0 , 
+        if ((vBad = 1)|(IsUniqueMark = 0)|(sCheckLog1 <> ''), ShowLogFile(sLogFile, 'Импорт данных об отгрузке лесоматериалов из ПЗТК')
+	)
+     )  
+  )    {закрытие Block}  
+);     {закрытие If}             
+GlobalRefresh();
+SHOWMESSAGE('Обработка документов завершена.')  

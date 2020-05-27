@@ -1,0 +1,9 @@
+// *****************************************************************************
+// Название: SETFILTER
+// Описание: SETFILTER
+// Кнопка вызова: 0
+// Подпись кнопки: SETFILTER
+// Вызов по событию: 
+// *****************************************************************************
+//
+SETFILTER('KRD_MAIN','NBD='+char(39)+'0000674'+char(39)+ ' OR NBD='+char(39)+'0000847'+char(39)+ ' OR NBD='+char(39)+'0000918'+char(39)+ ' OR NBD='+char(39)+'0000995'+char(39)+ ' OR NBD='+char(39)+'0001040'+char(39)+ ' OR NBD='+char(39)+'0001042'+char(39)+ ' OR NBD='+char(39)+'0001076'+char(39)+ ' OR NBD='+char(39)+'0001082'+char(39)+ ' OR NBD='+char(39)+'0001090'+char(39)+ ' OR NBD='+char(39)+'0001091'+char(39)+ ' OR NBD='+char(39)+'0001094'+char(39)+ ' OR NBD='+char(39)+'0001100'+char(39)+ ' OR NBD='+char(39)+'0001113'+char(39)+ ' OR NBD='+char(39)+'0001114'+char(39)+ ' OR NBD='+char(39)+'0001123'+char(39)+ ' OR NBD='+char(39)+'0001125'+char(39)+ ' OR NBD='+char(39)+'0001128'+char(39)+ ' OR NBD='+char(39)+'0001138'+char(39)+ ' OR NBD='+char(39)+'0001160'+char(39)+ ' OR NBD='+char(39)+'0001163'+char(39)+ ' OR NBD='+char(39)+'0001167'+char(39)+ ' OR NBD='+char(39)+'0001168'+char(39)+ ' OR NBD='+char(39)+'0001169'+char(39)+ ' OR NBD='+char(39)+'0001222'+char(39)+ ' OR NBD='+char(39)+'0001224'+char(39)+ ' OR NBD='+char(39)+'0001230'+char(39)+ ' OR NBD='+char(39)+'0001242'+char(39)+ ' OR NBD='+char(39)+'0001244'+char(39)+ ' OR NBD='+char(39)+'0001265'+char(39)+ ' OR NBD='+char(39)+'0001276'+char(39)+ ' OR NBD='+char(39)+'0001278'+char(39)+ ' OR NBD='+char(39)+'0001300'+char(39)+ ' OR NBD='+char(39)+'0001311'+char(39)+ ' OR NBD='+char(39)+'0001342'+char(39)+ ' OR NBD='+char(39)+'0001347'+char(39)+ ' OR NBD='+char(39)+'0001348'+char(39)+ ' OR NBD='+char(39)+'0001371'+char(39)+ ' OR NBD='+char(39)+'0001393'+char(39)+ ' OR NBD='+char(39)+'0001422'+char(39)+ ' OR NBD='+char(39)+'0001435'+char(39));

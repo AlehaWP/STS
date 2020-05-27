@@ -1,0 +1,444 @@
+{Функция определения объема}
+   Func('GetV',
+     Block(  
+       Param('vDiam', Float, 0),  
+       Param('vLength', Float, 1),  
+     ),
+     Block(
+       VAR('vG315C', Float);
+       VAR('vRec', Integer);         
+       OPENQUERY ('qryKBT', 'Select * from '+Char(39)+sFileName+'kbt75.dbf'+Char(39) + ' where L = ' +vLength+' and D ='+vDiam , 'SourceDb');
+       Let('vRec', RecordCount('qryKbt'));  
+       IF(vRec > 0,
+         Block(
+           First('qryKbt');  
+           Let('vG315C', FIELDVALUE('qryKbt.V'))
+         )    
+       );
+       vG315C              
+     )
+   ),    
+{Процедура добавления нового товара}  
+   Func('AddNewComm',
+      Block(),  
+      Block(
+        AppendRecord('KRD_COMM_2');
+        EDITRECORD('KRD_COMM_2');
+        Let('vG32', vG32+1);
+        SETFIELDVALUE ('KRD_COMM_2', 'PlaceId', vPlaceId);
+        SETFIELDVALUE ('KRD_COMM_2', 'Id', vId);
+        SETFIELDVALUE ('KRD_COMM_2', 'G32', vG32);
+        SETFIELDVALUE ('KRD_COMM_2', 'G33', vG33);
+        SETFIELDVALUE ('KRD_COMM_2', 'G311', 1);
+        SETFIELDVALUE ('KRD_COMM_2', 'AcceptDate', actDate);
+        SETFIELDVALUE ('KRD_COMM_2', 'ForestGost', vGost);
+        SETFIELDVALUE ('KRD_COMM_2','G312', 'Лесоматериалы круглые '+ strPoroda);
+        SETFIELDVALUE ('KRD_COMM_2','G313', 'БРЕВНО');
+        SETFIELDVALUE ('KRD_COMM_2','ForestType', strPoroda);
+        SETFIELDVALUE ('KRD_COMM_2', 'ForestSort', FIELDVALUE('qryWood.Sort'));
+        SETFIELDVALUE ('KRD_COMM_2', 'ForestLength', FIELDVALUE('qryWood.Length')/100);
+        Let('Diam', (FIELDVALUE('qryWood.Diam_MIN')+FIELDVALUE('qryWood.Diam_MAX'))/20);
+        If(Diam > 14,
+            If(Mod((Trunc(Diam)+1),2) = 0,
+               Let('Diam', Trunc(Diam)+1),  
+               Let('Diam', Trunc(Diam)),                     
+            ),                
+            if(Frac(Diam) >= 0.5,
+               Let('Diam', Trunc(Diam)+1),
+               Let('Diam', Trunc(Diam))
+                )
+        );
+        SETFIELDVALUE ('KRD_COMM_2', 'ForestDiameter', Diam);
+        SETFIELDVALUE ('KRD_COMM_2','G315C', GetV(Diam, FIELDVALUE('qryWood.Length')/100));          
+        POSTRECORD('KRD_COMM_2');
+        Next('KRD_COMM_2');
+        Let('vCounter',0);
+        Let('curWoodCode', FieldValue('qryWood.WoodCode'));
+        Let('curDiam', Diam);
+        Let('curForestSort', FieldValue('qryWood.Sort'));
+        Let('curForestLength', FieldValue('qryWood.Length')/100);
+        Let('sqltext', 'New (Placeid='+vPlaceId+') (Id='+vId+') G32 ='+ vG32+ 
+             ' ForestType = "'+strPoroda+'" ForestSort = '+curForestSort+' ForestLength = '+curForestLength+' ForestDiameter = '+Diam);  
+        {DebugMessage(sqlText); }
+      )   
+   ),  
+    
+{======================================================================================================================
+                     Объявление переменных  
+======================================================================================================================}    
+VAR('sFileName', String);             { объявление переменной для имени файла данных }
+VAR('vRec', Integer);  
+VAR('vBad', Integer);
+VAR('sTemp', String);
+VAR('sTemp1', String);  
+VAR('sFileBriefName', String);  {имя файла}  
+
+VAR('vMainId', Integer);   {текущие значения соотв. полей}
+VAR('vPlaceId', Integer);
+VAR('strPlaceId', Integer);  
+VAR('vId', Integer);
+VAR('vG32', Integer);
+VAR('vMaxG32', Integer);  
+Var('vCounter', Integer);
+  
+VAR('vG33', String);
+VAR('vG315С', Float);  
+VAR('vGost', String);  
+Const('strPoroda', String, '');
+Const('actDate', DateTime, Now());
+
+Const('IsUniqueMark', integer, 0); {есть ли вообще в файле новое бревно}
+Const('sCheckLog1', Memo, '');
+Const('sCheckLog2', Memo, '');  
+{текущие значения полей, 
+для определения, нужно добавлять еще один акт/товар или нет}
+Const('curG32', Integer, 0);  
+Const('curPlaceId', Integer, 0);
+Const('curActNo', String, '');
+Const('curOrgId', Integer, 0);
+Const('curOrgName', String, '');
+Const('curWoodCode', Integer, 0);
+Const('curForestSort', Integer, 0);
+Const('curForestLength', Float, 0);
+Const('curDiam', Float, 0);
+
+Var('Diam', Float); {средний диаметр в см}
+{======================================================================================================================
+                         Начало начал  
+======================================================================================================================}    
+ 
+Let('sFileName', INIFILE ('ProcDocs', 'WoodPath', 'C:\Temp\1.pro'));
+
+IF (SelectFile('sFileName', 'Выбор файла', 'Файлы производства терминала (*.pro)|*.pro'), { выбор файла }
+  BLOCK (  
+     WRITEINIFILE ('ProcDocs', 'WoodPath', sFileName);
+     {DebugMessage('filename '+sFilename);}
+{предварительно необходимо добавить в источниках ODBC 
+пользовательский источник с именем Wood и указать каталог установки Склада}       
+     COPYFILE(sFileName, PROGRAMPATH()+'\wood.txt');      
+     WRITEINIFILE ('wood.txt', 'ColNameHeader', 'False', PROGRAMPATH()+'\schema.ini');  
+     WRITEINIFILE ('wood.txt', 'MaxScanRows', '25', PROGRAMPATH()+'\schema.ini');    
+     WRITEINIFILE ('wood.txt', 'Format', 'Delimited(;)', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'CharacterSet', 'ANSI', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col1', 'NumOp Char Width 10', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col2', 'TranspCode Char Width 2', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col3', 'CarNo Char Width 30', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col4', 'Act_No Char Width 15', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col5', 'StoreNo Char Width 30', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col6', 'WoodCode Integer', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col7', 'Mark Char Width 30', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col8', 'Sort Integer', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col9', 'Length Float', PROGRAMPATH()+'\schema.ini');  
+     WRITEINIFILE ('wood.txt', 'Col10', 'DIAM_MIN Float', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col11', 'DIAM_MAX Float', PROGRAMPATH()+'\schema.ini');
+     WRITEINIFILE ('wood.txt', 'Col12', 'OrgId Integer', PROGRAMPATH()+'\schema.ini');
+             
+     OPENDATABASE ('Wood_DB', 'Microsoft Text Driver (*.txt; *.csv)', 'ODBC DSN=wood');  
+    { DebugMessage('test');  }
+     Const('sqlText', Memo, 'select NumOp, TranspCode, CarNo, Act_No, StoreNo, WoodCode, Mark, Sort, Length, Diam_Min, Diam_Max, OrgId,  '+ CHAR (13) + Char(10));
+     Let('sqlText', sqlText+'(DIAM_MIN+DIAM_MAX) as normDiam  from wood#txt order by StoreNo, Orgid, WoodCode, Sort, Length, (DIAM_MIN+DIAM_MAX)');  
+{     DEBUGMESSAGE (sqlText);         }  
+     openQuery  ('qryWood', sqlText, 'Wood_DB');
+
+     {открытие базы объемов бревен}     
+     Let('sFileName',INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'NSIDESCR\REFS\');           
+     OPENDATABASE('SourceDB', 'STANDARD', 'PATH='+sFileName);           
+       
+     {проверка неповторяемости номеров бирок в файле}  
+     openQuery  ('qryWoodCheck', 'select Mark, Count(Mark) as MarkCount from wood#txt group by Mark', 'Wood_DB'); 
+     First('qryWoodCheck');
+     Let('vBad', 0);  
+     While(Eof('qryWoodCheck')=0,
+       Block(  
+         If(FieldValue('qryWoodCheck.MarkCount') > 1, Block(  
+           If(sCheckLog2 = '',
+              Let('sCheckLog2', '| ' + RIGHTPAD('Сведения о бревне с таким № бирки содержатся в файле неоднократно', 64, ' ') + ' | ' + 
+                                   CENTER(FieldValue('qryWoodCheck.Mark'), 12) + '|'),  
+              Let('sCheckLog2', sCheckLog2 + Char(13)+Char(10)+ '| ' + RIGHTPAD('Сведения о бревне с таким № бирки содержатся в файле неоднократно', 64, ' ') + ' | ' + 
+                                   CENTER(FieldValue('qryWoodCheck.Mark'), 12) + '|')             
+           ),  
+           Let('vBad', 1)
+           )               
+         );
+         Next('qryWoodCheck')  
+       )   
+     ); 
+
+   
+{     Let('vRec', RECORDCOUNT ('qryWood'));                     
+     DEBUGMESSAGE (vRec);  }  
+
+     LET('vGost', INIFILE ('ProcDocs', 'ForestGost', ''));
+     Let('vGost', INPUTTEXT ('ГОСТ', 'Введите ГОСТ', vGost));  
+     WRITEINIFILE ('ProcDocs', 'ForestGost', vGost);                      
+     First('qryWood');       
+
+     Let('sTemp1', GetFilter('KRD_MAIN'));
+
+     While (Eof('qryWood')=0,
+       Block(                                                     
+      {хождение по бревнам}   
+        {проверка наличия номеров бирок в базе}  
+         Let('sTemp', FieldValue('qryWood.Mark'));
+         OPENQUERY ('qryCheckMark', 'STS_DB', 
+         'Select placeid, id, g32, mark from KRD_CMAP where (Mark="'+sTemp+'")');    
+         Let('vRec', RECORDCOUNT ('qryCheckMark'));                     
+         If (vRec > 0,
+           Block(  {не добавляем в базу}
+            If(sCheckLog1 = '',  
+              Let('sCheckLog1', '| ' + RIGHTPAD('Бревно с таким № бирки уже принято в ПЗТК', 64, ' ') + '  | ' + 
+                                   CENTER(sTemp, 12) + '|'),
+              Let('sCheckLog1', sCheckLog1 + Char(13)+Char(10)+'| ' + RIGHTPAD('Бревно с таким № бирки уже принято в ПЗТК', 64, ' ') + '  | ' + 
+                                   CENTER(sTemp, 12) + '|');                                     
+            ) 
+           ),
+           Block( {работаем}
+             Let('IsUniqueMark', 1),
+             Let('strPlaceId', FieldValue('qryWood.StoreNo')),
+             {выбор склада}
+             If((strPlaceId <> curPlaceId), Block(
+               Let('vPlaceId', 0);
+               OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES where PZTK_CODE = "'+strPlaceId+'"');  
+               Let('vRec', RECORDCOUNT ('Stors'));                     
+               If (vRec > 1,       {если склад с таким кодом ПЗТК не один, предложим выбрать}  
+                 SelectValues ('Выбор склада, на который будет создан документ', 'Stors', 
+                          [
+                           ['PZTK_CODE',  'Код ПЗТК', 15],
+                           ['NAME',   'Название склада', 30],
+                           ['LICENCENO',   'Номер лицензии', 15],
+                           ['LICENCENO_EXT',   ' ', 1],
+                           ['STORE_NO',   'Номер склада', 15],
+                           ['PlaceId',   '', 10]
+                          ],
+                          [ ['PlaceId', 'vPlaceId'],
+                          ],      
+                     '', 'STS_DB');
+               );
+               {если склад не выбран или всего один такой, берем первый из списка}  
+               If(vPlaceId = 0, Block(   
+                  First('Stors');
+                  Let('vPlaceId', FieldValue('Stors.PlaceId'));
+               )); 
+               If(vPlaceId = 0, Let('vPlaceId', 1));  {если вообще нет таких складов, создаем на первую площадку}  
+             ));
+    
+    {добавление лесного акта}
+             If((strPlaceId <> curPlaceId)|(FieldValue('qryWood.ORGID') <> curOrgId),
+               Block(                  
+                 Let('curPlaceId', strPlaceId);
+                 Let('curOrgId', FieldValue('qryWood.ORGID'));
+                 OPENQUERY ('qryOrgs', 'STS_DB', 'Select * from ORGANIZ where PlaceId = '+vPlaceId+' and OrgId ='+curOrgId);  
+                 First('qryOrgs');    
+                 {Let('curOrgName',  REFERENCE('EMPLOYEE', 'EMPLOYEE_ID', FIELDVALUE('qryWood.NumOp'), 'EMPLOYEE_NAME')); 
+                 DebugMessage('автор '+curOrgName);          }  
+                 Let('curOrgName', FieldValue('qryOrgs.ORGNAME'));           
+                 LET('vG33', INIFILE ('ProcDocs', 'G33', ''));
+                 Let('vG33', INPUTTEXT ('Отправитель ' + curOrgName, 'Введите код ТНВЭД', vG33));
+                 WRITEINIFILE('ProcDocs', 'G33', vG33);                         
+                 {добавляем или ищем существующий ДУ}
+                 SETRANGE ('KRD_MAIN_2', [vPlaceId]);    
+                 First('KRD_MAIN_2');
+                 If(LOCATE('KRD_MAIN_2', 'Sender', FieldValue('qryWood.OrgId')), 
+                   Block( {нашли старый}  
+                     Let('vId', FieldValue('KRD_MAIN_2.ID'));
+                     {DebugMessage('Found PlaceId = '+vPlaceId+' Id = '+ vId);}
+                     OPENQUERY ('qryComm', 'STS_DB',
+                    'Select Max(G32) as MaxG32 from KRD_COMM where (Placeid='+vPlaceId+') and (Id='+vId+')');
+                     Let('vG32', FieldValue('qryComm.MaxG32')),
+                     Let('vMaxG32', FieldValue('qryComm.MaxG32'));
+                       
+                   ),               
+                   Block( {добавляем новый}  
+                     Let('sTemp', GetFilter('KRD_MAIN'));
+                     SetFilter('KRD_MAIN', sTemp);
+                     Appendrecord('KRD_MAIN');  
+                     POSTRECORD('KRD_MAIN');
+                     EDITRECORD('KRD_MAIN');
+                     SETFIELDVALUE ('KRD_MAIN', 'PLACEID', vPlaceid);
+                     SETFIELDVALUE ('KRD_MAIN', 'A_MODE', 8);
+                     SETFIELDVALUE ('KRD_MAIN', 'BEG_KEEP', actDate);
+                     SETFIELDVALUE ('KRD_MAIN', 'G011', 'ЭК');
+                     SETFIELDVALUE ('KRD_MAIN', 'SENDER', FieldValue('qryWood.OrgId'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G020', FieldValue('qryOrgs.ORGREPR'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G020P', FieldValue('qryOrgs.ORGREPR_POST'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G021', FieldValue('qryOrgs.ORGCLASSID'));  
+                     SETFIELDVALUE ('KRD_MAIN', 'G022', FieldValue('qryOrgs.ORGNAME'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G023', FieldValue('qryOrgs.ORGADDRESS'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G024A', FieldValue('qryOrgs.ORGCATEG'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G024B', FieldValue('qryOrgs.ORGSOATO'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G024C', FieldValue('qryOrgs.ORGTAXID'));
+                     SETFIELDVALUE ('KRD_MAIN', 'G15A', FieldValue('qryOrgs.ORGCOUNTRY'));  
+                       
+                     Let('vId', FieldValue('KRD_MAIN.ID'));  
+                     {DebugMessage('Not Found PlaceId = '+vPlaceId+' Id = '+ vId);}
+                     POSTRECORD('KRD_MAIN');
+                     Next('KRD_MAIN');
+                     Let('vG32',0);
+                     Let('vMaxG32', 0);  
+                     SetFilter('KRD_MAIN', '');
+                   )
+                 );  { конец Locate по OrgId}  
+                 CancelRange('KRD_MAIN_2')
+               )  {end Block}  
+             );  {end If Добавление лесного акта}  
+    {определение породы} 
+             Let('strPoroda', REFERENCE('WOODTYPE', 'CODE', FieldValue('qryWood.WoodCode'), 'VID'));  
+               
+    {         Let('strPoroda', Case (FieldValue('qryWood.WoodCode'),
+               [1, 'Сосна',
+                2, 'Ель',
+                3, 'Пихта',
+                4, 'Лиственница',
+                5, 'Кедр',
+                6, 'Береза',
+                7, 'Осина',
+                8, 'Ясень',
+                9, 'Дуб',
+                10, 'Бук',
+                11, 'Ильм',
+                12, 'Граб'
+               ], '')
+             );}  
+    {товар}
+
+{DebugMessage('file '+FieldValue('qryWood.Mark')+'|'+FieldValue('qryWood.WoodCode')+'|'+FieldValue('qryWood.Sort')+'|'+FieldValue('qryWood.Length')+'|'+FieldValue('qryWood.normDiam'));
+DebugMessage('basa '+curWoodCode+'|'+curForestSort+'|'+curForestLength+'|'+curDiam);      }
+
+             Let('Diam', (FIELDVALUE('qryWood.Diam_MIN')+FIELDVALUE('qryWood.Diam_MAX'))/20);
+             If(Diam > 14,
+               If(Mod((Trunc(Diam)+1),2) = 0,
+                 Let('Diam', Trunc(Diam)+1),  
+                 Let('Diam', Trunc(Diam)),                     
+               ),                
+               if(Frac(Diam) >= 0.5,
+                 Let('Diam', Trunc(Diam)+1),
+                 Let('Diam', Trunc(Diam))
+               )
+             );            
+
+
+             If((FieldValue('qryWood.WoodCode') <> curWoodCode)|
+             (FieldValue('qryWood.Sort') <> curForestSort)|
+             (FieldValue('qryWood.Length') <> curForestLength*100)|
+             (Diam <> curDiam), 
+               Block( {порода или сорт или длина или диаметр неодинаковые - добавляем новый товар}  
+                 AddNewComm();  
+    {             DebugMessage('new '+ FIELDVALUE('qryWood.Mark') +' товар '+vG32);  }  
+                 Let('CurG32', vG32);  
+               ),
+               Block( {ГОСТ, сорт, длина, диаметр одинаковые - добавляем в существующий товар}  
+                 {ищем уже импортированные в текущем акте бревна с такой длиной, диаметром, породой и сортом} 
+                 Let('sqltext', 'Select * from KRD_COMM where (Placeid='+vPlaceId+') and (Id='+vId+') and G32 >'+ vMaxG32+ 
+                 ' and ForestType = "'+strPoroda+'" and  ForestSort = '+curForestSort+' and ForestLength = '+curForestLength+' and ForestDiameter = '+Diam);  
+                 {DebugMessage(sqlText);  }
+                 OpenQuery('qryComm', 'STS_DB', sqltext);
+                 First('qryComm');  
+                 Let('CurG32', FieldValue('qryComm.G32')); 
+                 {DebugMessage('old '+ FIELDVALUE('qryWood.Mark')+ ' товар  ' + curG32);}
+                 IF(FindKey('KRD_COMM_2', [vPlaceId, vId, CurG32]),
+                   Block(
+                     EditRecord('KRD_Comm_2');
+                     SETFIELDVALUE ('KRD_COMM_2', 'G311', FIELDVALUE ('KRD_COMM_2.G311')+1);
+                     SETFIELDVALUE ('KRD_COMM_2', 'G315C', FIELDVALUE ('KRD_COMM_2.G315C')+GetV(Diam, FIELDVALUE('qryWood.Length')/100));
+                     PostRecord('KRD_Comm_2');
+                     Next('KRD_Comm_2');  
+                         ),
+                   AddNewComm()        
+                 )  
+               )           
+             );             
+    {транспортное средство}
+             OPENQUERY ('TransMax', 'STS_DB', 
+             'Select Max(Counter) as MaxCounter from KR_TRANS where (Placeid='+vPlaceId+') and (Id='+vId+')');    
+             SETRANGE ('KRD_TRANSP_2', [vPlaceId, vId]);  
+             First('KRD_TRANSP_2');
+             IF(LOCATE('KRD_TRANSP_2', 'CARNO', FieldValue('qryWood.CarNo')) = 0 , 
+               Block(
+                 APPENDRECORD('KRD_TRANSP_2');
+                 EDITRECORD('KRD_TRANSP_2');
+                { DebugMessage('Carno '+FIELDVALUE('qryWood.CarNo'));}
+                 SETFIELDVALUE ('KRD_TRANSP_2', 'PlaceId', vPlaceId);
+                 SETFIELDVALUE ('KRD_TRANSP_2', 'Id', vId);
+                 SETFIELDVALUE ('KRD_TRANSP_2', 'Counter', FIELDVALUE('TransMax.MaxCounter')+1);
+                 SETFIELDVALUE ('KRD_TRANSP_2', 'CARNO', FIELDVALUE('qryWood.CarNo')),
+                 SETFIELDVALUE ('KRD_TRANSP_2', 'TRANSP_CODE', FIELDVALUE('qryWood.TranspCode')),
+                 POSTRECORD('KRD_TRANSP_2');
+                 NEXT('KRD_TRANSP_2');
+               )
+             );
+             CancelRANGE ('KRD_TRANSP_2');
+    
+             {приложение}
+             OPENQUERY ('CommMax', 'STS_DB', 
+             'Select Max(Counter) as MaxCounter from KRD_CMAP where (Placeid='+vPlaceId+') and (Id='+vId+') and (G32 = '+CurG32+') ');    
+             If(FIELDISNULL ('CommMax', 'MaxCounter'),
+                Let('vCounter', vCounter+1),
+                Let('vCounter', FieldValue('CommMax.MaxCounter')+1)
+             );  
+             
+             AppendRecord('KRD_CMAP_2');
+             EDITRECORD('KRD_CMAP_2');
+             SETFIELDVALUE ('KRD_CMAP_2', 'PlaceId', vPlaceId);
+             SETFIELDVALUE ('KRD_CMAP_2', 'Id', vId);
+             SETFIELDVALUE ('KRD_CMAP_2', 'G32', CurG32);
+             SETFIELDVALUE ('KRD_CMAP_2', 'Counter', vCounter);
+             SETFIELDVALUE ('KRD_CMAP_2', 'G311', 1);
+             {определение объема}  
+             SETFIELDVALUE ('KRD_CMAP_2','G315C', GetV(Diam, FIELDVALUE('qryWood.Length')/100));
+             SETFIELDVALUE ('KRD_CMAP_2','MARK', FIELDVALUE('qryWood.Mark')); 
+             SETFIELDVALUE ('KRD_CMAP_2','ACT_NO', FIELDVALUE('qryWood.Act_No')); 
+             SETFIELDVALUE ('KRD_CMAP_2','ACT_DATE', ActDate); 
+             SETFIELDVALUE ('KRD_CMAP_2', 'TRANSP_NO', FIELDVALUE('qryWood.CarNo'));            
+             SETFIELDVALUE ('KRD_CMAP_2','ACT_AUTHOR',  REFERENCE('EMPLOYEE', 'EMPLOYEE_ID', FIELDVALUE('qryWood.NumOp'), 'EMPLOYEE_NAME')); 
+             SETFIELDVALUE ('KRD_CMAP_2','FORESTDIAMETER_MIN', FIELDVALUE('qryWood.DIAM_MIN')/10); 
+             SETFIELDVALUE ('KRD_CMAP_2','FORESTDIAMETER_MAX', FIELDVALUE('qryWood.DIAM_MAX')/10); 
+             POSTRECORD('KRD_CMAP_2');
+             Next('KRD_CMAP_2');
+
+
+           )
+         );
+        
+         NEXT ('qryWood')
+       )    {закрытие Block бревен}  
+     );       {закрытие While бревен}    
+
+     CLOSEDATABASE('SourceDB');      
+     CLOSEDATABASE('Wood_DB');       {закрытие временной базы}   
+
+     GlobalRefresh();
+
+     SetFilter('KRD_MAIN', sTemp1);
+{показ журнала}  
+
+      VAR ('sLogFile', String, TempDirectory() + 'CommChk.log'),  { имя файла журнала }
+      CreateLogFile(sLogFile),                                    { создание журнала }
+                              {         1         2         3         4         5         6         7         8         9          }
+                              {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+      AppendLogFile(sLogFile, '-----------------------------------------------------------------------------------'),
+      AppendLogFile(sLogFile, '|                               Сообщение                           |   № бирки   |'),
+      AppendLogFile(sLogFile, '-----------------------------------------------------------------------------------'),  
+  
+  
+     If( IsUniqueMark = 0,
+       AppendLogFile(sLogFile, 'Все бревна из этого файла уже присутствуют в базе'),
+       Block(  
+         if(sCheckLog1 <> '',
+           if(sCheckLog2 <> '',  
+             AppendLogFile(sLogFile, sCheckLog1+Char(13)+Char(10)+sCheckLog2),
+             AppendLogFile(sLogFile, sCheckLog1)
+           ),  
+           if(sCheckLog2 <> '',  
+             AppendLogFile(sLogFile, sCheckLog2)
+           )  
+         )           
+       )  
+     );
+
+       
+     AppendLogFile(sLogFile, '----------------------------------------------------------------------------------');                              
+     IF(StopPressed() = 0 , 
+        if ((vBad = 1)|(IsUniqueMark = 0)|(sCheckLog1 <> ''), ShowLogFile(sLogFile, 'Импорт данных о приемке лесоматериалов на склад')))  
+  )    {закрытие Block}  
+);     {закрытие If}             
+SHOWMESSAGE('Обработка документов завершена.')  

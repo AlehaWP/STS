@@ -1,0 +1,119 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+ VAR('sDirPath', string, 'Z:\STMxml\EXPDO1\');
+ VAR('sDirPathLogs', string, sDirPath+'LOGS\');
+ VAR('vPlaceID',integer,0);
+ VAR('vID',integer,0);
+ IF(DIRECTORYEXISTS(sDirPath)<>1,FORCEDIRECTORIES(sDirPath));
+ IF(DIRECTORYEXISTS(sDirPathLogs)<>1,FORCEDIRECTORIES(sDirPathLogs));
+ VAR('sLogFileName', string, sDirPathLogs+FDT('ddmmyyhhmmss',NOW())+'.txt');
+ CREATELOGFILE (sLogFileName);
+ APPENDLOGFILE (sLogFileName,'------------------------------------Выгрузка ДО1 в СОЛВО-------------------------------------------------------------------------------------------------------------------------------------------------------');
+ VAR('iShowLog',integer,0);
+ 
+ SHOWPROGRESS ('Выгрузка ДО в СОЛВО. Дождитесь окончания');
+ VAR('iCountALL',integer);
+ VAR('iTecProgress', integer,0);
+ 
+ OPENQUERY('GET_ID_FOR_EXP', 'STS_DB', 'SELECT DISTINCT CUSTREPID, BILLID, PLACEID, ID, SENDER, XMLNAME FROM KRD_SOLVOID  WHERE EXPDO1=0 ');
+ iCountALL:=RECORDCOUNT('GET_ID_FOR_EXP');
+
+ FIRST('GET_ID_FOR_EXP');
+ WHILE(EOF('GET_ID_FOR_EXP')=0,
+       BLOCK(
+             vPlaceID:=GET_ID_FOR_EXP.PLACEID;
+             vID:=GET_ID_FOR_EXP.ID;
+             OPENQUERY('KM2', 'STS_DB', 'SELECT  REG_NBD, GD1, AUTHOR, AUTHOR_POST, NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+
+             IF(RECORDCOUNT('KM2')>0,
+                IF(KM2.REG_NBD<>'',
+                   BLOCK(
+                          VAR('XMLDOC', integer, XMLDOCUMENTCREATE());
+                          VAR('XMLROOT', integer, XMLDOCUMENTROOT(XMLDOC));
+                          XMLDOCUMENTENCODING (XMLDOC, 'utf-8');
+                          VAR('iDO',integer,XMLNODEADDCHILD (XMLRoot,'DO'));
+                          VAR('iDO1',integer,XMLNODEADDCHILD (iDO,'DO1'));
+                          XMLNODESETVALUES (iDO1,,
+                                            'CustRepNum', KM2.REG_NBD,
+                                            'CustRepDate', FDT('yyyymmddhhmm',KM2.GD1),
+                                            'CustRepId', GET_ID_FOR_EXP.CUSTREPID,
+                                            'BillID', GET_ID_FOR_EXP.BILLID,
+                                            'Number', KM2.NBD,
+                                            'Source', IF(GET_ID_FOR_EXP.SENDER=1, 'Bronka', 'Solvo'),
+                                            'Date', FDT('yyyymmddhhmm',KM2.BD_DATE),
+                          );
+                          XMLNODESETVALUES (iDO1,'Person',
+                                            'PersonName', KM2.AUTHOR,
+                                            'PersonName', KM2.AUTHOR_POST
+                          );
+                          XMLDOCUMENTSAVE(XMLDOC,sDirPath+GET_ID_FOR_EXP.XMLNAME);
+                          EXECUTESQL('STS_DB', 'UPDATE KRD_SOLVOID SET EXPDO1=1 WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                          APPENDLOGFILE (sLogFileName,FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':        ДО1№ '+KM2.NBD+' выгружен в XML '+GET_ID_FOR_EXP.XMLNAME);
+                          iShowLog:=1;
+
+                   )
+                ),
+                EXECUTESQL('STS_DB', 'DELETE FROM KRD_SOLVOID WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+             );
+             CLOSEDATASET('KM2');
+             iTecProgress:=iTecProgress+1;
+             SETPROGRESS (iTecProgress, 100, iCountALL);
+             NEXT('GET_ID_FOR_EXP');
+       )
+ );
+ CLOSEDATASET('GET_ID_FOR_EXP');
+
+
+ VAR('sDirPath', string, 'Z:\STMxml\EXPDO2\');
+ IF(DIRECTORYEXISTS(sDirPath)<>1,FORCEDIRECTORIES(sDirPath));
+ OPENQUERY('GET_DO2', 'STS_DB', ' SELECT L.CUSTREP2ID, L.SENDER, L.XMLNAME, R.REG_RELEASE_NO, R.RELEASE_GIVE, R.RELEASE_GIVE_POST,R.REG_TIME, R.RELEASE_NO, R.OUT_DATE '+
+                ' FROM KRD_SOLVOID_DO2 L INNER JOIN RELEASE R ON(L.PLACEID=R.PLACEID AND L.ID=R.ID AND L.COUNTER=R.COUNTER) '+
+                ' WHERE L.EXPDO2=0  AND R.REG_RELEASE_NO IS NOT NULL AND R.REG_RELEASE_NO<>'+char(39)+''+char(39)
+ );
+ iCountALL:=RECORDCOUNT('GET_DO2');
+
+ FIRST('GET_DO2');
+ WHILE(EOF('GET_DO2')=0,
+       BLOCK(
+
+            VAR('XMLDOC', integer, XMLDOCUMENTCREATE());
+            VAR('XMLROOT', integer, XMLDOCUMENTROOT(XMLDOC));
+            XMLDOCUMENTENCODING (XMLDOC, 'utf-8');
+            VAR('iDO',integer,XMLNODEADDCHILD (XMLRoot,'DO'));
+            VAR('iDO2',integer,XMLNODEADDCHILD (iDO,'DO2'));
+            XMLNODESETVALUES (iDO2,,
+                      'CustRepNum',GET_DO2.REG_RELEASE_NO,
+                      'CustRepDate', FDT('yyyymmddhhmm',GET_DO2.REG_TIME),
+                      'CustRep2Id', GET_DO2.CUSTREP2ID,
+                      'Number', GET_DO2.RELEASE_NO,
+                      'Source', IF(GET_DO2.SENDER=1, 'Bronka', 'Solvo'),
+                      'Date', FDT('yyyymmddhhmm',GET_DO2.OUT_DATE),
+            );
+            XMLNODESETVALUES (iDO2,'Person',
+                      'PersonName', GET_DO2.RELEASE_GIVE,
+                      'PersonName', GET_DO2.RELEASE_GIVE_POST
+            );
+            XMLDOCUMENTSAVE(XMLDOC,sDirPath+GET_DO2.XMLNAME);
+            EXECUTESQL('STS_DB', 'UPDATE KRD_SOLVOID_DO2 SET EXPDO2=1 WHERE CUSTREP2ID='+GET_DO2.CUSTREP2ID);
+            APPENDLOGFILE (sLogFileName,FORMATDATETIME ('DD.MM.YYYY HH:MM', NOW()) + ':        ДО2№ '+GET_DO2.RELEASE_NO+' выгружен в XML '+GET_DO2.XMLNAME);
+            iShowLog:=1;
+            iTecProgress:=iTecProgress+1;
+            SETPROGRESS (iTecProgress, 100, iCountALL);
+            NEXT('GET_DO2');
+       )
+ );
+ CLOSEDATASET('GET_DO2');
+
+ IF(iShowLog=1,SHOWLOGFILE (sLogFileName, 'Результаты выгрузки'));
+ HIDEPROGRESS ();
+
+
+

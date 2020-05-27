@@ -1,0 +1,71 @@
+// *****************************************************************************
+// Название: Изменить дату помещения на свх и зону помещения
+// Описание: Изменить дату помещения на свх и зону помещения
+// Кнопка вызова: 0
+// Подпись кнопки: Изменить дату помещения на свх и зону помещения
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('dtAcceptDate', DateTime);
+
+IF((KRD_COMM.G32 =1)|(KRD_COMM.G32 ='NULL'),
+   BLOCK(
+          FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\AskAboutPlace.cfm');
+          //showmessage(FORMGETPROPERTY(frmDialog, 'Name'));
+          FORMSETPROPERTY(frmDialog, 'Caption', 'Товар № '+KRD_COMM.G32);
+          FORMSETPROPERTY(frmDialog, 'dtAccept.Text', IF(KRD_COMM.ACCEPTDATE<>'',FORMATDATETIME('DD.MM.YYYY HH:MM:SS',KRD_COMM.ACCEPTDATE), NOW()));
+          FORMSETPROPERTY(frmDialog, 'SVHZone.Text', KRD_COMM.SVHAREA);
+          FORMSETPROPERTY(frmDialog, 'SVHAngar.Text', KRD_COMM.SVHHAngar);
+         // FORMSETPROPERTY(frmDialog, 'SVHPloshad.Text', KRD_COMM.SQUARE);
+          
+          IF(FORMSHOWMODAL(frmDialog)=1,
+             BLOCK(
+                dtAcceptdate := FORMGETPROPERTY(frmDialog, 'dtAccept.Text');
+
+                IF(dtAcceptdate <> '',
+                   EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET '+
+                                     ' ACCEPTDATE='+char(39)+dtAcceptdate+char(39)+
+                                     ' WHERE '+
+                                     ' PLACEID=' + KRD_MAIN.PLACEID +
+                                     ' AND ID=' + KRD_MAIN.ID
+                   )
+
+                );
+                EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET '+
+                                     ' SVHAREA=' +char(39)+ FORMGETPROPERTY(frmDialog, 'SVHZone.Text') +char(39)+
+                                    // ', SQUARE='+convert(FORMGETPROPERTY(frmDialog, 'SVHPloshad.Text'), float) +
+                                     ', SVHHANGAR='+char(39)+ FORMGETPROPERTY(frmDialog, 'SVHAngar.Text') +char(39)+
+                                     ' WHERE '+
+                                     ' PLACEID=' + KRD_MAIN.PLACEID +
+                                     ' AND ID=' + KRD_MAIN.ID + ' AND G32=1'
+                );
+              )
+          );
+
+
+   ),
+   BLOCK(
+         OPENQUERY('GetFirstTov', 'STS_DB', 'Select ACCEPTDATE, SVHAREA, SVHHANGAR FROM KRD_COMM WHERE '+
+                                            ' PLACEID=' + KRD_MAIN.PLACEID +
+                                            ' AND ID=' + KRD_MAIN.ID + ' AND G32=1');
+         FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\AskAboutPlace2.cfm');
+         
+         FORMSETPROPERTY(frmDialog, 'Caption', 'Товар № '+KRD_COMM.G32);
+         FORMSETPROPERTY(frmDialog, 'SVHZone.Text', IF(KRD_COMM.SVHAREA<>'', KRD_COMM.SVHAREA,GetFirstTov.SVHAREA));
+         FORMSETPROPERTY(frmDialog, 'SVHAngar.Text', IF(KRD_COMM.SVHHAngar<>'', KRD_COMM.SVHHAngar,GetFirstTov.SVHHAngar));
+         FORMSHOWMODAL(frmDialog);
+         EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET '+
+                               ' SVHAREA='+char(39)+ FORMGETPROPERTY(frmDialog, 'SVHZone.Text') +char(39)+
+                               ', SVHHANGAR='+char(39)+ FORMGETPROPERTY(frmDialog, 'SVHAngar.Text') +char(39)+
+                               IF(KRD_COMM.ACCEPTDATE <> GETFIRSTTOV.ACCEPTDATE, ', ACCEPTDATE='+char(39)+FORMATDATETIME('DD.MM.YYYY HH:MM', GETFIRSTTOV.ACCEPTDATE)+char(39))+
+                               ' WHERE '+
+                               ' PLACEID=' + KRD_MAIN.PLACEID +
+                               ' AND ID=' + KRD_MAIN.ID + ' AND G32='+KRD_COMM.G32
+         );
+         CLOSEDATASET('GetFirstTov');
+   )
+);
+
+
+

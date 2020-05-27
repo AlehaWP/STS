@@ -1,0 +1,13 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+EXECUTESQL ('STS_DB', ' UPDATE RELEASE SET REG_NU = (SELECT MAX(REGISTER_NUMBER) '+
+                      ' FROM STS_JR.dbo.JRGoodOut2 J WHERE J.PrDocumentNumber=RELEASE.DOC_NO AND J.REGISTER_NUMBER IS NOT NULL) '+
+                      ' WHERE (LEN(REG_NU)=0  OR REG_NU IS NULL) AND OUT_DATE>= GETDATE()-15');

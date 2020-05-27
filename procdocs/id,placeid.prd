@@ -1,0 +1,50 @@
+// *****************************************************************************
+// Название: ID, PLACEID
+// Описание: ID, PLACEID
+// Кнопка вызова: 0
+// Подпись кнопки: ID, PLACEID
+// Вызов по событию: 
+// *****************************************************************************
+//
+{OPENQUERY('Query_tov', 'STS_DB', 'select Sum(G35) as G35, sum(G311) as G311 from KRD_COMM WHERE PLACEID = '+ KRD_MAIN.PLACEID +' AND ID = ' + KRD_MAIN.ID);
+showmessage(Query_tov.G35);
+OPENQUERY('Query_tov_out', 'STS_DB', 'select Sum(Release_G35) as G35, sum(release_G311) as G311 from REL_COMM WHERE PLACEID = '+ KRD_MAIN.PLACEID +' AND ID = ' + KRD_MAIN.ID);
+showmessage(Query_tov_out.G35);}
+
+// Константы Outlook
+// OlAttachmentType
+
+
+{Const('olByValue', Integer, 1);
+
+// OlItems
+Const('olMailItem', Integer, 0);
+
+// OlMailRecipientType
+Const('olOriginator', Integer, 0);
+Const('olTo', Integer, 1);
+Const('olCC', Integer, 2);
+Const('olBCC', Integer, 3);
+
+VAR('MSOutlook', Variant, CreateOleObject('Outlook.Application'));
+VAR('myMail', Variant);
+myMail := MSOutlook.CreateItem(olMailItem);
+
+//Адрес
+VAR('myRecipient', Variant);
+myRecipient := myMail.Recipients.Add('leonid@ctm.ru');
+myRecipient.Type := olTo;
+
+//Тема
+myMail.Subject := 'Test';
+
+//Тело
+myMail.Body :='Test';
+
+//Аттачменты
+Var('myAttachments', Variant);
+myAttachments := myMail.Attachments();
+myAttachments.Add('C:\TEMP\do1-10000000-20120305-0000313.xml', olByValue);
+
+//myMail.Display;
+myMail.Send;}

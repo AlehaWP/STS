@@ -1,0 +1,736 @@
+// *****************************************************************************
+// Название: Загрузка  ком. акта
+// Описание: Загрузка  ком. акта
+// Кнопка вызова: 1
+// Подпись кнопки: Загрузка  ком. акта
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Func('FindNewActs',,
+     BLOCK(
+        VAR('iResult', integer, 0);
+        OPENQUERY('FindMaxAct', 'STS_DB', 'SELECT KC.G32 FROM KRD_CSDM KC LEFT JOIN KRD_DOP  KD ON(KC.PLACEID=KD.PLACEID AND KC.ID=KD.ID AND KC.COUNTER=KD.COUNTER) WHERE KD.DOC_ORDER_NUMBER >'+iCaOrderCounter+' AND KC.G32='+iG32+' AND KC.ID='+iID+' AND KC.PLACEID='+iPLACEID);
+        IF(RECORDCOUNT ('FindMaxAct')<>0, iResult :=1);
+        iResult
+     )
+),
+
+FUNC('FindTovID',,
+      OPENQUERY('FindKRDCOMM', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE ID IN ('+sID+') AND GN='+iGN+' AND PLACEID='+iPLACEID)
+),
+
+FUNC('FindActsTov',,
+      BLOCK(
+        VAR('iResultID', integer, 0);
+        OPENQUERY('FindTovinAct', 'STS_DB', 'SELECT ID FROM KRD_CSDM WHERE G32='+iG32+' AND ID='+iID+
+                                            ' AND COUNTER=(SELECT COUNTER FROM KRD_DOP WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND DOC_ORDER_NUMBER='+iCaOrderCounter+')');
+        IF(RECORDCOUNT('FindTovinAct')<>0, iResultID := FindTovinAct.ID);
+        CLOSEDATASET('FindTovinAct');
+        iResultID
+      )
+),
+
+FUNC('FindAct',,
+      BLOCK(
+        VAR('iResult', integer, 0);
+        OPENQUERY('FindActs', 'STS_DB', 'SELECT COUNTER FROM KRD_DOP WHERE DOC_NO='+char(39)+sCaNumber+char(39)+' AND ID='+iID+' AND DOC_ORDER_NUMBER='+iCaOrderCounter);
+        IF(RECORDCOUNT('FindActs')<>0, iResult := FindActs.COUNTER);
+        CLOSEDATASET('FindActs');
+        iResult
+      )
+),
+
+FUNC ('GetDir',,
+      BLOCK(
+        VAR('sDir', string);
+        SELECTDIRECTORY ('sDir');
+        sDir := INCLUDETRAILINGBACKSLASH(sDir);
+        sDir;
+      )
+),
+
+//Функция извлечения дескриптора (Дескриптор родителя, 'ИмяЕлемента1.Имя Дочерний элемент.Имя Дочерний дочерного')
+FUNC('NodeDescript',
+     BLOCK(
+       PARAM('dParrent', integer,0),
+       PARAM('sXMLElementName', string, 1),
+     ),
+     BLOCK(
+         VAR('Parrent', string);
+         VAR('iChildCount', integer, SPLITSTR (sXMLElementName, '.', Parrent));
+         VAR('iCounterFunc', integer, 1);
+         VAR('TecDescript', integer, dParrent);
+         WHILE(iCounterFunc <= iChildCount,
+               BLOCK(
+                 TecDescript := XMLNodeChild(TecDescript, TRIM(EXTRACTSTR (sXMLElementName, iCounterFunc, '.')));
+                 iCounterFunc := iCounterFunc + 1;
+               )
+         );
+         TecDescript
+
+     )
+),
+
+//Функция получения значения (Дескриптор родителя, 'ИмяЕлемента1.Имя Дочерний элемент.Имя Дочерний дочерного')
+FUNC('NodeValue',
+     BLOCK(
+       PARAM('dParrent', integer,0),
+       PARAM('sXMLElementName', string, 1),
+     ),
+     XMLNODEVALUE(NODEDescript(dParrent, sXMLElementName))
+),
+
+FUNC('GetDate',
+     BLOCK(
+       PARAM('dParrent', integer,0),
+       PARAM('sXMLElementName', string, 1),
+     ),
+     STRTODATE(NodeValue(dParrent, sXMLElementName),'YYYY-MM-DD', '-')
+),
+
+
+FUNC('CreateNewComAct',,
+     BLOCK(
+           OPENQUERY('GetMaxCounter', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KRD_DOP WHERE PLACEID='+iPLACEID+' AND ID='+iID);
+           VAR('iCounter', integer, GetMaxCounter.COUNTER+1);
+           EXECUTESQL('STS_DB', 'INSERT INTO KRD_DOP '+
+                                '('+
+                                {1}'PLACEID, ID, COUNTER, Doc_Order_Number, '+
+                                {2}'DOC_NAME, DOC_NO, DOC_DATETIME, '+
+                              //  {3}'DOC_REG_STATUS, DOC_REG_NO, DOC_REG_DATETIME, '+
+                            //    {4}'DOC_INSPECTOR_FIO, DOC_INSPECTOR_POST, DOC_INSPECTOR_LNP, '+
+                                {5}'LEAKS_FLAG, LEAKS_DESCRIPTION , WAREHOUSEPERSON_SURNAME, '+
+                                {6}'WAREHOUSEPERSON_NAME, WAREHOUSEPERSON_MDLNAME, WAREHOUSEPERSON_POST, '+
+                                {7}'CARRIERPERSON_FLAG, CARRIERPERSON_SURNAME, CARRIERPERSON_NAME, '+
+                                {8}'CARRIERPERSON_MDLNAME, CARRIERPERSON_POST, RECIPIENTPERSON_FLAG, '+
+                                {9}'RECIPIENTPERSON_SURNAME, RECIPIENTPERSON_NAME, RECIPIENTPERSON_MDLNAME, '+
+                                {10}'RECIPIENTPERSON_POST, REASONS'+//, USER_REG '+
+                                ') '+
+                                'VALUES '+
+                                '('+
+                                 {1}iPlaceid+', '+iID+', '+iCounter+', '+ iCaOrderCounter + ', '+//1
+                                 {2}char(39)+sCaName+char(39)+ ', '+char(39)+sCaNumber+char(39)+', '+char(39)+FormatDateTime('DD.MM.YYYY', dCaDate)+char(39)+', '+//2
+                                 {5}iLeaksFlag+', '+char(39)+sLeaksDescription+char(39)+', '+char(39)+NODEVALUE(CaNode, 'ca:WareHousePerson.cat_ru:PersonSurname')+char(39)+', '+
+                                 {6}char(39)+NODEVALUE(CaNode, 'ca:WareHousePerson.cat_ru:PersonName')+char(39)+', '+ char(39)+NODEVALUE(CaNode, 'ca:WareHousePerson.cat_ru:PersonMiddleName')+char(39)+', '+ char(39)+NODEVALUE(CaNode, 'ca:WareHousePerson.cat_ru:PersonPost')+char(39)+', '+
+                                 {7}iCarrierFlag+', '+char(39)+NODEVALUE(CaNode, 'ca:CarrierPerson.cat_ru:PersonSurname')+char(39)+', '+char(39)+NODEVALUE(CaNode, 'ca:CarrierPerson.cat_ru:PersonName')+char(39)+', '+
+                                 {8}char(39)+NODEVALUE(CaNode, 'ca:CarrierPerson.cat_ru:PersonMiddleName')+char(39)+', '+ char(39)+NODEVALUE(CaNode, 'ca:CarrierPerson.cat_ru:PersonPost')+char(39)+', '+iRecipientFlag+', '+
+                                 {9}char(39)+NODEVALUE(CaNode, 'ca:RecipientPerson.cat_ru:PersonSurname')+char(39)+', '+char(39)+NODEVALUE(CaNode, 'ca:RecipientPerson.cat_ru:PersonName')+char(39)+', '+char(39)+NODEVALUE(CaNode, 'ca:RecipientPerson.cat_ru:PersonMiddleName')+char(39)+', '+
+                                {10}char(39)+NODEVALUE(CaNode, 'ca:RecipientPerson.cat_ru:PersonPost')+char(39)+', '+char(39) + sReasons +char(39)+
+                                ') '
+           );
+           iCounter
+     )
+),
+
+FUNC('AddCommsInCSDM',PARAM('sKIND', string, 0),
+      BLOCK(
+        
+        IF(sKIND='0',
+           BLOCK(
+                  VAR('sGoodsDescript', string, '');
+                  VAR('sG33', string,FindKRDCOMM.G33);
+                  VAR('dG311', float,FindKRDCOMM.G311);
+                  VAR('dG35', float, FindKRDCOMM.G35);
+                  VAR('dG315A', float, FindKRDCOMM.G315A);
+                  VAR('sG41A', string, FindKRDCOMM.G41A);
+                  VAR('sG315CN', string, FindKRDCOMM.G315CN);
+                  VAR('dG315C', float, FindKRDCOMM.G315C);
+                  VAR('sG31_82', string, FindKRDCOMM.G31_82);
+                  VAR('sG315', string, FindKRDCOMM.G315);
+                  VAR('dG42', float, FindKRDCOMM.G42);
+                  VAR('sG42Curr', string, FindKRDCOMM.G42_CURRENCY);
+
+                  VAR('iGoodsDescript', integer,XMLNODECHILD(iTovInfo, 'ca:GoodsDescription'));
+
+                  VAR('iDescriptionCount', integer, XMLNODECHILDCOUNT(iGoodsDescript));
+                  VAR('iDescriptionCounter', integer, 0);
+                  WHILE(iDescriptionCounter<iDescriptionCount,
+                        BLOCK(
+                           IF(XMLNODENAME(XMLNODECHILD(iGoodsDescript, iDescriptionCounter))= 'ca:GoodsDescriptionByDocs',
+                              sGoodsDescript := sGoodsDescript + XMLNODEVALUE(XMLNODECHILD(iGoodsDescript, iDescriptionCounter));
+                           );
+                           iDescriptionCounter:=iDescriptionCounter+1;
+                        )
+                  );
+                  IF(sGoodsDescript='', sGoodsDescript :=FindKRDCOMM.G312);
+                  IF(NODEVALUE(iTovInfo, 'ca:GoodsTNVEDCode.ca:TNVEDCodeByDocs')<>'', sG33:=NODEVALUE(iTovInfo, 'ca:GoodsTNVEDCode.ca:TNVEDCodeByDocs'));
+                  IF(NODEVALUE(iTovInfo, 'ca:PlaceNumber.ca:PlaceNumberByDocs')<>'', dG311:=NODEVALUE(iTovInfo, 'ca:PlaceNumber.ca:PlaceNumberByDocs'));
+                  IF(NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:GoodsQuantity')<>'',
+                     BLOCK(
+                        IF(NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:MeasureUnitQualifierCode') = '166',
+                           dG35 := NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:GoodsQuantity'),
+                           BLOCK(
+                             dG315C:=NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:GoodsQuantity');
+                             sG31_82:=NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:MeasureUnitQualifierCode');
+                             sG315:=NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:MeasureUnitQualifierName');
+                           )
+                        )
+                     )
+                  );
+                  IF(NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByDocs.catWH_ru:GoodsQuantity')<>'',
+                     BLOCK(
+                             dG315A:=NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByDocs.catWH_ru:GoodsQuantity');
+                             sG41A:=NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByDocs.catWH_ru:MeasureUnitQualifierCode');
+                             sG315CN:=NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByDocs.catWH_ru:MeasureUnitQualifierName');
+                     )
+                  );
+                  IF(NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:GoodsQuantity')<>'', dG42 := NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByDocs.catWH_ru:GoodsQuantity'));
+                  IF(NODEVALUE(iTovInfo, 'ca:InvoiceCost.ca:InvoiceCostByDocs.ca:CostAmount')<>'',
+                     BLOCK(
+                       dG42 := NODEVALUE(iTovInfo, 'ca:InvoiceCost.ca:InvoiceCostByDocs.ca:CostAmount');
+                       sG42Curr := NODEVALUE(iTovInfo, 'ca:InvoiceCost.ca:InvoiceCostByDocs.ca:CostCurrencyCode');
+                     )
+                  );
+
+                 EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                                      '('+
+                                      {1}'PLACEID, ID, G32, '+
+                                      {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                                      {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                                      {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                                      {5}'DOC_G311, DOC_G315A, DOC_G35, '+
+                                      {6}'DOC_G315C, DOC_G315CN, DOC_G31_82 '+
+                                      ') '+
+                                      'VALUES '+
+                                      '('+
+                                       {1}iPlaceid+', '+iID+', '+iG32+', '+
+                                       {2}iCounter+ ', '+char(39)+sKind+char(39)+', '+char(39)+sSTAGE+char(39)+', '+//2
+                                       {3}char(39)+FormatDateTime('DD.MM.YYYY', dtDateMist)+ IF(sTime<>'', ' ' + sTime) + char(39)+', '+char(39)+sComments+char(39)+', '+char(39)+sG33+char(39)+', '+
+                                       {4}char(39)+sGoodsDescript+char(39)+', '+dG42+', '+ char(39)+sG42CURR+char(39)+', '+
+                                       {5}dG311+', '+dG315A+', '+dG35+', '+
+                                       {6}dG315C+', '+ char(39)+sG315CN+char(39)+', '+char(39)+sG31_82+char(39)+
+                                      ') '
+                 );
+           )
+        );
+        IF(sKIND='1',
+           BLOCK(
+             EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                                '('+
+                                {1}'PLACEID, ID, G32, '+
+                                {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                                {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                                {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                                {5}'DOC_G311, DOC_G315A, DOC_G35, '+
+                                {6}'DOC_G315C, DOC_G31_82'+
+                                ') '+
+                                'VALUES '+
+                                '('+
+                                 {1}iPlaceid+', '+iID+', '+iG32+', '+
+                                 {2}iCounter+ ', '+char(39)+sKind+char(39)+', '+char(39)+sStage+char(39)+', '+//2
+                                 {3}char(39)+FormatDateTime('DD.MM.YYYY', dtDateMist)+ IF(sTime<>'', ' ' + sTime) + char(39)+', '+char(39)+sComments+char(39)+', '+char(39)+FindKRDCOMM.G33+char(39)+', '+
+                                 {4}char(39)+FindKRDCOMM.G312+char(39)+', '+FindKRDCOMM.G42+', '+ char(39)+FindKRDCOMM.G42_CURRENCY+char(39)+', '+
+                                 {5}FindKRDCOMM.G311+', '+FindKRDCOMM.G315A+', '+FindKRDCOMM.G35+', '+
+                                 {6}FindKRDCOMM.G315C+', '+char(39)+FindKRDCOMM.G31_82+char(39)+
+                                ') '
+             );
+           )
+        );
+        IF(sKIND='2',
+           BLOCK(
+             EXECUTESQL('STS_DB', 'INSERT INTO KRD_CSDM '+
+                                '('+
+                                {1}'PLACEID, ID, G32, '+
+                                {2}'COUNTER, SDM_KIND, SDM_STAGE, '+
+                                {3}'SDM_DATETIME, SDM_REASONS, DOC_G33, '+
+                                {4}'DOC_G312, DOC_G42, DOC_G42_CURRENCY, '+
+                                {5}'DOC_G311, DOC_G315A, DOC_G35, '+
+                                {6}'DOC_G315C, DOC_G31_82'+
+                                ') '+
+                                'VALUES '+
+                                '('+
+                                 {1}iPlaceid+', '+iID+', '+iG32+', '+
+                                 {2}iCounter+ ', '+char(39)+sKind+char(39)+', '+char(39)+sStage+char(39)+', '+//2
+                                 {3}char(39)+FormatDateTime('DD.MM.YYYY', dtDateMist)+ IF(sTime<>'', ' ' + sTime) + char(39)+', '+char(39)+sComments+char(39)+', NULL, '+
+                                 {4}'NULL, NULL, NULL, '+
+                                 {5}'NULL, NULL, NULL, '+
+                                 {6}'NULL , NULL'+
+                                ') '
+             );
+           )
+        );
+      )
+),
+
+
+FUNC('UpdateKRDCOMM', PARAM('iKind', integer, 0),
+     BLOCK(
+        VAR('sGoodsDescript', string, '');
+        VAR('sG33', string,FindKRDCOMM.G33);
+        VAR('dG311', float,FindKRDCOMM.G311);
+        VAR('dG35', float, FindKRDCOMM.G35);
+        VAR('dG315A', float, FindKRDCOMM.G315A);
+        VAR('sG41A', string, FindKRDCOMM.G41A);
+        VAR('sG315CN', string, FindKRDCOMM.G315CN);
+        VAR('dG315C', float, FindKRDCOMM.G315C);
+        VAR('sG31_82', string, FindKRDCOMM.G31_82);
+        VAR('sG315', string, FindKRDCOMM.G315);
+        VAR('dG42', float, FindKRDCOMM.G42);
+        VAR('sG42Curr', string, FindKRDCOMM.G42_CURRENCY);
+
+
+        IF(iKind = 0,
+           BLOCK(
+              VAR('iGoodsDescript', integer,XMLNODECHILD(iTovInfo, 'ca:GoodsDescription'));
+              VAR('iDescriptionCount', integer, XMLNODECHILDCOUNT(iGoodsDescript));
+              VAR('iDescriptionCounter', integer, 0);
+              WHILE(iDescriptionCounter<iDescriptionCount,
+                    BLOCK(
+                       IF(XMLNODENAME(XMLNODECHILD(iGoodsDescript, iDescriptionCounter))= 'ca:GoodsDescriptionByFact',
+                          sGoodsDescript := sGoodsDescript + XMLNODEVALUE(XMLNODECHILD(iGoodsDescript, iDescriptionCounter));
+                       );
+                       iDescriptionCounter:=iDescriptionCounter+1;
+                    )
+              );
+              IF(sGoodsDescript='', sGoodsDescript :=FindKRDCOMM.G312);
+              IF(NODEVALUE(iTovInfo, 'ca:GoodsTNVEDCode.ca:TNVEDCodeByFact')<>'', sG33:=NODEVALUE(iTovInfo, 'ca:GoodsTNVEDCode.ca:TNVEDCodeByFact'));
+              IF(NODEVALUE(iTovInfo, 'ca:PlaceNumber.ca:PlaceNumberByFact')<>'', dG311:=NODEVALUE(iTovInfo, 'ca:PlaceNumber.ca:PlaceNumberByFact'));
+              IF(NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:GoodsQuantity')<>'',
+                 BLOCK(
+                    IF(NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:MeasureUnitQualifierCode') = '166',
+                       dG35 := NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:GoodsQuantity'),
+                       BLOCK(
+                         dG315C:=NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:GoodsQuantity');
+                         sG31_82:=NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:MeasureUnitQualifierCode');
+                         sG315:=NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:MeasureUnitQualifierName');
+                       )
+                    )
+				        )
+              );
+              IF(NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByFact.catWH_ru:GoodsQuantity')<>'',
+                 BLOCK(
+                         dG315A:=NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByFact.catWH_ru:GoodsQuantity');
+                         sG41A:=NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByFact.catWH_ru:MeasureUnitQualifierCode');
+                         sG315CN:=NODEVALUE(iTovInfo, 'ca:GoodsQuantity.ca:GoodsQuantityByFact.catWH_ru:MeasureUnitQualifierName');
+                 )
+              );
+              IF(NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:GoodsQuantity')<>'', dG42 := NODEVALUE(iTovInfo, 'ca:BruttoVolQuant.ca:BruttoVolQuantByFact.catWH_ru:GoodsQuantity'));
+              IF(NODEVALUE(iTovInfo, 'ca:InvoiceCost.ca:InvoiceCostByFact.ca:CostAmount')<>'',
+                 BLOCK(
+                   dG42 := NODEVALUE(iTovInfo, 'ca:InvoiceCost.ca:InvoiceCostByFact.ca:CostAmount');
+                   sG42Curr := NODEVALUE(iTovInfo, 'ca:InvoiceCost.ca:InvoiceCostByFact.ca:CostCurrencyCode');
+                 )
+              );
+           )
+        );
+
+        IF(iKind = 1,
+            EXECUTESQL('STS_DB', ' UPDATE KRD_COMM SET '+
+                                 ' G33=NULL '+
+                                 ' , G312=NULL '+
+                                 ' , G311=NULL '+
+                                 ' , G313=NULL '+
+                                 ' , G35=NULL '+
+                                 ' , G315A=NULL '+
+                                 ' , G41A=NULL '+
+                                 ' , G315CN=NULL'+
+                                 ' , G315C=NULL '+
+                                 ' , G31_82=NULL '+
+                                 ' , G315=NULL '+
+                                 ' , G42=NULL '+
+                                 ' , G42_CURRENCY=NULL '+
+                                 ' WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND G32='+iG32
+            )
+        ,
+            EXECUTESQL('STS_DB', ' UPDATE KRD_COMM SET '+
+                                 ' G33='+char(39)+sG33+char(39)+
+                                 ' , G312='+char(39)+sGoodsDescript+char(39)+
+                                 ' , G311='+dG311+
+                                 ' , G35='+dG35+
+                                 ' , G315A='+dG315A+
+                                 ' , G41A='+char(39)+sG41A+char(39)+
+                                 ' , G315CN='+char(39)+sG315CN+char(39)+
+                                 ' , G315C='+dG315C+
+                                 ' , G31_82='+char(39)+sG31_82+char(39)+
+                                 ' , G315='+char(39)+sG315+char(39)+
+                                 ' , G42='+dG42+
+                                 ' , G42_CURRENCY='+char(39)+CURRENCYCODE(sG42Curr)+char(39)+
+                                 ' , VALCODE='+char(39)+sG42Curr+char(39)+
+                                 ' WHERE PLACEID='+iPLACEID+' AND ID='+iID+' AND G32='+iG32
+            )
+        );
+
+
+     )
+),
+
+
+FUNC('AppendRecKRD_COMM',,
+     BLOCK(
+       // Получаем информацию по датам из первого товара
+       OPENQUERY('FirstComm', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND G32=1');
+     
+        VAR('sGoodsDescript', string, '');
+        VAR('sG33', string,'');
+        VAR('dG311', float,'NULL');
+        VAR('dG35', float, 'NULL');
+        VAR('dG315A', float, 'NULL');
+        VAR('sG41A', string, '');
+        VAR('sG315CN', string, '');
+        VAR('dG315C', float, 'NULL');
+        VAR('sG31_82', string, '');
+        VAR('sG315', string, '');
+        VAR('dG42', float, 'NULL');
+        VAR('sG42Curr', string, '');
+        VAR('sAcceptDate', string, FirstComm.Acceptdate);
+        VAR('sStorageDate', string, FirstComm.storage_date);
+        VAR('sStorageType', string, FirstComm.storage_type);
+        
+        
+              //VAR('iGoodsDescript', XMLNODECHILD(iTecDescript, 'ca:GoodsDescription'));
+              VAR('iDescriptionCount', integer, XMLNODECHILDCOUNT(iTecDescript));
+              VAR('iDescriptionCounter', integer, 0);
+              WHILE(iDescriptionCounter<iDescriptionCount,
+                    BLOCK(
+                       IF(XMLNODENAME(XMLNODECHILD(iTecDescript, iDescriptionCounter))= 'catWH_ru:GoodsDescription',
+                          sGoodsDescript := sGoodsDescript + XMLNODEVALUE(XMLNODECHILD(iTecDescript, iDescriptionCounter));
+                       );
+                       iDescriptionCounter:=iDescriptionCounter+1;
+                    )
+              );
+
+              IF(NODEVALUE(iTecDescript, 'catWH_ru:GoodsTNVEDCode')<>'', sG33:=NODEVALUE(iTecDescript, 'catWH_ru:GoodsTNVEDCode'));
+              IF(NODEVALUE(iTecDescript, 'catWH_ru:CargoPlace.catWH_ru:PlaceNumber')<>'', dG311:=NODEVALUE(iTecDescript, 'catWH_ru:CargoPlace.catWH_ru:PlaceNumber'));
+              IF(NODEVALUE(iTecDescript, 'catWH_ru:BruttoVolQuant.catWH_ru:GoodsQuantity')<>'',
+                 BLOCK(
+                    IF(NODEVALUE(iTecDescript, 'catWH_ru:BruttoVolQuant.catWH_ru:MeasureUnitQualifierCode') = '166',
+                       dG35 := NODEVALUE(iTecDescript, 'catWH_ru:BruttoVolQuant.catWH_ru:GoodsQuantity'),
+                       BLOCK(
+                         dG315C:=NODEVALUE(iTecDescript, 'catWH_ru:BruttoVolQuant.catWH_ru:GoodsQuantity');
+                         sG31_82:=NODEVALUE(iTecDescript, 'catWH_ru:BruttoVolQuant.catWH_ru:MeasureUnitQualifierCode');
+                         sG315:=NODEVALUE(iTecDescript, 'catWH_ru:BruttoVolQuant.catWH_ru:MeasureUnitQualifierName');
+                       )
+                    )
+				        )
+              );
+              IF(NODEVALUE(iTecDescript, 'catWH_ru:MeasureQuantity.catWH_ru:GoodsQuantity')<>'',
+                 BLOCK(
+                         dG315A:=NODEVALUE(iTecDescript, 'catWH_ru:MeasureQuantity.catWH_ru:GoodsQuantity');
+                         sG41A:=NODEVALUE(iTecDescript, 'catWH_ru:MeasureQuantity.catWH_ru:MeasureUnitQualifierCode');
+                         sG315CN:=NODEVALUE(iTecDescript, 'catWH_ru:MeasureQuantity.catWH_ru:MeasureUnitQualifierName');
+                 )
+              );
+              IF(NODEVALUE(iTecDescript, 'catWH_ru:InvoiceCost')<>'',
+                 BLOCK(
+                   dG42 := NODEVALUE(iTecDescript, 'catWH_ru:InvoiceCost');
+                   sG42Curr := NODEVALUE(iTecDescript, 'catWH_ru:CurrencyCode');
+                 )
+              );
+              
+              IF(NODEVALUE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:AcceptDate')<>'', sAcceptDate := GETDATE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:AcceptDate'));
+              IF(NODEVALUE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:AcceptTime')<>'', sAcceptDate := sAcceptDate + ' '+ NODEVALUE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:AcceptTime'));
+              IF(NODEVALUE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:DeadLineDate')<>'', sStorageDate := GETDATE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:DeadLineDate'));
+              IF(NODEVALUE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:StoringDateType')<>'', sStorageType := GETDATE(iTecDescript,'catWH_ru:KeepingLimit.catWH_ru:StoringDateType'));
+
+
+             
+             // Получаем порядковый номер товара в накладной
+             OPENQUERY( 'LastComminTTN','STS_DB', 'SELECT MAX(N_TTN_G32) as N_TTN_G32 FROM KRD_COMM WHERE PLACEID='+iPlaceid+' AND ID='+iID +' AND N_TTN='+iPaperCounter);
+             VAR('iNTTNG32', integer, LastComminTTN.N_TTN_G32+1);
+
+             EXECUTESQL('STS_DB', 'INSERT INTO KRD_COMM '+
+                                  '('+
+                                  {1}'PLACEID, ID, G32, GN, G311, '+
+                                  {2}'G33, G312, G35, '+
+                                  {3}'G315A, G41A, G315CN,'+
+                                  {4}'G315C, G31_82, G315, '+
+                                  {5}'G42, G42_CURRENCY, VALCODE, ACCEPTDATE, '+
+                                  {6}'STORAGE_DATE, N_TTN, N_TTN_G32, STORAGE_TYPE '+
+                                  ') '+
+                                  'VALUES '+
+                                  '('+
+                                   {1}iPlaceid+', '+iID+', '+iG32+', '+iG32+', '+dG311+', '+
+                                   {2}char(39)+sG33+ char(39)+', '+char(39)+sGoodsDescript+char(39)+', '+dG35+', '+
+                                   {3}dG315A+', '+char(39)+sG41A+char(39)+', '+ char(39)+sG315CN+char(39)+', '+
+                                   {4}dG315C+', '+char(39)+sG31_82+char(39)+', '+char(39)+sG315+char(39)+', '+
+                                   {5}dG42+', '+ char(39)+CURRENCYCODE(sG42Curr)+char(39)+', '+ char(39)+sG42Curr+char(39)+', '+char(39)+sAcceptDate+char(39)+', '+
+                                   {5}char(39)+sStorageDate+char(39)+', '+iPaperCounter+', '+iNTTNG32+', ' +char(39)+ sStorageType+char(39)+
+                                  ') '
+             );
+
+             EXECUTESQL('STS_DB', 'INSERT INTO KR_C_P'+
+                                  '('+
+                                  {1}'PLACEID, ID, G32, '+
+                                  {2}'DOC_COUNTER, DOC_TYPE'+
+                                  ') '+
+                                  'VALUES '+
+                                  '('+
+                                   {1}iPlaceid+', '+iID+', '+iG32+', '+
+                                   {2}iPaperCounter+', '+char(39)+'13'+char(39)+
+                                  ') '
+             );
+              
+     )
+),
+
+
+
+//Выбираем каталог с ком. актами
+VAR('sDirPath', string, GetDir());
+IF(sDirPath='', RAISEEXCEPTION('Не указан каталог хранения ком.актов, выполнение прекращено'));
+
+VAR('sNewDirPath', string, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'LoadedCommActs\');
+IF(DIRECTORYEXISTS(sNewDirPath)=0, FORCEDIRECTORIES(sNewDirPath));
+
+//Формиркем список файлов в каталоге
+var('mFileList', Memo, GETFILELIST(sDirPath, '*.xml', '|'));
+VAR('iTotalFile', integer, 0);
+VAR('iCount', integer, 0);
+VAR('sCaFileName', string, '');
+VAR('sTemp', string, '');
+//Создаем лог. файл для фиксации ошибок чтения
+Var('sLogFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'LOGS\LoadComAct.log');
+CREATELOGFILE (sLogFile);
+
+
+// кол-во файлов в папке
+iTotalFile := SPLITSTR (mFileList, '|', sTemp);
+// счетчик
+
+//APPENDLOGFILE (sLogFile, 'Кол-во загружаемых ком.актов=' + iTotalFile);
+iCount := 1;
+SHOWPROGRESS ('Загрузка ком. актов');
+
+
+VAR('iGN', integer, 0);
+VAR('sSQL', string, '');
+VAR('iWrittenCount', integer, 0);
+VAR('iCaCount', integer, 0);
+
+//Открываем каждую xml в указанной папке
+While ( iCount <= iTotalFile,
+  Block(
+    sCaFileName := sDirPath+EXTRACTSTR (mFileList, iCount, '|');
+    
+    VAR('iXML', integer, XMLDOCUMENTCREATE());
+    XMLDOCUMENTLOAD(iXML, sCaFileName);
+    
+    VAR('XMLRoot', integer, XMLDOCUMENTROOT(iXML));
+    VAR('CaNode', integer, 0);
+    CaNode := XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLROOT,0), 1),0),0);
+    IF(CaNode=0, CaNode:=XMLNODECHILD(XMLROOT,0));//Сделано на случай выгрузки из сигмы
+    //RAISEEXCEPTION(XMLNODENAME(CaNode));
+    //showmessage(XMLNODENAME(CaNode));
+    IF((XMLNODENAME(CaNode)='ca:CommercialAct')*(XMLNODENAME(CaNode)<>'NULL'), // Проверка XML на принадлежность к ком. актам
+       BLOCK(
+         // Данные по ДО1
+         VAR('dDo1ReportLink', integer, XMLNODECHILD(CaNode, 'ca:DO1ReportLinkData'));
+           VAR('dDoDate', datetime, GetDate(dDo1ReportLink, 'catWH_ru:ReportDate'));
+           VAR('sDONumber', string, NODEVALUE(dDo1ReportLink, 'catWH_ru:ReportNumber'));
+         //Идентификаторы ком. акта
+         VAR('dActDetails', integer, XMLNODECHILD(CaNode, 'ca:ActDetails'));
+           VAR('dCaDate', datetime, GetDate(dActDetails, 'ca:ActDate'));
+           VAR('sCaNumber', string, NODEVALUE(dActDetails, 'ca:ActNumber'));
+        //   showmessage(CaNode);
+         //  showmessage(XMLNODECHILD(CaNode, 'ca:ActDetails'));
+         //  showmessage(sCaNumber);
+         //  RAISEEXCEPTION (Сообщение);
+           VAR('iCaOrderCounter', integer, NODEVALUE(dActDetails, 'ca:ActOrderNumber'));
+           VAR('sCaName', string, NODEVALUE(dActDetails, 'ca:ActName'));
+           
+         //Номер лицензии
+         VAR('sLicNum', string, NODEVALUE(CaNode, 'ca:WarehouseOwner.catWH_ru:WarehouseLicense.catWH_ru:CertificateNumber'));
+          //Проверяем наличие складской площадки. Если нету, то идем дальше
+         OPENQUERY('GetPlaceid', 'STS_DB', 'SELECT PLACEID FROM STORES WHERE LICENCENO='+char(39)+sLicNum+char(39));
+         VAR('iPlaceid', integer,0);
+
+         IF(RECORDCOUNT('GetPlaceid')<>0, //Если лицензия найдена идём дальше, иначе запись в лог и следующий ком. акт, если есть
+            BLOCK(
+              iPlaceid:=GetPlaceid.Placeid;
+              //Проверяем наличие ДО по номеру, если нет пишем лог и чешем дальше в другие ком.акты
+              OPENQUERY('GetID', 'STS_DB', 'SELECT ID, PART_NO, PLACEID FROM KRD_MAIN WHERE PLACEID='+iPlaceID+' AND NBD='+char(39)+sDONumber+char(39)+' AND CAST(BD_DATE as date)='+char(39)+dDODate+char(39)+ ' ORDER BY PART_NO ');
+              IF(RECORDCOUNT('Getid')<>0,
+                 BLOCK(
+                    VAR('sID', string, UNIONVALUES ('GETID', ['ID'], ',', '')); // В случае многопартийности, из-зи отсутствия поля MAIN_ID в KRD_COMM CSDM DOP придется оперировать списком ID
+
+                    VAR('iID', integer, 0);
+                    VAR('iG32', integer, 0);
+                    VAR('iCounter', integer, 0);
+                    
+                    
+                    VAR('iDiscrepancyInfo', integer, XMLNODECHILD(CaNode, 'ca:DiscrepancyInfo'));
+                    VAR('iDiscperancyCount', integer, XMLNODECHILDCOUNT (iDiscrepancyInfo));
+                    VAR('iDiscperancyCounter', integer, 0);
+                    VAR('sStage', string, '');
+                    VAR('dtDateMist', datetime);
+                    VAR('sTime', string, '');
+                    VAR('sReasons', string, '');
+                    VAR('sComments', string, '');
+                    VAR('iRecipientFlag', integer, 0);
+                    VAR('iCarrierFlag', integer, 0);
+                    VAR('iLeaksFlag', integer, 0);
+                    VAR('sLeaksDescription', string,'');
+                    
+                    //Читаем информация из ветки несоответствий
+                    WHILE(iDiscperancyCounter<iDiscperancyCount,
+                          BLOCK(
+                             VAR('iTovInfo', integer, XMLNODECHILD(iDiscrepancyInfo, iDiscperancyCounter));
+                             //showmessage(NODEVALUE(iTovInfo, 'ca:Stage'));
+                             CASE(XMLNODENAME(iTovInfo),
+                                  [ // Общая для информация для ком акта
+                                    'ca:Stage', IF(XMLNODEVALUE(iTovInfo)='mist_AtKeeping', sStage :=0, sStage :=1),
+                                    'ca:Date', dtDateMist := GETDATE(iDiscrepancyInfo, 'ca:Date'),
+                                    'ca:Time', sTime := XMLNODEVALUE(iTovInfo),
+                                    'ca:Reasons', sReasons := sReasons + XMLNODEVALUE(iTovInfo),
+                                    'ca:DiscrepancyDetails',
+                                     BLOCK(
+                                       VAR('DiscrepancyDetailsCount', integer, XMLNODECHILDCOUNT(iTovInfo));
+                                       VAR('DiscrepancyDetailsCounter', integer, 0);
+                                       While(DiscrepancyDetailsCounter < DiscrepancyDetailsCount,
+                                             BLOCK(
+                                                 CASE(XMLNODENAME(XMLNODECHILD(iTovInfo, DiscrepancyDetailsCounter)),
+                                                      ['ca:RecipientFlag', iRecipientFlag := XMLNODEVALUE(XMLNODECHILD(iTovInfo, DiscrepancyDetailsCounter)),
+                                                       'ca:CarrierFlag', iCarrierFlag := XMLNODEVALUE(XMLNODECHILD(iTovInfo, DiscrepancyDetailsCounter)),
+                                                       'ca:LeaksFlag', iLeaksFlag := XMLNODEVALUE(XMLNODECHILD(iTovInfo, DiscrepancyDetailsCounter)),
+                                                       'ca:LeaksDescription', sLeaksDescription := sLeaksDescription + XMLNODEVALUE(XMLNODECHILD(iTovInfo, DiscrepancyDetailsCounter))
+                                                      ],
+                                                 );
+                                                 DiscrepancyDetailsCounter := DiscrepancyDetailsCounter + 1;
+                                             )
+                                       );
+                                     ),
+                                     //Отсутствующие по факту товары
+                                    'ca:MissingGoods',
+                                     BLOCK(
+                                       VAR('iGN', integer, NODEVALUE(iTovInfo, 'ca:DO1GoodNumber'));
+                                       sComments := NODEVALUE(iTovInfo, 'ca:Comments');
+                                       FindTovID();
+                                       iID := FindKRDCOMM.ID;
+                                       iG32 := FindKRDCOMM.G32;
+                                       //Ищем есть ли такой ком. акт у нашего товара по полученным  в FindTovID ID и G32 , если нет то добавляем
+                                       IF(FindActsTov(),
+                                           BLOCK(),
+                                           IF(FindNewActs(),,//Смотрим более поздние ком акты на этом товаре, если есть то ничего не делаем
+                                                BLOCK(
+                                                   //Смотрим, не создавался ли уже ком. акт с таким номером и счетчиком на данную ДО1. Если не находим, создаём сами
+
+                                                   IF(FindAct(),iCounter:=FindAct(),iCounter:=CreateNewComAct());
+                                                   //Переносим документальные сведения в KRD_CSDM. Для начала ищем данные по товару KRD_CSDM(по ранее созданным ком.актам), если находим , то копируем, если нет то берем из KRD_COMM
+                                                   AddCommsInCSDM('1');
+                                                   UpdateKRDCOMM(1);
+                                                )
+                                           )
+                                       );
+                                     ),
+                                     //Измененные товары
+                                    'ca:DiscrepantGoods',
+                                     BLOCK(
+                                       VAR('iGN', integer, NODEVALUE(iTovInfo, 'ca:DO1GoodNumber'));
+                                       sComments := NODEVALUE(iTovInfo, 'ca:Comments');
+                                       FindTovID();//Открываем запрос FindTovID к таблице KRD_COMM , где ищем наш товар по iPLACEID, список ID - sID, и GN = GoodsNumber в XML
+                                       iID := FindKRDCOMM.ID;
+                                       iG32 := FindKRDCOMM.G32;
+
+                                       //Ищем есть ли такой ком. акт у нашего товара по полученным  в FindTovID ID и G32 , если нет то добавляем
+                                       IF(FindActsTov(),
+                                           BLOCK(),
+                                           IF(FindNewActs(),,//Смотрим более позднии ком акты на этом товаре, если есть то ничего не делаем
+                                              BLOCK(
+                                                 //Смотрим, не создавался ли уже ком. акт с таким номером и счетчиком на данную ДО1. Если не находим, создаём сами
+                                                 IF(FindAct(),iCounter:=FindAct(),iCounter:=CreateNewComAct());
+                                                 //Переносим документальные сведения в KRD_CSDM. Для начала ищем данные по товару KRD_CSDM(по ранее созданным ком.актам), если находим , то копируем, если нет то берем из KRD_COMM
+                                                 AddCommsInCSDM('0');
+                                                 //showmessage(1);
+                                                 UpdateKRDCOMM(0);
+                                                 //showmessage(2);
+                                              )
+                                           )
+                                       );
+                                     ),
+                                     //Новые товары, отсутствующие в ДО1
+                                    'ca:ExtraGoods',
+                                     BLOCK(
+                                       //Ищем последнюю партию, в неё и будем добавлять товары
+                                       LAST('GetID');
+                                       iID := GETID.ID;
+                                       VAR('iExtraGoodsCount', integer, XMLNODECHILDCOUNT(iTovInfo));
+                                       VAR('iExtraGoodsCounter', integer, 0);
+                                       VAR('iPaperCounter', integer, 0);
+                                       WHILE(iExtraGoodsCounter<iExtraGoodsCount,
+                                             BLOCK(
+                                               VAR('iTecDescript', integer, XMLNODECHILD(iTovInfo, iExtraGoodsCounter));
+                                               CASE(XMLNODENAME(iTecDescript),
+                                                    ['cat_ru:PrDocumentNumber',
+                                                      BLOCK(
+                                                      OPENQUERY('LASTPAPER', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KR_PAPER WHERE PLACEID='+iPlaceid+' AND ID='+iID);
+                                                        //Проверяем чвляется ли представленный документ наклодной, если, да то добавляем накладную, если нет, записываем товары на последнюю накладную
+                                                        IF(REFERENCE('Papers.db', 'Paper_Docg44_Code', NODEVALUE(iTovInfo,'catWH_ru:PresentedDocumentModeCode'), 'PAPER_IS_WAYBILL') = 1,
+                                                           BLOCK(
+                                                               
+                                                               iPaperCounter := LASTPAPER.COUNTER+1;
+                                                               EXECUTESQL('STS_DB', ' INSERT INTO KR_PAPER (PLACEID, ID, COUNTER, PAPERDATE, PAPERNO, PAPERNAME) '+
+                                                                                    ' VALUES ('+
+                                                                                    iPlaceid+', '+iId+', '+iPaperCounter+', '+char(39)+FDT('DD.MM.YYYY', GETDATE(iTovInfo, 'cat_ru:PrDocumentDate'))+char(39)+
+                                                                                    ', '+char(39)+XMLNODEVALUE(iTecDescript)+char(39)+', '+char(39)+REFERENCE('Papers.db', 'Paper_Docg44_Code', NODEVALUE(iTovInfo,'catWH_ru:PresentedDocumentModeCode'), 'PAPERNAME')+char(39)+
+                                                                                    ' )'
+                                                               );
+                                                           ),
+                                                           BLOCK(
+                                                             iPaperCounter := LASTPAPER.COUNTER;
+                                                           )
+                                                        );
+                                                      ),
+                                                      'catWH_ru:Goods',
+                                                      BLOCK(
+                                                        VAR('iGN', integer, NODEVALUE(iTovInfo, 'catWH_ru:Goods.catWH_ru:GoodsNumber'));
+                                                        sComments := NODEVALUE(iTovInfo, 'catWH_ru:Goods.catWH_ru:Comments');
+                                                        FindTovID();
+                                                        IF(RECORDCOUNT('FINDKRDCOMM')<>0,,//Если товар уже есть, ничего не делаем
+                                                           BLOCK(
+                                                               OPENQUERY('LastComm', 'STS_DB', 'Select max(G32) as G32 from KRD_COMM WHERE Placeid='+iPlaceid+' AND ID='+iID);
+                                                               iG32 := LastComm.G32 + 1;
+                                                               //Смотрим, не создавался ли уже ком. акт с таким номером и счетчиком на данную ДО1. Если не находим, создаём сами
+                                                               IF(FindAct(),iCounter:=FindAct(),iCounter:=CreateNewComAct());
+                                                               //Добавляем товар
+                                                               AppendRecKRD_COMM();
+                                                               // добавляем пустые док. сведения в CSDM
+                                                               AddCommsInCSDM('2');
+                                                           )
+                                                        );
+                                                      )
+                                                    ],
+                                               );
+                                               iExtraGoodsCounter:=iExtraGoodsCounter+1;
+                                             )
+                                       );
+
+                                     )
+                                  ],
+                             );
+                             iDiscperancyCounter := iDiscperancyCounter + 1;
+                          )
+                    );
+                    AppendLogFile(sLogFile, 'Коммерческий акт № ' + sCaNumber + ' к ДО1 N'+sDONumber+' записан');
+                    iWrittenCount := iWrittenCount + 1;
+
+                 ),
+                 AppendLogFile(sLogFile, 'Коммерческий акт № ' + sCaNumber + ' не может быть записан : ДО1 N'+sDONumber+' от '+dDODate+' не найден в БД программы')
+              );//IF(RECORDCOUNT('Getid')<>0,
+              CLOSEDATASET('GetID');
+            ),
+            AppendLogFile(sLogFile, 'Коммерческий акт №' + sCaNumber + ' не может быть записан : номер лицензии '+sLicNum+' не найден в БД программы')
+         );//RECORDCOUNT('GetPlaceid')<>0
+         iCaCount := iCaCount + 1;
+         
+         VAR('sPartName', string,'');
+         VAR('iCountParts', integer, SPLITSTR (sCaFileName, '\', sPartName));
+         VAR('sXMLFILENAME', string, EXTRACTSTR (sCaFileName, iCountParts, '\'));
+         DELETEFILE(sCaFileName);
+         
+         XMLDOCUMENTSAVE(iXML, INCLUDETRAILINGBACKSLASH(sNewDirPath) + sXMLFILENAME);
+         CLOSEDATASET('GetPlaceid');
+         //showmessage(1);
+         //RAISEEXCEPTION (dCaDate);
+       )
+    );
+    
+    SETPROGRESS (iCount, 100, iTotalFile);
+    iCount := iCount + 1;
+  )
+);
+
+HIDEPROGRESS ();
+SHOWMESSAGE('Было: ' + iCaCount + '; Записано: ' + iWrittenCount+' Не записано:'+(iCaCount-iWrittenCount));
+SHOWLOGFILE (sLogFile);
+GLOBALREFRESH ();

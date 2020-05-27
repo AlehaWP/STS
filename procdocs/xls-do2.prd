@@ -1,0 +1,28 @@
+// *****************************************************************************
+// Название: Создание ДО2 из Excel
+// Описание: Создание ДО2 из Excel
+// Кнопка вызова: 0
+// Подпись кнопки: Создание ДО2 из Excel
+// *****************************************************************************
+//
+VAR('sFileName', String);
+VAR('sListName', String);
+sListName := INPUTTEXT ('', 'Введите название листа:', 'Лист1');
+sListName := '`.`'+sListName+'$';
+
+  IF (SelectFile('sFileName', 'Выбор файла', 'Microsoft Excel-файлы (*.xls)|*.xls'),
+       Block(
+          OPENDATABASE ('TEST_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=Excel');
+          OPENTABLE ('SOURS_TBL', sFileName+sListName, '', 'TEST_DB');
+          OPENQUERY ('qExcelOUT', 'select * from '+CHAR (34)+sFileName+sListName+CHAR (34)+' where "Номер документа выпуска" is not null order by "ID"','TEST_DB');
+          FIRST('qExcelOUT');
+          While(EOF('qExcelOUT') = 0,
+            BLOCK(
+              IF(
+
+              NEXT('qExcelOUT');
+            )
+          );
+       ),
+       RAISEEXCEPTION ('Выполнение отменено')
+  );//IF (SelectFile('

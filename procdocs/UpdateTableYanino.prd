@@ -1,0 +1,29 @@
+// *****************************************************************************
+// Название: Обновление таблицы
+// Описание: Обновление таблицы
+// Кнопка вызова: 0
+// Подпись кнопки: Обновление таблицы
+// *****************************************************************************
+//
+VAR('iCount', integer, 1);
+VAR('iCountALL', integer, 0);
+OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ PROGRAMPATH() + 'DATA_TMP\');
+OPENTABLE('tmpCOMM', PROGRAMPATH() + 'DATA_TMP\tmpCOMM.DBF', 'DOC_NO; G32_EX; G33_EX', 'TMP_DB', 1);
+FIRST('tmpCOMM');
+SHOWPROGRESS ('Обновление таблицы. Подождите..');
+iCountALL := RECORDCOUNT ('tmpCOMM');
+WHILE(EOF('tmpCOMM')=0,
+      BLOCK(
+        iCount := iCount + 1;
+        OPENQUERY ('DATA', 'STS_DB', 'SELECT BD_DATE FROM KRD_MAIN WHERE PLACEID =' + tmpComm.Placeid + ' AND ID= '+ tmpComm.id );
+        EDIT('tmpCOMM');
+        //IF(tmpComm.id = 701155647, showmessage(DATA.BD_DATE);
+        SETFIELDVALUE('tmpCOMM',
+                      'BD_DATE', DATA.BD_DATE
+        );
+        POST('tmpCOMM');
+        SETPROGRESS (iCount, 100, iCountALL);
+        NEXT('tmpCOMM');
+      )
+);
+HIDEPROGRESS ();

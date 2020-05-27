@@ -1,0 +1,58 @@
+// *****************************************************************************
+// Название: Add_part
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+showmessage(KRD_MAIN.MAIN_ID);
+showmessage(KRD_MAIN.ID);
+EXECUTESQL ('STS_DB', 'delete from KRD_MAIN where (PLACEID=14) AND (PART_NO=109) AND (MAIN_ID=313351006) AND (ID IS NOT 313351114)');
+VAR('vMAINID', integer, KRD_MAIN.MAIN_ID);
+VAR('vPLACEID', integer, KRD_MAIN.PLACEID);
+VAR('vID', integer, KRD_MAIN.ID + 1);
+VAR('sShow_NBD', string, KRD_MAIN.SHOW_NBD);
+VAR('sNBD', string, KRD_MAIN.NBD);
+VAR('vG142', string, KRD_MAIN.G142);
+VAR('vG143', string, KRD_MAIN.G143);
+VAR('vG144', string, KRD_MAIN.G144);
+VAR('dG145', datetime, KRD_MAIN.G145);
+VAR('dtDODate', datetime, KRD_MAIN.BD_DATE);
+
+OPENTABLE ('KRD_MAIN_5', 'STS_DB', 'KRD_MAIN', 'PLACEID;ID');
+OPENQUERY('MAXNO', 'STS_DB', 'SELECT MAX(PART_NO) AS Part_NO FROM KRD_MAIN WHERE MAIN_ID=' + vMAINID);
+
+APPENDRECORD('KRD_MAIN_5');
+EDIT('KRD_MAIN_5');
+SETFIELDVALUE('KRD_MAIN_5',
+              'PLACEID',   vPlaceId,
+              'ID', vId,
+              'NBD', sNBD,
+              'SHOW_NBD', sShow_NBD,
+              'MAIN_ID', vMAINID,
+              'PART_NO', MAXNO.PART_NO + 1,
+              'PART_MODE', 1,
+              'G011', 'ИМ',
+              'G012', '40',
+              'G19', 1,
+              'G210', 1,
+              'DOC_STATE', 0,
+              'A_MODE',    '7',
+              'BEG_KEEP', dtDODate + 1,
+              'BD_DATE', dtDODate,
+              'G142',vG142,
+              'G143',vG143,
+              'G144',vG144,
+              'G1440','2',
+              'G145',dG145,
+              'G261', '10',
+              'WITH_PLACE', 1,
+              'Z_MODE', 3,
+              'NOTICE_RW_ONLY', 0
+);
+POST('KRD_MAIN_5');
+LOCATE('KRD_MAIN_5', 'PLACEID;ID', [vPlaceId, vId]);
+GLOBALREFRESH();
+
+

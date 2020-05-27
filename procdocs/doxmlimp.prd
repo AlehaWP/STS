@@ -1,0 +1,632 @@
+// *****************************************************************************
+// Название: Загрузка ДО1(мв) из XML
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: ДО из XML
+// *****************************************************************************
+//
+
+Func('LoadRow', Block(
+  Param('sTableName', String, 0),
+  Param('XmlNode', Integer, 1),
+  Param('sExceptFields', Memo, 2),
+), Block(
+  VAR ('sCurField', String, '');
+  VAR ('iNodeCount', Integer, XMLNODECHILDCOUNT (XmlNode));
+  VAR ('iNodeIndex', Integer, 0);
+  VAR ('CurNode', Integer, 0);
+  
+  EDIT(sTableName);
+  WHILE(iNodeIndex < iNodeCount, Block(
+    CurNode := XMLNODECHILD (XmlNode, iNodeIndex);
+    sCurField := XMLNODENAME (CurNode);
+
+    IF(FIELDEXISTS (sTableName, sCurField) * (STRPOS ('|' + sCurField + '|', sExceptFields) = 0),
+      IF((XMLNODEHASATTRIBUTE(CurNode, 'null') * (XMLNODEATTRIBUTE(CurNode, 'xsi:null') <> 'true'))|(XMLNODEHASATTRIBUTE(CurNode, 'null') = 0), Block(
+        SETFIELDVALUE (sTableName, sCurField, XmlNodeValue(CurNode));
+      ))
+    );
+    
+    iNodeIndex := iNodeIndex + 1;
+  ));
+  POST(sTableName);
+));
+
+Func('LoadStore', Block(
+  Param('PlaceId', Integer, 0),
+  Param('XmlNode', Integer, 1),
+), Block(
+  IF(FINDKEY('STORES_2', [PlaceId]), Block(
+    LoadRow('STORES_2', XmlNode, EXCEPT_FIELDS_STORES);
+    
+    EDIT('STORES_2');
+    IF(FIELDISNULL ('STORES_2', 'STORE_TYPE'),
+      SETFIELDVALUE ('STORES_2', 'STORE_TYPE', 'СВХ')
+    );
+    IF(FIELDISNULL ('STORES_2', 'STORE_NO'), Block(
+      OPENQUERY ('STORESMAX', 'STS_DB', 'SELECT MAX(STORE_NO) AS MAXSTORE_NO' +
+                                          ' FROM STORES');
+      IF(CONVERT(STORESMAX.MAXSTORE_NO, Integer) >= 0,
+        SETFIELDVALUE ('STORES_2', 'STORE_NO', CONVERT(STORESMAX.MAXSTORE_NO, Integer) + 1)
+      );
+    ));
+    POST('STORES_2');
+  ));
+));
+
+Func('LoadKMRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('XmlNode', Integer, 2),
+), Block(
+  IF(FINDKEY('KRD_MAIN_2', [PlaceId, Id]), Block(
+    LoadRow('KRD_MAIN_2', XmlNode, EXCEPT_FIELDS_KRD_MAIN);
+  
+    // генерим нужные незаполненные в XML-файле
+    EDIT('KRD_MAIN_2');
+    // номер документа
+    IF(FIELDISNULL ('KRD_MAIN_2', 'NBD'),
+      SETFIELDVALUE ('KRD_MAIN_2', 'NBD', SOLVE (INIFILE ('Docs', 'MakeBD_No', '')))
+    );
+    // SHOW_NBD
+    SETFIELDVALUE ('KRD_MAIN_2', 'SHOW_NBD', SOLVE (INIFILE ('RegBook', 'BD_ExprIndex', '')));
+    // даты документа
+    IF(FIELDISNULL ('KRD_MAIN_2', 'BD_DATE'), Block(
+      IF(FIELDISNULL ('KRD_MAIN_2', 'BEG_KEEP'), Block(
+        SETFIELDVALUE ('KRD_MAIN_2', 'BD_DATE', DATE() + TIME());
+        SETFIELDVALUE ('KRD_MAIN_2', 'BEG_KEEP', DATE() + TIME());
+        SETFIELDVALUE ('KRD_MAIN_2', 'ARR_DATE', DATE() + TIME());
+      ), Block(
+        SETFIELDVALUE ('KRD_MAIN_2', 'BD_DATE', KRD_MAIN_2.BEG_KEEP);
+        SETFIELDVALUE ('KRD_MAIN_2', 'ARR_DATE', KRD_MAIN_2.BEG_KEEP);
+        SETFIELDVALUE ('KRD_MAIN_2', 'G542', KRD_MAIN_2.BEG_KEEP);
+      ));
+    ), Block(
+      IF(FIELDISNULL ('KRD_MAIN_2', 'BEG_KEEP'), Block(
+        SETFIELDVALUE ('KRD_MAIN_2', 'BEG_KEEP', KRD_MAIN_2.BD_DATE);
+        SETFIELDVALUE ('KRD_MAIN_2', 'ARR_DATE', KRD_MAIN_2.BD_DATE);
+        SETFIELDVALUE ('KRD_MAIN_2', 'G542', KRD_MAIN_2.BD_DATE);
+      ));
+    ));
+    // номер по книге учета
+    IF(FIELDISNULL ('KRD_MAIN_2', 'STORE_DOC_NO'), Block(
+      SETFIELDVALUE ('KRD_MAIN_2', 'STORE_DOC_NO', CONVERT(INIFILE('ContractDocNo', 'Default', '0', PROGRAMPATH() + 'counters.ini'), Integer) + 1);
+      WRITEINIFILE('ContractDocNo', 'Default', CONVERT(INIFILE('ContractDocNo', 'Default', '0', PROGRAMPATH() + 'counters.ini'), Integer) + 1, PROGRAMPATH() + 'counters.ini');
+    ));
+    // тип транспорта
+    IF(FIELDISNULL ('KRD_MAIN_2', 'G261'),
+      SETFIELDVALUE ('KRD_MAIN_2', 'G261', '30')
+    );
+    // тип документа
+    IF(STRPOS(KRD_MAIN_2.G261, '10|12|16|40|43') <> 0,
+      SETFIELDVALUE ('KRD_MAIN_2', 'A_MODE', 7),
+      SETFIELDVALUE ('KRD_MAIN_2', 'A_MODE', 6)
+    );
+    // информация о складе в документе
+    IF(FIELDISNULL ('KRD_MAIN_2', 'G144'), Block(
+      IF(FINDKEY ('STORES_2', [PlaceId]), Block(
+        SETFIELDVALUE ('KRD_MAIN_2', 'G142', STORES_2.NAME);
+        SETFIELDVALUE ('KRD_MAIN_2', 'G143', STORES_2.ADDRESS);
+        SETFIELDVALUE ('KRD_MAIN_2', 'G144', STORES_2.LICENCENO);
+        SETFIELDVALUE ('KRD_MAIN_2', 'G1440', CASE(TRIM(STORES_2.STORE_TYPE), ['СВХУТ', '1', 'СВХ', '1', 'ЗТК', '5', 'ПЗТК', '4', 'СП', '3']));
+        SETFIELDVALUE ('KRD_MAIN_2', 'G145', STORES_2.LICENCEDATE);
+      ));
+    ));
+    POST('KRD_MAIN_2');
+  ));
+));
+
+Func('LoadKCRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('G32', Integer, 2),
+  Param('XmlNode', Integer, 3),
+), Block(
+  IF(FINDKEY('KRD_COMM_2', [PlaceId, Id, G32]), Block(
+    LoadRow('KRD_COMM_2', XmlNode, EXCEPT_FIELDS_KRD_COMM);
+    
+    EDIT('KRD_COMM_2');
+    IF(FIELDISNULL ('KRD_COMM_2', 'ACCEPTDATE'),
+      SETFIELDVALUE ('KRD_COMM_2', 'ACCEPTDATE', KRD_MAIN_2.BD_DATE)
+    );
+    IF(FIELDISNULL ('KRD_COMM_2', 'FACT_G311'),
+      SETFIELDVALUE ('KRD_COMM_2', 'FACT_G311', KRD_COMM_2.G311)
+    );
+    IF(FIELDISNULL ('KRD_COMM_2', 'FACT_G35'),
+      SETFIELDVALUE ('KRD_COMM_2', 'FACT_G35', KRD_COMM_2.G35)
+    );
+    IF(FIELDISNULL ('KRD_COMM_2', 'FACT_G42'),
+      SETFIELDVALUE ('KRD_COMM_2', 'FACT_G42', KRD_COMM_2.G42)
+    );
+    IF(FIELDISNULL ('KRD_COMM_2', 'FACT_G315C'),
+      SETFIELDVALUE ('KRD_COMM_2', 'FACT_G315C', KRD_COMM_2.G315C)
+    );
+    IF(FIELDISNULL ('KRD_COMM_2', 'FACT_G315A'),
+      SETFIELDVALUE ('KRD_COMM_2', 'FACT_G315A', KRD_COMM_2.G315A)
+    );
+    POST('KRD_COMM_2');
+  ));
+));
+
+Func('LoadKPRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('Counter', Integer, 2),
+  Param('XmlNode', Integer, 3),
+), Block(
+  IF(FINDKEY('KRD_PAPERS_2', [PlaceId, Id, Counter]),
+    LoadRow('KRD_PAPERS_2', XmlNode, EXCEPT_FIELDS_KRD_PAPERS);
+  );
+));
+
+Func('LoadKTRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('Counter', Integer, 2),
+  Param('XmlNode', Integer, 3),
+), Block(
+  IF(FINDKEY('KRD_TRANSP_2', [PlaceId, Id, Counter]),
+    LoadRow('KRD_TRANSP_2', XmlNode, EXCEPT_FIELDS_KRD_TRANSP);
+  );
+));
+
+Func('LoadKCTRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('Counter', Integer, 2),
+  Param('XmlNode', Integer, 3),
+), Block(
+  IF(FINDKEY('KRD_CONT_2', [PlaceId, Id, Counter]),
+    LoadRow('KRD_CONT_2', XmlNode, EXCEPT_FIELDS_KRD_CONT);
+  );
+));
+
+Func('LoadKDRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('Counter', Integer, 2),
+  Param('XmlNode', Integer, 3),
+), Block(
+  IF(FINDKEY('KRD_DCD_2', [PlaceId, Id, Counter]),
+    LoadRow('KRD_DCD_2', XmlNode, EXCEPT_FIELDS_KRD_DCD);
+  );
+));
+
+Func('LoadKCPRow', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('G32', Integer, 2),
+  Param('XmlNode', Integer, 3),
+), Block(
+  IF(FINDKEY('KRD_COMM_PAPERS_2', [PlaceId, Id, G32]),
+    LoadRow('KRD_COMM_PAPERS_2', XmlNode, EXCEPT_FIELDS_KRD_COMM_PAPERS);
+  );
+));
+
+Func('FindStore', Block(
+  Param('sLicenceNo', String, 0),
+  Param('sLicenceDate', String, 1),
+  Param('sCustomsCode', String, 2),
+), Block(
+  Var('iResult', Integer, 0);
+  
+  IF(LOCATE ('STORES_2', 'LICENCENO;LICENCEDATE;CUSTOMS_CODE', [sLicenceNo, STRTODATE(sLicenceDate, 'DD.MM.YYYY', '.'), sCustomsCode]),
+    iResult := STORES_2.PLACEID
+  );
+  
+  iResult
+));
+
+Func('FindDO', Block(
+  Param('PlaceId', Integer, 0),
+  Param('XmlNodeRow', Integer, 1),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF((XmlNodeFind(XmlNodeROW, 'NBD') <> 0) * (XmlNodeFind(XmlNodeROW, 'BD_DATE') <> 0) * (XmlNodeFind(XmlNodeROW, 'PART_NO') <> 0), Block(
+    VAR ('sNBD', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'NBD')));
+    VAR ('sBdDate', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'BD_DATE')));
+    VAR ('iPartNo', Integer, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'PART_NO')));
+
+    IF(LOCATE ('KRD_MAIN_2', 'PLACEID;NBD;BD_DATE;PART_NO', [PlaceId, sNBD, CONVERT(sBdDate, DateTime), iPartNo]),
+      iResult := KRD_MAIN_2.ID
+    );
+    
+  ));
+
+  iResult
+));
+
+Func('FindComm', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', String, 1),
+  Param('XmlNodeRow', Integer, 2),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF((XmlNodeFind(XmlNodeROW, 'G33') <> 0) * (XmlNodeFind(XmlNodeROW, 'G312') <> 0), Block(
+    VAR ('sTNVEDCode', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'G33')));
+    VAR ('sCommName', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'G312')));
+
+    IF(LOCATE ('KRD_COMM_2', 'PLACEID;ID;G33;G312', [PlaceId, Id, sTNVEDCode, sCommName]),
+      iResult := KRD_COMM_2.G32
+    );
+    
+  ));
+  
+  iResult
+));
+
+Func('FindPaper', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', String, 1),
+  Param('XmlNodeRow', Integer, 2),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF((XmlNodeFind(XmlNodeROW, 'PAPERNO') <> 0) * (XmlNodeFind(XmlNodeROW, 'PAPERNAME') <> 0), Block(
+    VAR ('sPaperNo', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'PAPERNO')));
+    VAR ('sPaperName', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'PAPERNAME')));
+
+    IF(LOCATE ('KRD_PAPERS_2', 'PLACEID;ID;PAPERNO;PAPERNAME', [PlaceId, Id, sPaperNo, sPaperName]),
+      iResult := KRD_PAPERS_2.COUNTER
+    );
+    
+  ));
+
+  iResult
+));
+
+Func('FindTS', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', String, 1),
+  Param('XmlNodeRow', Integer, 2),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF((XmlNodeFind(XmlNodeROW, 'TRANSP_CODE') <> 0) * (XmlNodeFind(XmlNodeROW, 'CARNO') <> 0), Block(
+    VAR ('sTranspCode', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'TRANSP_CODE')));
+    VAR ('sCarNo', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'CARNO')));
+
+    IF(LOCATE ('KRD_TRANSP_2', 'PLACEID;ID;TRANSP_CODE;CARNO', [PlaceId, Id, sTranspCode, sCarNo]),
+      iResult := KRD_TRANSP_2.COUNTER
+    );
+    
+  ));
+
+  iResult
+));
+
+Func('FindCont', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', String, 1),
+  Param('XmlNodeRow', Integer, 2),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF(XmlNodeFind(XmlNodeROW, 'CONTNO') <> 0, Block(
+    VAR ('sContNo', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'CONTNO')));
+    
+    IF(LOCATE ('KRD_CONT_2', 'PLACEID;ID;CONTNO', [PlaceId, Id, sContNo]),
+      iResult := KRD_CONT_2.COUNTER
+    );
+
+  ));
+
+  iResult
+));
+
+Func('FindDCD', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', String, 1),
+  Param('XmlNodeRow', Integer, 2),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF((XmlNodeFind(XmlNodeROW, 'PAPERNO') <> 0) * (XmlNodeFind(XmlNodeROW, 'PAPERNAME') <> 0), Block(
+    VAR ('sPaperNo', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'PAPERNO')));
+    VAR ('sPaperName', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'PAPERNAME')));
+
+    IF(LOCATE ('KRD_DCD_2', 'PLACEID;ID;PAPERNO;PAPERNAME', [PlaceId, Id, sPaperNo, sPaperName]),
+      iResult := KRD_DCD_2.COUNTER
+    );
+
+  ));
+
+  iResult
+));
+
+Func('FindCP', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', String, 1),
+  Param('XmlNodeRow', Integer, 2),
+), Block(
+  Var('iResult', Integer, 0);
+
+  IF((XmlNodeFind(XmlNodeROW, 'G32') <> 0) * (XmlNodeFind(XmlNodeROW, 'DOC_COUNTER') <> 0) * (XmlNodeFind(XmlNodeROW, 'DOC_TYPE') <> 0), Block(
+    VAR ('sG32', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'G32')));
+    VAR ('sDocType', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'DOC_TYPE')));
+    VAR ('sDocCounter', String, XmlNodeValue(XmlNodeChild(XmlNodeROW, 'DOC_COUNTER')));
+
+    IF(LOCATE ('KRD_COMM_PAPERS_2', 'PLACEID;ID;G32;DOC_TYPE;DOC_COUNTER', [PlaceId, Id, CONVERT(sG32, Integer), CONVERT(sDocType, Integer), CONVERT(sDocCounter, Integer)]),
+      iResult := KRD_COMM_PAPERS_2.G32
+    );
+
+  ));
+
+  iResult
+));
+
+Func('LoadTable', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('sTableName', String, 2),
+  Param('XmlNodeParent', Integer, 3),
+), Block(
+  { Подчиненные таблицы }
+  VAR ('XmlNodeMAINChild', Integer, 0);
+  VAR ('iDocMAINChildCount', Integer, 0);
+  VAR ('iRowChildIndex', Integer, 0);
+  VAR ('XmlNodeCurROW', Integer, 0);
+  VAR ('iChildId', Integer, 0);
+
+  { ==================== Ветка товаров ==============================}
+  XmlNodeMAINChild := XmlNodeFind(XmlNodeParent, sTableName);
+
+  IF(XmlNodeMAINChild <> 0, Block(
+    iDocMAINChildCount := XMLNodeChildCount(XmlNodeMAINChild);
+
+    IF(iDocMAINChildCount > 0, Block(
+
+      iRowChildIndex := 0;
+      WHILE (iRowChildIndex < iDocMAINChildCount, Block(
+        XmlNodeCurROW := XmlNodeChild(XmlNodeMAINChild, iRowChildIndex);
+        
+        CASE(sTableName,
+          ['KRD_COMM',
+              Block(
+                iChildId := FindComm(PlaceId, Id, XmlNodeCurROW);
+                IF(iChildId = 0,
+                  iChildId := AddRecord(PlaceId, Id, sTableName, sTableName, 'G32')
+                );
+                LoadKCRow(PlaceId, Id, iChildId, XmlNodeCurROW);
+              ),
+           'KRD_PAPERS',
+              Block(
+               iChildId := FindPaper(PlaceId, Id, XmlNodeCurROW);
+               IF(iChildId = 0,
+                 iChildId := AddRecord(PlaceId, Id, sTableName, 'KR_PAPER', 'COUNTER')
+               );
+               LoadKPRow(PlaceId, Id, iChildId, XmlNodeCurROW);
+              ),
+           'KRD_TRANSP',
+              Block(
+               iChildId := FindTS(PlaceId, Id, XmlNodeCurROW);
+               IF(iChildId = 0,
+                 iChildId := AddRecord(PlaceId, Id, sTableName, 'KR_TRANS', 'COUNTER')
+               );
+               LoadKTRow(PlaceId, Id, iChildId, XmlNodeCurROW);
+              ),
+            'KRD_CONT',
+              Block(
+               iChildId := FindCont(PlaceId, Id, XmlNodeCurROW);
+               IF(iChildId = 0,
+                 iChildId := AddRecord(PlaceId, Id, sTableName, sTableName, 'COUNTER')
+               );
+               LoadKCTRow(PlaceId, Id, iChildId, XmlNodeCurROW);
+              ),
+            'KRD_DCD',
+              Block(
+               iChildId := FindDCD(PlaceId, Id, XmlNodeCurROW);
+               IF(iChildId = 0,
+                 iChildId := AddRecord(PlaceId, Id, sTableName, sTableName, 'COUNTER')
+               );
+               LoadKDRow(PlaceId, Id, iChildId, XmlNodeCurROW);
+              ),
+            'KRD_COMM_PAPERS',
+              Block(
+               IF((XmlNodeFind(XmlNodeCurROW, 'DOC_TYPE') <> 0)*(XmlNodeFind(XmlNodeCurROW, 'G32') <> 0)*(XmlNodeFind(XmlNodeCurROW, 'DOC_COUNTER') <> 0), Block(
+                 iChildId := FindCP(PlaceId, Id, XmlNodeCurROW);
+                 IF(iChildId = 0, Block(
+                   iChildId := AddRecord(PlaceId, Id, sTableName, 'KR_C_P', 'G32');
+                   LoadKCPRow(PlaceId, Id, iChildId, XmlNodeCurROW);
+                 ));
+               ));
+              )]
+        );
+
+        iRowChildIndex := iRowChildIndex  + 1;
+      ));
+    ));
+  ));
+));
+
+Func('AddRecord', Block(
+  Param('PlaceId', Integer, 0),
+  Param('Id', Integer, 1),
+  Param('sTableName', String, 2),
+  Param('sTableNameDB', String, 3),
+  Param('IdField', String, 4);
+), Block(
+  VAR('iResult', Integer, 0);
+
+  OPENQUERY (sTableName + 'MAX', 'STS_DB', 'SELECT MAX(' + IdField + ') AS MAX' + IdField +
+                                          ' FROM ' + sTableNameDB +
+                                          ' WHERE PLACEID = ' + Trim(PlaceId) +
+                                            ' AND ID = ' + Trim(Id));
+  APPENDRECORD (sTableName + '_2');
+  SETFIELDVALUE (sTableName + '_2', 'PLACEID', PlaceId);
+  SETFIELDVALUE (sTableName + '_2', 'ID', Id);
+  SETFIELDVALUE (sTableName + '_2', IdField, CONVERT(FIELDVALUE (sTableName + 'MAX', 'MAX' + IdField), Integer) + 1);
+  IF(sTableName = 'KRD_COMM_PAPERS', Block(
+    SETFIELDVALUE (sTableName + '_2', 'DOC_TYPE', 20);
+    SETFIELDVALUE (sTableName + '_2', 'DOC_COUNTER', 200);
+  ));
+  iResult := FIELDVALUE(sTableName + '_2', IdField);
+  POST(sTableName + '_2');
+  
+  iResult
+));
+
+{ ============ Основной раздел ==============================================================================}
+
+// какие поля не грузить
+VAR('EXCEPT_FIELDS_STORES', Memo,  "|PLACEID|");
+VAR('EXCEPT_FIELDS_KRD_MAIN', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_KRD_COMM', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_KRD_COMM_PAPERS', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_KRD_CONT', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_KRD_DCD', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_KRD_PAPERS', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_KRD_TRANSP', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_REL_COMM', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_RELEASE', Memo, "|PLACEID|ID|");
+VAR('EXCEPT_FIELDS_RELTRANS', Memo, "|PLACEID|ID|");
+
+VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'proc.ini');
+VAR ('sIniSection', String, 'doxmlimp.prd');
+
+// == Диалоговое окно =======================================================================================
+FORMCREATE(frmDialog, PROGRAMPATH() + '\FORMS\doxmlimp.cfm');
+
+VAR ('sXmlFilename', String, INIFILE (sIniSection, 'FileName', '', sIniFile));
+
+FORMSETPROPERTY(frmDialog, 'edFileName.Text', sXmlFileName);
+
+IF(FORMSHOWMODAL(frmDialog) = 2, RAISEEXCEPTION(''));
+
+sXmlFilename := FORMGETPROPERTY(frmDialog, 'edFileName.Text');
+
+IF(FILEEXISTS(sXmlFileName) = 0, RAISEEXCEPTION('Файл ' + sXmlFileName + ' не найден'));
+
+WRITEINIFILE (sIniSection, 'FileName', sXmlFileName, sIniFile);
+
+VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+XMLDOCUMENTLOAD(XmlDoc, sXmlFileName);
+VAR ('XmlDocRoot', Integer, XMLDOCUMENTROOT(XmlDoc));
+VAR ('XmlNodeDOCS', Integer, XMLNodeFind(XmlDocRoot, 'DOCS'));
+
+SHOWINFORMATION ('Загрузка из XML...');
+
+IF(XmlNodeDOCS, Block(
+  VAR ('iDocsCount', Integer, XMLNodeChildCount(XmlNodeDOCS));
+  
+  IF (iDocsCount > 0, Block(
+    VAR ('iDocIndex', Integer, 0);
+    VAR ('XmlNodeDOC', Integer, 0);
+    
+    WHILE (iDocIndex < iDocsCount, Block(
+      XmlNodeDOC := XmlNodeChild(XmlNodeDOCS, iDocIndex);
+    
+      { *** Обработка склада *** }
+      VAR ('iPlaceId', Integer, 0);
+      VAR ('iResponse', Integer, 1);
+      
+      { ==================== Ветка инфы о складе ==============================}
+      VAR ('XmlNodeSTORES', Integer, XmlNodeFind (XmlNodeDOC, 'STORES'));
+      
+      { Если в xml-файле заполнена информация о складе - ищем склад в базе }
+      IF((XmlNodeSTORES <> 0) * (XmlNodeFind(XmlNodeSTORES, 'LICENCENO') <> 0) *
+                                (XmlNodeFind(XmlNodeSTORES, 'LICENCEDATE') <> 0) *
+                                (XmlNodeFind(XmlNodeSTORES, 'CUSTOMS_CODE') <> 0) *
+                                (XmlNodeFind(XmlNodeSTORES, 'NAME') <> 0), Block(
+        VAR ('sStoreLicenceNo', String, XmlNodeValue(XmlNodeChild(XmlNodeSTORES, 'LICENCENO')));
+        VAR ('sStoreLicenceDate', String, XmlNodeValue(XmlNodeChild(XmlNodeSTORES, 'LICENCEDATE')));
+        VAR ('sCustomCode', String, XmlNodeValue(XmlNodeChild(XmlNodeSTORES, 'CUSTOMS_CODE')));
+
+        iPlaceId := FindStore(sStoreLicenceNo, sStoreLicenceDate, sCustomCode);
+        
+        IF(iPlaceId = 0, Block(
+          OPENQUERY ('STORES2', 'STS_DB', 'SELECT MAX(PLACEID) AS MAXPLACEID FROM STORES');
+
+          APPENDRECORD ('STORES_2');
+          SETFIELDVALUE ('STORES_2', 'PLACEID', STORES2.MAXPLACEID + 1);
+          iPlaceId := STORES_2.PLACEID;
+          POST ('STORES_2');
+          LoadStore(iPlaceId, XmlNodeSTORES);
+        ));
+      ), Block( { если информации о складе нет, грузим на эту площадку, если она одна }
+        IF(RECORDCOUNT('STORES_2') = 1, Block(
+          FIRST('STORES_2');
+          iPlaceId := STORES_2.PLACEID;
+        ), Block( { если площадок больше одной - предлагаем пользователю выбрать }
+          iResponse := SELECTVALUES('Складcкие площадки', 'STORES', [['STORE_NO', '№ склада', 10],
+                                                                     ['LICENCENO', '№ лицензии', 20],
+                                                                     ['NAME', 'Название', 40]],
+                                                                    [['PLACEID', 'iPlaceId']], , 'STS_DB');
+        ));
+      ));
+
+      { ==================== Ветка документа ДО ==============================}
+      VAR ('XmlNodeKRDMAIN', Integer, XmlNodeFind(XmlNodeDOC, 'KRD_MAIN'));
+      
+      IF((XmlNodeKRDMAIN <> 0) * (iResponse <> 0), Block(
+        VAR ('iDocKMROWCount', Integer, XMLNodeChildCount(XmlNodeKRDMAIN));
+        
+        IF(iDocKMROWCount > 0, Block(
+          VAR ('iRowIndex', Integer, 0);
+          VAR ('XmlNodeDOCROW', Integer, 0);
+
+          WHILE (iRowIndex < iDocKMROWCount, Block(
+            XmlNodeDOCROW := XmlNodeChild(XmlNodeKRDMAIN, iRowIndex);
+
+            VAR ('iId', Integer, 0);
+            
+            iId := FindDO(iPlaceId, XmlNodeDOCROW);
+
+            IF(iId = 0, Block(
+              OPENQUERY ('KRDMAIN2', 'STS_DB', 'SELECT MAX(ID) AS MAXID FROM KRD_MAIN');
+
+              APPENDRECORD ('KRD_MAIN_2');
+              SETFIELDVALUE ('KRD_MAIN_2', 'PLACEID', iPlaceId);
+              SETFIELDVALUE ('KRD_MAIN_2', 'ID', KRDMAIN2.MAXID + 1);
+              iId := KRD_MAIN_2.ID;
+              POST ('KRD_MAIN_2');
+            ), Block(
+              FINDKEY('KRD_MAIN_2', [iPlaceid, iId]);
+              IF(KRD_MAIN_2.MC_STATUS_BD = '3',
+                IF(YESNO ('Документ № ' + KRD_MAIN_2.NBD + ' (партия № ' + TRIM(KRD_MAIN_2.PART_NO) + ') зарегистрирован. Перезаписать ?') = 0, Block(
+                  HIDEINFORMATION ();
+                  RAISEEXCEPTION('Выполнение отменено');
+                ));
+              );
+            ));
+
+            LoadKMRow(iPlaceId, iId, XmlNodeDOCROW);
+            
+            { ==================== Ветка товаров ==============================}
+            LoadTable(iPlaceId, iId, 'KRD_COMM', XmlNodeDOCROW);
+            
+            { ==================== Ветка документов ==============================}
+            LoadTable(iPlaceId, iId, 'KRD_PAPERS', XmlNodeDOCROW);
+
+            { ==================== Ветка ТС ==============================}
+            LoadTable(iPlaceId, iId, 'KRD_TRANSP', XmlNodeDOCROW);
+
+            { ==================== ветка Контейнеров ==============================}
+            LoadTable(iPlaceId, iId, 'KRD_CONT', XmlNodeDOCROW);
+            
+            { ==================== ветка тамож. документов ==============================}
+            LoadTable(iPlaceId, iId, 'KRD_DCD', XmlNodeDOCROW);
+            
+            { ==================== ветка таблицы связей ==============================}
+            LoadTable(iPlaceId, iId, 'KRD_COMM_PAPERS', XmlNodeDOCROW);
+
+            iRowIndex := iRowIndex + 1;
+          ));
+        ));
+      ));
+
+      { ==== Конец обработки документа ==== }
+      
+      iDocIndex := iDocIndex + 1;
+    ));
+  ), Block(
+    RaiseException('Ошибка загрузки - в файле ' + sXmlFileName + ' список документов ДО пуст');
+    HIDEINFORMATION ();
+  ));
+));
+
+HIDEINFORMATION ();
+
+GLOBALREFRESH ();

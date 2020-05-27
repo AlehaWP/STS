@@ -1,0 +1,470 @@
+// *****************************************************************************
+// Название: Создание актов выдачи
+// Описание: Создание актов выдачи на основе dbf фалов (ГТД) и спользоваем Excel файла. СебВосток
+// Кнопка вызова: 0
+// Подпись кнопки: созд.акт.выд.
+// *****************************************************************************
+//
+
+FUNC ('CreateActOut',
+     Block(
+          Param('iPlaceId', Integer, 0);
+          Param('iId', Integer, 1);
+          Param('iG32', Integer, 2);
+          Param('sWriteLog', String, 3);
+          Param('fG311', Float, 4);
+          Param('fG315A', Float, 5);
+          Param('fG35', Float, 6);
+          Param('fG38', Float, 7);
+          Param('fG42', Float, 8);
+     ),
+     Block(
+           var ('iTekActOutId', Integer, 0);// номер акта выдачи
+           var('vCodeTransp',string, '');
+           var('vNameTransp',string, '');
+            LOCATE('KRD_TRANSP_2', ['PLACEID;ID'], [iPlaceId, iId]);
+            LOCATE('KRD_CONT_2', ['PLACEID;ID'], [iPlaceId, iId]);
+            LOCATE('IN_MAIN_2', ['PLACEID;ID'], [iPlaceId, iId]);
+            LOCATE('KRD_COMM_2', ['PLACEID;ID;G32'], [iPlaceId, iId, iG32]);
+            // проверяем, есть ли уже созданный акт выдачи при работе скрипта (ищем по PlaceId, Id, дате акта выдачи. дату присваем при начале работы скрипта )
+
+            if ( LOCATE('OUT_MAIN_2', ['PLACEID;ID;G542'], [iPlaceId, iId, dAktOutDate])=0,
+            // если нет, то добавляем новый
+               Block(
+                     OPENQUERY ('Transp', 'Select VidTrans, NTrans from ' + CHAR (34) + sPathDBF + '\DBRTrans.DBF'+ CHAR (34) +
+                       ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                       ' AND ( G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                       ' AND ( G073=' + CHAR(39) + SG073  + CHAR(39) + ')'
+                       ,  'STANDARD_2' );
+                     //showmessage(Transp.VidTrans);
+                     First('Transp');
+                     vCodeTransp := Transp.VidTrans ;
+                     While(EOF ('Transp')=0,
+                           Block(
+                             if(vNameTransp = '', vNameTransp := Transp.NTrans, vNameTransp := vNameTransp + ', ' +Transp.NTrans);
+                             Next('Transp');
+                           )
+                     );
+                     
+
+                     iTekActOutId := GENFIELDVALUE('OUT_MAIN_2.MAIN_ACTOUTID', 'PlaceId;Id', [iPlaceId,iId]);
+                      EDITRECORD ( 'OUT_MAIN_2' );
+                      APPENDRECORD ( 'OUT_MAIN_2' );
+                      SETFIELDVALUE ( 'OUT_MAIN_2' , 'PLACEID', iPlaceId ,
+                                                     'ID', iId ,
+                                                     'ACTOUTID', iTekActOutId,
+                                                     //'NDA', SOLVE (INIFILE ('Docs', 'MakeAO_No', ''))
+                                                     'MAIN_ID' , iId ,
+                                                     'MAIN_ACTOUTID' , iTekActOutId ,
+                                                     'MAIN_COUNTER' , 1 ,
+                                                     'NDA',  IN_MAIN_2.NRA + '/' + iTekActOutId,
+                                                     'G081', KRD_MAIN_2.G081,
+                                                     'G082', IF (sG011 = 'ЭК', 'ООО Груп Себ Украина', IF (sG011 = 'ИМ', 'ЗАО "ГРУППА СЕБ-ВОСТОК" ФИЛИАЛ', KRD_MAIN_2.G082)),
+                                                     'G083', IF (sG011 = 'ЭК', '02140, Киев, ул. Александра Мишуги, 7-А', IF (sG011 = 'ИМ', 'ЛЕН. ОБЛ., ВСЕВОЛОЖСКИЙ Р-Н, Г.П.ИМ. СВЕРДЛОВА, Д. НОВОСАРАТОВКА, ПРОМЗОНА "УТКИНА ЗАВОДЬ", УЧ.1', KRD_MAIN_2.G082)),
+                                                     'G084A', KRD_MAIN_2.G084A,
+                                                     'G084B', KRD_MAIN_2.G084B,
+                                                     'G084C', KRD_MAIN_2.G084C,
+                                                     'G08_C', KRD_MAIN_2.G17A,
+                                                     'G080', KRD_MAIN_2.G080,
+                                                     'G080P', KRD_MAIN_2.G080P,
+                                                     'MOTOR_DESCR', vNameTransp,
+                                                     'MOTOR_TYPE', vCodeTransp,
+                                                     'G541', 'Огнинский Андрей Леонидович',
+                                                     'G541P','менеджер по упр. запасами',
+                                                     'ACCOUNTNO','1',
+                                                     //'MC_STATUS', '0',
+                                                     'G542', dAktOutDate
+                      );
+                      POSTRECORD ( 'OUT_MAIN_2' );
+                      AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------' );
+                      AppendLogFile(sLogFile, 'Создан Документ Выдачи № '+ OUT_MAIN_2.NDA +' товар № '+ iG32 );
+                      AppendLogFile(sLogFile, 'PLACEID=' + iPlaceId +' ID=' + iId + ' ACTOUTID=' + iTekActOutId + ' G32=' + iG32);
+
+
+                      EDITRECORD ( 'OUT_COMM_2' );
+                      APPENDRECORD ( 'OUT_COMM_2' );
+                      SETFIELDVALUE ( 'OUT_COMM_2' , 'PLACEID', iPlaceId ,
+                                                     'ID', iId ,
+                                                     'ACTOUTID', iTekActOutId,
+                                                     'G32' , iG32,
+                                                     'DOC_TYPE', 'ДТ',
+                                                     'ND_GTD', sND,
+                                                     'OUT_G33' , KRD_COMM_2.G33,
+                                                     'OUT_G311', fG311,
+                                                     'OUT_G35', fG35,
+                                                     'OUT_G38', fG38,
+                                                     'OUT_G42', fG42,
+                                                     'DOC_MODE', IF (sG011 = 'ЭК', 'ЭК3', 'ИМ4'),
+          //                                           'OUT_G46', FloatRound(fost_G46*fkoff, 2),
+                                                     'OUT_G315A', fG315A
+                      );
+                      POSTRECORD ( 'OUT_COMM_2' );
+                      REFRESH ('OUT_COMM_2');
+                      AppendLogFile(sLogFile, 'Выдано:  Мест =' + fG311 +  ' Кол-во =' + fG315A + ' Вес брутто =' + fG35 + ' Вес нетто =' + fG38 + ' Стоимость =' + fG42 ),
+                      AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------' );
+               ),
+            // если да, то добавляем в него товары
+               Block(
+                      AppendLogFile(sLogFile, 'Добавдяем товар в Документ Выдачи № '+ OUT_MAIN_2.NDA +' товар № '+ iG32 );
+                      AppendLogFile(sLogFile, 'PLACEID=' + iPlaceId +' ID=' + iId + ' ACTOUTID=' + OUT_MAIN_2.MAIN_ACTOUTID + ' G32=' + iG32);
+                      EDITRECORD ( 'OUT_COMM_2' );
+                      APPENDRECORD ( 'OUT_COMM_2' );
+                      SETFIELDVALUE ( 'OUT_COMM_2' , 'PLACEID', iPlaceId ,
+                                                     'ID', iId ,
+                                                     'ACTOUTID', OUT_MAIN_2.MAIN_ACTOUTID,
+                                                     'G32' , iG32,
+                                                     'DOC_TYPE', 'ДТ',
+                                                     'ND_GTD', sND,
+                                                     'OUT_G33' , KRD_COMM_2.G33,
+                                                     'OUT_G311', fG311,
+                                                     'OUT_G35', fG35,
+                                                     'OUT_G38', fG38,
+                                                     'OUT_G42', fG42,
+                                                     'DOC_MODE', IF (sG011 = 'ЭК', 'ЭК3', 'ИМ4'),
+          //                                           'OUT_G46', FloatRound(fost_G46*fkoff, 2),
+                                                     'OUT_G315A', fG315A
+                      );
+                      POSTRECORD ( 'OUT_COMM_2' );
+                      REFRESH ('OUT_COMM_2');
+                      AppendLogFile(sLogFile, 'Выдано:  Мест =' + fG311 +  ' Кол-во =' + fG315A + ' Вес брутто =' + fG35 + ' Вес нетто =' + fG38 + ' Стоимость =' + fG42 ),
+                      AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------' );
+               )
+            )//if locate out_main
+
+
+
+     )//block
+); // end func
+
+
+
+
+// функция проверяет остатки и возвращает 1 - если выдавать можно (остатки не нулевые) и 0 - если выдавать нельзя (остатки ноль или отрицательные)
+// остатки проверяются по весу буртто G35
+// пример вызова функции: CheckOut(PlaceId, Id, G32, G35,'1') 5-й параметр параметр записи в лог 1- писать, 0- нет.
+FUNC ('CheckOut',
+     Block(
+          Param('iPlaceId', Integer, 0);
+          Param('iId', Integer, 1);
+          Param('iG32', Integer, 2);
+          Param('iG315A', Integer, 3);
+          Param('sWriteLog', String, 4);
+     ),
+     Block(
+     // принято
+     Var( 'fInG311', Float, 0);
+     Var( 'fInG315A', Float, 0);
+     Var( 'fInG35', Float, 0);
+     Var( 'fInG38', Float, 0);
+     Var( 'fInG42', Float, 0);
+     //уже выдано
+     Var( 'fOutG311', Float, 0);
+     Var( 'fOutG315A', Float, 0);
+     Var( 'fOutG35', Float, 0);
+     Var( 'fOutG38', Float, 0);
+     Var( 'fOutG42', Float, 0);
+     // остаток на момент выдачи
+     Var( 'fRestG311', Float, 0);
+     Var( 'fRestG315A', Float, 0);
+     Var( 'fRestG35', Float, 0);
+     Var( 'fRestG38', Float, 0);
+     Var( 'fRestG42', Float, 0);
+     
+     Var( 'iResult', Integer, 0);
+ //    if (sWriteLog = '', sWriteLog := '0', sWriteLog :='1' );
+           fInG311 := 0; fInG315A := 0; fInG35 := 0; fInG38 := 0; fInG42 := 0;
+           fOutG311 := 0; fOutG315A := 0; fOutG35 := 0; fOutG38 := 0; fOutG42 := 0;
+           fRestG311 := 0; fRestG315A := 0; fRestG35 := 0; fRestG38 := 0; fRestG42 := 0;
+
+           OPENQUERY ('Q_SUM_IN', 'STS_DB' ,'SELECT G315A AS SG315A, G311 AS SG311, G42 AS SG42, G35 AS SG35, G38 AS SG38  '+
+                                  ' FROM IN_COMM WHERE PLACEID=' + iPlaceId + ' AND ID=' + iId + 'AND G32=' + iG32);
+           fInG311 := Q_SUM_IN.SG311;
+           fInG315A := Q_SUM_IN.SG315A;
+           fInG35 := Q_SUM_IN.SG35;
+           fInG38 := Q_SUM_IN.SG38;
+           fInG42 := Q_SUM_IN.SG42;
+           if (sWriteLog = '1',
+              AppendLogFile(sLogFile, 'Принято: Мест =' + fInG311 + ' Кол-во =' + fInG315A + ' Вес брутто =' + fInG35 + ' Вес нетто =' + fInG38 +  ' Стоимость =' + fInG42 ),
+           );
+
+           CLOSEDATASET ( 'Q_SUM_IN' );
+           OPENQUERY ('Q_SUM_OUT', 'STS_DB' ,'SELECT SUM(OUT_G315A) AS SOUT_G315A, SUM(OUT_G311) AS SOUT_G311, SUM(OUT_G42) AS SOUT_G42, SUM(OUT_G35) AS SOUT_G35, SUM(OUT_G38) AS SOUT_G38  '+
+                                  ' FROM OUT_COMM WHERE PLACEID=' + iPlaceId + ' AND ID=' + iId + ' AND G32=' + iG32);
+           fOutG311 := Q_SUM_OUT.SOUT_G311;
+           fOutG315A := Q_SUM_OUT.SOUT_G315A;
+           fOutG35 := Q_SUM_OUT.SOUT_G35;
+           fOutG38 := Q_SUM_OUT.SOUT_G38;
+           fOutG42 := Q_SUM_OUT.SOUT_G42;
+           if (sWriteLog = '1',
+              AppendLogFile(sLogFile, 'Ранее выдано:  Мест =' + fOutG311 +  ' Кол-во =' + fOutG315A + ' Вес брутто =' + fOutG35 + ' Вес нетто =' + fOutG38 + ' Стоимость =' + fOutG42 ),
+           );
+           // остатки
+           fRestG311 := fInG311 - fOutG311;
+           fRestG315A := fInG315A - fOutG315A;
+           fRestG35 := fInG35 - fOutG35;
+           fRestG38 := fInG38 - fOutG38;
+           fRestG42 := fInG42 - fOutG42;
+           CLOSEDATASET ( 'Q_SUM_OUT' );
+           // результат
+           if ( ((fRestG315A<=0) | ((fRestG315A-iG315A)<0)),
+              Block(
+                    if (sWriteLog = '1',
+                       Block(
+                             if (((fRestG315A-iG315A)<0), AppendLogFile(sLogFile, 'Выдача ЗАПРЕЩЕНА ! при выдаче кол-во штук уйдет в минус (fRestG315A-iG315A)=' + (fRestG315A-iG315A)), );
+                             if (((fRestG315A-iG315A)=0), AppendLogFile(sLogFile, 'Товар выдан ПОЛНОСТЬЮ! Выдача ЗАПРЕЩЕНА !  Остаток штук=' + fRestG315A),)
+                       ), //block
+                    );// if sWriteLog = '1'
+                    iResult := 0;
+                    iResult;
+              ), //block
+              Block(
+                    if (sWriteLog = '1',
+                       AppendLogFile(sLogFile, 'МОЖНО выдавать ! не больше: Мест=' + fRestG311 + ' Кол-во=' + fRestG315A + ' Вес брутто=' + fRestG35 + ' Вес нетто=' + fRestG38 + ' Стоимость=' + fRestG42),
+                     );
+                    iResult := 1;
+                    iResult;
+              )//block
+           );// if
+
+     )//block
+); // end FUNC CheckOut
+
+FUNC ('SelectDTOut',,
+Block(
+Var( 'SG071' , String, ''); // 
+Var( 'SG072' , String, ''); //
+Var( 'SG073' , String, '');
+Var( 'SG011' , String, '');  //
+            OPENQUERY ('DBRTOVG_3', 'SELECT G071, G072, G073, G011 FROM '+ CHAR (34)+sPathDBF+'\DBRHEAD.DBF'+ CHAR (34),  'STANDARD_2' );
+            SELECTVALUES ('Выбор выпускающей ТД ', 'DBRTOVG_3', [['G071', 'Код таможни', 20],
+                                                          ['G072', 'Дата регистрации', 20],
+                                                          ['G073', 'Порядковый номер', 20],
+                                                          ['ND', 'ND', 30]],
+                                                          [['G071', 'SG071'],
+                                                           ['G072', 'SG072'],
+                                                           ['G073', 'SG073'],
+                                                           ['G011', 'SG011']
+                                                            ], '', 'STANDARD_2');
+                                                           
+            sND := SG071 + '/'+FORMATDATETIME ('ddmmyy', SG072)+'/'+SG073;
+            CLOSEDATASET ('DBRTOVG_3');
+)// тело функции
+); // конец функции SelectDTOut
+//===================================================== ОСНОВАНЯ ЧАСТЬ ==============================================================================================
+Var( 'iTekPlaceId' , Integer, 0);
+Var( 'iTekId' ,      Integer, 0);
+Var( 'iTekActOutId', Integer, 0);
+Var( 'sSapCode', string, '');
+Var( 'iResultCheckOut', Integer, 0); // результат проверки возможности создания акта выдачи 1-можно, 0-нет
+Var( 'iCurrTovPredd', Integer, 0); //текущий товар в DBRPREDD.DBF
+Var( 'sPathDBF' , String, '');
+Var( 'fG31_7' , Float, 0);
+Var( 'fkoff' , Float, 0);
+Var( 'fkolvoExcel' , Float, 0);
+Var( 'sND' , String, ''); // номер выпускающей ДТ
+Var( 'sPreddND' , String, ''); // номер предшествубщей ДТ
+Var( 'sFileName' , String, '');
+Var( 'sFileNameDBF' , String, '');
+Var( 'dAktOutDate' , DateTime );
+Var( 'sListName' , String, 'файл для СТМ');
+Var( 'dateForm' , DateTime, '');
+VAR ('sLogFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())  + 'FindCreatOut.log');  { имя файла журнала }
+Var( 'sPrich' , String, '');
+var('iKolvo', Float, 0);
+//dAktOutDate := Date()+Time(1); // дата и веремя создания АКТА Выдачи
+// показ формы
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\xls_prop.cfm');
+FORMSETPROPERTY(frmDialog, 'rtFilenameEdit1.Text', INIFILE ('FindCreatOut', 'sFileName', ''));
+FORMSETPROPERTY(frmDialog, 'rtDirectoryEdit1.Text', INIFILE ('FindCreatOut', 'sPathDBF', ''));
+FORMSETPROPERTY(frmDialog, 'rtEdit1.Text', INIFILE ('FindCreatOut', 'sListName', ''));
+FORMSETPROPERTY(frmDialog, 'rtDateEdit1.Date', Convert(Date(), Float));
+
+if( FORMSHOWMODAL(frmDialog)=2, RAISEEXCEPTION('Выполнение отменено') );
+
+CreateLogFile(sLogFile, '');                                    { создание журнала }
+AppendLogFile(sLogFile, 'Начало обработки документов: '+FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+AppendLogFile(sLogFile, '---------------------------------------------------------------------------------------------------------------------');
+
+// сохраняем пути в переменные
+sFileName := FORMGETPROPERTY(frmDialog, 'rtFilenameEdit1.Text');
+sPathDBF := FORMGETPROPERTY(frmDialog, 'rtDirectoryEdit1.Text');
+sListName := '`.`'+ FORMGETPROPERTY(frmDialog, 'rtEdit1.Text') +'$';
+dateForm := Convert(Convert(FORMGETPROPERTY(frmDialog, 'rtDateEdit1.Date'), Float), DateTime);
+dAktOutDate :=  if(dateForm <> '', dateForm, Date()) + FormatDatetime('HH:MM:SS',Time(1));
+//showmessage(dAktOutDate);
+// сохраняем пути в INI файл
+WRITEINIFILE ('FindCreatOut', 'sFileName', sFileName);
+WRITEINIFILE ('FindCreatOut', 'sPathDBF', sPathDBF);
+WRITEINIFILE ('FindCreatOut', 'sListName', FORMGETPROPERTY(frmDialog, 'rtEdit1.Text'));
+iResultCheckOut := 0;
+IF (sFileName,
+     Block(
+            // База ГТД DBF
+            OPENDATABASE ('STANDARD_2', 'STANDARD', 'PATH=C:\');
+            // Excel файл
+            //OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls, *.xlsx, *.xlsm, *.xlsb)', 'ODBC DSN=EXCEL_DB1');
+             OPENDATABASE ('EXCEL_DB', 'Microsoft Excel Driver (*.xls)', 'ODBC DSN=EXCEL_DB');
+             // выбираем какую ДТ выпускаем. из файлы DBRHEAD
+             SelectDTOut();
+             
+             // поиск ДТ и ее предшествующий документ(ов)(ДТ) из файла DBRPREDD и группировка по товарам
+             OPENQUERY ('DBRPREDD_2', 'SELECT G32 FROM ' + CHAR (34) + sPathDBF + '\DBRPREDD.DBF'+ CHAR (34) +
+                       ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                       ' AND ( G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                       ' AND ( G073=' + CHAR(39) + SG073  + CHAR(39) + ')'+
+                       ' GROUP BY G32'
+                       ,  'STANDARD_2' );
+             First( 'DBRPREDD_2' );
+
+             AppendLogFile(sLogFile, '*********************************************************************************************************************');
+             AppendLogFile(sLogFile, 'Номер выбранной(выпускающей) ДТ = '+ sND );
+             AppendLogFile(sLogFile, '*********************************************************************************************************************');
+             // пробегаем по всем товарам у которых есть предшествующие документы
+             while ( EOF( 'DBRPREDD_2' ) = 0,
+                   Block(
+                         // отбираем для текущего товара в DBRPREDD его предшествующие документы
+                         OPENQUERY ('DBRPREDD_3', 'SELECT * FROM ' + CHAR (34) + sPathDBF + '\DBRPREDD.DBF'+ CHAR (34) +
+                                   ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                                   ' AND ( G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                                   ' AND ( G073=' + CHAR(39) + SG073  + CHAR(39) + ')'+
+                                   ' AND ( G32=' + CHAR(39) +  DBRPREDD_2.G32 + CHAR(39) + ')'
+                                   ,  'STANDARD_2' );
+                         AppendLogFile(sLogFile, 'Товар №=' + DBRPREDD_2.G32);
+                         First('DBRPREDD_3');
+                         // если предшествующий документ у товара ОДИН
+                         if ( RECORDCOUNT( 'DBRPREDD_3' ) = 1,
+                            Block(
+                                   AppendLogFile(sLogFile, ' Предшествующая ДТ = '+DBRPREDD_3.G40_1 + '/'+FORMATDATETIME ('ddmmyy', DBRPREDD_3.G40_2)+'/'+DBRPREDD_3.G40_3+
+                                                           ' № тов. в пред. док-те = ' + DBRPREDD_3.G40_4);
+
+                                   sPreddND := DBRPREDD_3.G40_1 + '/'+FORMATDATETIME ('ddmmyy', DBRPREDD_3.G40_2)+'/'+DBRPREDD_3.G40_3;
+                                   iCurrTovPredd := DBRPREDD_3.G40_4;
+                                   // ищем ДО1 в базе складе у которой в поле GTD_NO указан номер предшествующей ДТ (sPreddND)
+                                   if( LOCATE('KRD_MAIN_2', 'GTD_NO' , sPreddND),
+                                       Block(
+                                             AppendLogFile(sLogFile, 'Найдена ДО1 №=' + KRD_MAIN_2.NBD + ' от ' + KRD_MAIN_2.BD_DATE );
+                                             OPENQUERY ('DBRTOVAR_3', 'SELECT * FROM ' + CHAR (34) + sPathDBF + '\DBRTOVAR.DBF'+ CHAR (34) +
+                                                       ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                                                       ' AND ( G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                                                       ' AND ( G073=' + CHAR(39) + SG073  + CHAR(39) + ')'+
+                                                       ' AND ( G32=' + CHAR(39) +  DBRPREDD_2.G32 + CHAR(39) + ')'
+                                                       ,  'STANDARD_2' );
+                                             iKolvo := '';
+                                             OPENQUERY ('DBRTOVG_2', 'SELECT G31_15, Kolvo FROM ' + CHAR (34) + sPathDBF + '\DBRTOVG.DBF'+ CHAR (34) +
+                                                                     ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                                                                     ' AND (G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                                                                     ' AND (G073=' + CHAR(39) + SG073  + CHAR(39) + ')'+
+                                                                     ' AND (G32=' + CHAR(39) +  DBRPREDD_2.G32 + CHAR(39) + ')'
+                                                                     ,  'STANDARD_2' );
+                                             sSapCode := DBRTOVG_2.G31_15;
+                                             first('DBRTOVG_2');
+                                             While(Eof('DBRTOVG_2') = 0,
+                                                    Block(
+                                                      iKolvo := iKolvo + DBRTOVG_2.Kolvo;
+                                                      next('DBRTOVG_2');
+                                                    )
+                                             );//While(Eof('DBRTOVG_2') = 0
+                                             CLOSEDATASET ('DBRTOVG_2');
+                                             iTekPlaceId := KRD_MAIN_2.PLACEID;
+                                             iTekId := KRD_MAIN_2.ID;
+                                             iResultCheckOut := CheckOut(iTekPlaceId, iTekId, DBRPREDD_3.G40_4, DBRTOVAR_3.G31_7 ,'1' );
+                                             AppendLogFile(sLogFile, 'iResult=' + iResultCheckOut);
+                                             // можно ли создавать выдачу
+                                             if ( iResultCheckOut =1,
+                                                Block(
+                                                       CreateActOut (iTekPlaceId, iTekId, DBRPREDD_3.G40_4, '1', DBRTOVAR_3.G31_2, iKolvo, DBRTOVAR_3.G35, DBRTOVAR_3.G38, DBRTOVAR_3.G42);
+                                                ), //block
+                                                Block(
+
+                                                ) //block
+                                             ); //if iResultCheckOut =1,
+                                             CLOSEDATASET('DBRTOVAR_3');
+                                       ),
+                                       AppendLogFile(sLogFile, 'ДО1 не найдена!' )
+                                   ); //if
+
+                            ),  Block(
+                                  OPENQUERY ('DBRTOVG_2', 'SELECT G31_15, Kolvo FROM ' + CHAR (34) + sPathDBF + '\DBRTOVG.DBF'+ CHAR (34) +
+                                                          ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                                                          ' AND (G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                                                          ' AND (G073=' + CHAR(39) + SG073  + CHAR(39) + ')'+
+                                                          ' AND (G32=' + CHAR(39) +  DBRPREDD_2.G32 + CHAR(39) + ')'
+                                                          ,  'STANDARD_2' );
+                                  sSapCode := '';
+                                  iKolvo := '';
+                                  first('DBRTOVG_2');
+                                  While(Eof('DBRTOVG_2') = 0,
+                                        Block(
+                                          if(sSapCode = '', sSapCode := DBRTOVG_2.G31_15);
+                                          iKolvo := iKolvo + DBRTOVG_2.Kolvo;
+                                          next('DBRTOVG_2');
+                                        )
+                                  );// While(Eof('DBRTOVG_2') = 0
+                                  CLOSEDATASET ('DBRTOVG_2');
+                                   // пробегаем по всем предшествующим ДТ текущего товара // если предшествующих документов у товара МНОГО
+                                   while( EOF( 'DBRPREDD_3' ) = 0,
+                                          Block(
+                                                 AppendLogFile(sLogFile, ' Предшествующая ДТ = '+DBRPREDD_3.G40_1 + '/'+FORMATDATETIME ('ddmmyy', DBRPREDD_3.G40_2)+'/'+DBRPREDD_3.G40_3+
+                                                                         ' № тов. в пред. док-те = ' + DBRPREDD_3.G40_4);
+
+
+                                                 sPreddND := DBRPREDD_3.G40_1 + '/'+FORMATDATETIME ('ddmmyy', DBRPREDD_3.G40_2)+'/'+DBRPREDD_3.G40_3;
+                                                 
+                                                 OPENQUERY ( 'XLS_QUERY' , ' select QntPC from ' + CHAR (34)+ sFileName+sListName + CHAR (34) +
+                                                                           ' where GTD = ' + CHAR (39) + sPreddND + CHAR (39) +
+                                                                           ' and SAPcode = ' + CHAR (39) + REMOVECHAR (sSapCode, '"') + CHAR (39) //  + sND
+                                                                           , 'EXCEL_DB' );
+                                                 
+                                                 iCurrTovPredd := DBRPREDD_3.G40_4;
+                                                 fkoff:='';
+                                                 fkoff := XLS_QUERY.QntPC/iKolvo;
+                                                 
+                                                 // ищем ДО1 в базе складе у которой в поле GTD_NO указан номер предшествующей ДТ (sPreddND)
+                                                 if( LOCATE('KRD_MAIN_2', 'GTD_NO' , sPreddND),
+                                                     Block(
+                                                           AppendLogFile(sLogFile, 'Найдена ДО1 №=' + KRD_MAIN_2.NBD + ' от ' + KRD_MAIN_2.BD_DATE );
+                                                           OPENQUERY ('DBRTOVAR_3', 'SELECT * FROM ' + CHAR (34) + sPathDBF + '\DBRTOVAR.DBF'+ CHAR (34) +
+                                                           ' WHERE (G071=' + CHAR(39) + SG071 + CHAR(39) + ')' +
+                                                           ' AND ( G072=' + CHAR(39) + FORMATDATETIME ('dd.mm.yyyy', SG072)  + CHAR(39) + ')'+
+                                                           ' AND ( G073=' + CHAR(39) + SG073  + CHAR(39) + ')'+
+                                                           ' AND ( G32=' + CHAR(39) +  DBRPREDD_2.G32 + CHAR(39) + ')'
+                                                           ,  'STANDARD_2' );
+                                                           iTekPlaceId := KRD_MAIN_2.PLACEID;
+                                                           iTekId := KRD_MAIN_2.ID;
+                                                           
+                                                           iResultCheckOut := CheckOut(iTekPlaceId, iTekId, DBRPREDD_3.G40_4, DBRTOVAR_3.G31_7 * fkoff ,'1' );
+                                                           AppendLogFile(sLogFile, 'iResult=' + iResultCheckOut);
+                                                          // можно ли создавать выдачу
+                                                           if ( iResultCheckOut =1,
+                                                              Block(
+                                                                 CreateActOut (iTekPlaceId, iTekId, DBRPREDD_3.G40_4, '1', DBRTOVAR_3.G31_2 * fkoff, iKolvo * fkoff, DBRTOVAR_3.G35 * fkoff, DBRTOVAR_3.G38 * fkoff, DBRTOVAR_3.G42 * fkoff);
+                                                              ), //block
+                                                              Block(
+
+                                                              ) //block
+                                                            ); //if iResultCheckOut =1,
+                                                            CLOSEDATASET ('DBRTOVAR_3');
+                                                     ),
+                                                     AppendLogFile(sLogFile, 'ДО1 не найдена!' )
+                                                 ); //if
+                                                CLOSEDATASET ('XLS_QUERY');
+                                                Next( 'DBRPREDD_3' );
+                                          )// block
+                                   );//while EOF( 'DBRPREDD_3' ) = 0,
+                               )//Block
+                         );// if RECORDCOUNT( 'DBRPREDD_3' )
+                         CLOSEDATASET( 'DBRPREDD_3' );
+                         AppendLogFile(sLogFile, '___________________________________________________________________________________________');
+
+                         Next( 'DBRPREDD_2' );
+                   )//block
+             );// while EOF( 'DBRPREDD_2' ) = 0,
+             CLOSEDATASET( 'DBRPREDD_2' );
+
+       ),
+);
+CLOSEDATABASE ( 'EXCEL_DB' );
+CLOSEDATABASE ('STANDARD_2');
+
+SHOWLOGFILE (sLogFile, '');
+

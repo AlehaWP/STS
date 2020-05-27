@@ -1,0 +1,11 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+BLOCK( EXECUTESCRIPT(PROGRAMPATH()+'ProcDocs\GetDocNextNumber.prd'); GenerateNum ('STS_DB','DO1',FormatDateTime('YYYY', DATE()),KRD_MAIN.PLACEID) )
+BLOCK( EXECUTESCRIPT(PROGRAMPATH()+'ProcDocs\GetDocNextNumber.prd'); GenerateNum ('STS_DB','DO1',FormatDateTime('YYYY', DATE()),KRD_MAIN.PLACEID) )

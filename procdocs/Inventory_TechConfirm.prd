@@ -1,0 +1,31 @@
+// *****************************************************************************
+// Название: Подтверждение доставки описи в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'InventoryTechConfirm'));
+    VAR ('vPlaceid', string);
+    VAR ('vId', string, '0');
+    VAR ('strStatus', String, '');
+    VAR ('DocId', String, '');
+    Var ('DoType', String, '');
+    Var ('DoNo', String, '');
+    Var ('DoDate', DateTime);
+    Var ('dRegDate', DateTime);
+
+IF (XmlDoc,
+  Block(
+    OPENQUERY('Stor', 'STS_DB', 'SELECT MAX(PLACEID) as PLACEID FROM STORES');
+    vPlaceID := convert(Stor.Placeid, string);
+    strStatus:='Опись обработана сервером АСТО';
+    DocId := XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'InventoryId'));
+    DoType := 'ОПИСЬ';
+    dRegDate:=DATE()+TIME(1);
+  )
+);
+
+
+

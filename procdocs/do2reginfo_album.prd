@@ -1,0 +1,16 @@
+// *****************************************************************************
+// Название: Информация о регистрации ДО-2
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: DORegInfo
+// *****************************************************************************
+//
+
+EXECUTESQL('STS_DB', ' UPDATE RELEASE SET REG_RELEASE_NO = ' + char(39) + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'regnumber')) + char(39) + ', ' +
+                     ' MC_STATUS="3" ' +
+                     ' WHERE PLACEID=' + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'WHId')) +
+                     ' AND MAIN_ID=' + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO1Id')) +
+                     ' AND COUNTER=' + XMLNODEVALUE (XMLNODEFIND (XMLNODECHILD (XmlRoot, 0), 'DO2Id')));
+                     
+GLOBALREFRESH ();
+

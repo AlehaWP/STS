@@ -1,0 +1,231 @@
+// *****************************************************************************
+// Название: ИМПОРТ Уведомление
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: NGA.imp
+// *****************************************************************************
+//
+var ('Report', Integer, GetCurrentReportNode());
+OPENTABLE ('KRD_PAPERS_2', 'STS_DB', 'KR_PAPER', 'PLACEID;ID');
+OPENTABLE ('KRD_MAIN_2', 'STS_DB', 'KRD_MAIN', 'PLACEID;ID');
+OPENTABLE ('STORES_2', 'STS_DB', 'STORES', 'PLACEID');
+OPENTABLE ('KRD_DCD_2', 'STS_DB', 'KRD_DCD', 'PLACEID;ID');
+OPENTABLE ('KRD_CONT_2', 'STS_DB', 'KRD_CONT', 'PLACEID;ID');
+OPENTABLE ('KRD_COMM_2', 'STS_DB', 'KRD_COMM', 'PLACEID;ID');
+OPENTABLE ('KRD_TRANSP_2', 'STS_DB', 'KR_TRANS', 'PLACEID;ID');
+
+func('ImportKrdMain', ,
+  Block (
+  Edit('KRD_MAIN_2');
+  SetFieldValue('KRD_MAIN_2',
+  'G542', StrToDate(Report.NotifDate, 'YYYY-MM-DD', '-') + Report.NotifTime,
+  'NU', IF(Trim(Report.GTDNumber.CustomsCode) <> '', JOINSTR ('/', Report.GTDNumber.CustomsCode, FORMATDATETIME('DDMMYY', StrToDate(Report.GTDNumber.RegistrationDate,'YYYY-MM-DD', '-')), Report.GTDNumber.GTDNumber), KRD_MAIN.NU)
+  );
+  Post('KRD_MAIN_2');
+  )
+),
+
+
+func('ImportData', ,
+  Block (
+  VAR ('iDeleteTrDoc', Integer, 0);
+  VAR ('iDeleteCusDoc', Integer, 0);
+  VAR ('iDeleteCont', Integer, 0);
+  VAR ('iDeleteGoods', Integer, 0);
+  VAR ('iDeleteTransp', Integer, 0);
+  VAR ('sTranspCode', String, 0);
+
+    var ('XmlArriveShipments', Integer, XMLNodeFind(Report, 'ArriveShipment'));
+    if (XmlArriveShipments,
+    block (
+    var ('iBillCount_2', Integer, XMLNodeChildCount(XmlArriveShipment));
+    if (iBillCount_2 > 0,
+      block (
+        var ('iBillIndex_2', Integer, 0);
+        var ('Bill_2', Integer);
+
+        while ((iBillIndex_2 < iBillCount_2),
+          block (
+            Bill_2 := XmlNodeChild(XmlArriveShipment, iBillIndex_2);
+            If(XMLNODENAME (Bill_2) = 'catWH_ru:ArriveTransportDoc', Block(
+            if(iDeleteTrDoc = 0, Block(
+            setfilter('KRD_PAPERS_2', 'Id = ' + KRD_PAPERS_2.id );
+            DELETERECORDS ('KRD_PAPERS_2');
+            iDeleteTrDoc:=1;
+            ));
+            Edit('KRD_PAPERS_2');
+            APPENDRECORD ('KRD_PAPERS_2');
+            SetFieldValue('KRD_PAPERS_2',
+            'PlaceID', KRD_MAIN_2.PLACEID,
+            'ID', KRD_MAIN_2.ID,
+            'COUNTER', iBillIndex_2 + 1,
+            'PAPERNO', Bill_2.PrDocumentNumber,
+            'PAPERNAME', Bill_2.PrDocumentName,
+            'PAPERDATE', Bill_2.PrDocumentDate,
+            'PAPERCODE', Bill_2.PresentedDocumentModeCode
+            );
+            POST('KRD_PAPERS_2');
+            ),
+
+            If(XMLNODENAME (Bill_2) = 'catWH_ru:ArriveCustomsDoc', Block(
+                           if(iDeleteCusDoc = 0, Block(
+                           setfilter('KRD_DCD_2', 'Id = ' + KRD_PAPERS_2.id );
+                           DELETERECORDS ('KRD_DCD_2');
+                           iDeleteCusDoc:=1;
+                           ));
+                           Edit('KRD_DCD_2');
+                           APPENDRECORD ('KRD_DCD_2');
+                           SetFieldValue('KRD_DCD_2',
+                           'PlaceID', KRD_MAIN_2.PLACEID,
+                           'ID', KRD_MAIN_2.ID,
+                           'COUNTER', iBillIndex_2 + 1,
+                           'PAPERNO', Bill_2.PrDocumentNumber,
+                           'PAPERNAME', Bill_2.PrDocumentName,
+                           'PAPERCLOSE', Bill_2.PrDocumentDate,
+                           'PAPERCODE', Bill_2.PresentedDocumentModeCode
+                           );
+                           POST('KRD_DCD_2');
+                           ), Block(
+
+                                    If(XMLNODENAME (Bill_2) = 'catWH_ru:ContainerInformation', Block(
+                                    if(iDeleteCont = 0, Block(
+                                    setfilter('KRD_CONT_2', 'Id = ' + KRD_PAPERS_2.id );
+                                    DELETERECORDS ('KRD_CONT_2');
+                                    iDeleteCont:=1;
+                                    ));
+                                    Edit('KRD_CONT_2');
+                                    APPENDRECORD ('KRD_CONT_2');
+                                    SetFieldValue('KRD_CONT_2',
+                                    'PlaceID', KRD_MAIN_2.PLACEID,
+                                    'ID', KRD_MAIN_2.ID,
+                                    'COUNTER', iBillIndex_2 + 1,
+                                    'CONTNO', Bill_2.ContainerNumber,
+                                    'G35', Bill_2.GrossWeightQuantity
+                                    );
+                                    POST('KRD_CONT_2');
+                                    ), Block(
+
+									                          If(XMLNODENAME (Bill_2) = 'catWH_ru:ArriveGoods', Block(
+									                          if(iDeleteGoods = 0, Block(
+                                            setfilter('KRD_COMM_2', 'Id = ' + KRD_PAPERS_2.id );
+                                            DELETERECORDS ('KRD_COMM_2');
+                                            iDeleteGoods:=1;
+                                            ));
+										                        Edit('KRD_COMM_2');
+										                        APPENDRECORD ('KRD_COMM_2');
+										                        SetFieldValue('KRD_COMM_2',
+										                        'PlaceID', KRD_MAIN_2.PLACEID,
+										                        'ID', KRD_MAIN_2.ID,
+										                        'COUNTER', iBillIndex_2 + 1,
+										                        'G32', Bill_2.GoodsNumeric,
+										                        'G33', Bill_2.GoodsTNVEDCode,
+										                        'G312', Bill_2.GoodsDescription,
+										                        'G35', Bill_2.GrossWeightQuantity,
+										                        'G38', Bill_2.NetWeightQuantity,
+										                        'G42', Bill_2.InvoicedCost,
+										                        'GG42_CURRENCY', Bill_2.ContractCurrencyCode,
+										                        'G315C', Bill_2.Volume.GoodsQuantity,
+										                        'G315CN', Bill_2.Volume.MeasureUnitQualifierName,
+										                        'G31_82', Bill_2.Volume.MeasureUnitQualifierCode,
+										                        'G315A', Bill_2.SupplementaryQuantity.GoodsQuantity,
+										                        'G315', Bill_2.SupplementaryQuantity.MeasureUnitQualifierName,
+										                        'G41A', Bill_2.SupplementaryQuantity.MeasureUnitQualifierCode,
+										                        'G311', Bill_2.Volume.ArrivePackingInformation.PakageQuantity
+										                        
+										                        );
+										                        POST('KRD_COMM_2');
+										                        ), Block(
+
+									                                  If(XMLNODENAME (Bill_2) = 'catWH_ru:ArriveTransportMeans', Block(
+									                                  if(iDeleteTransp = 0, Block(
+                                                    setfilter('KRD_TRANSP_2', 'Id = ' + KRD_PAPERS_2.id );
+                                                    DELETERECORDS ('KRD_TRANSP_2');
+                                                    iDeleteTransp:=1;
+                                                    ));
+										                                Edit('KRD_TRANSP_2');
+										                                sTranspCode:=Bill_2.TransportModeCode;
+										                                APPENDRECORD ('KRD_TRANSP_2');
+										                                SetFieldValue('KRD_TRANSP_2',
+										                                'PlaceID', KRD_MAIN_2.PLACEID,
+										                                'ID', KRD_MAIN_2.ID,
+										                                'COUNTER', iBillIndex_2 + 1,
+										                                'CARNO', Bill_2.TransportIdentifier,
+										                                'TRANSP_CODE', sTranspCode
+										                                );
+										                                //showmessage(Bill_2.TransportModeCode);
+										                                if ((STRPOS(sTranspCode, '16|23|30|31|39|43|55')<>0), block(
+                                                           //showmessage(Bill_2.Avto.TrailerIdentifier);
+										                                       SetFieldValue('KRD_TRANSP_2',
+										                                       'NTRAILER', Bill_2.Avto.TrailerIdentifier
+										                                       )), Block(
+										                                          if (sTranspCode= '40',
+										                                          SetFieldValue('KRD_TRANSP_2',
+										                                          'NTRAILER', Bill_2.Avia.FlightNumber
+										                                          ), Block(
+                                                                if ((STRPOS(sTranspCode, '12|20')<>0),
+										                                            SetFieldValue('KRD_TRANSP_2',
+										                                            'NTRAILER', Bill_2.RailRoad.RailStation
+										                                               ), Block(
+										                                               if ((STRPOS(sTranspCode, '10|80|81')<>0),
+										                                               SetFieldValue('KRD_TRANSP_2',
+										                                               'NTRAILER', Bill_2.Sea.EntryNumber
+										                                               ));
+                                                                ));
+                                                           )),
+										                                ));
+										                                POST('KRD_TRANSP_2');
+										                                )
+                                    );
+                                    ));
+
+            )
+                                    );
+
+            ));
+			);
+              iBillIndex_2 := iBillIndex_2 + 1;
+                ),
+      RaiseException('Ошибка загрузки - Список накладных пуст');
+              )
+            )
+	      );
+		));
+  )
+),
+
+// основная часть
+
+var ('XmlArriveShipment', Integer, XMLNodeFind(Report, 'ArriveShipment'));
+if (XmlArriveShipment,
+  block (
+    var ('iBillCount', Integer, XMLNodeChildCount(XmlArriveShipment));
+    if (iBillCount > 0,
+      block (
+
+        var ('iBillIndex', Integer, 0);
+        var ('iTransportDoc', Boolean, 0);
+        var ('Bill', Integer);
+
+        while ((iBillIndex < iBillCount)*(iTransportDoc = False),
+          block (
+            Bill := XmlNodeChild(XmlArriveShipment, iBillIndex);
+            If(XMLNODENAME (Bill) = 'catWH_ru:ArriveTransportDoc', Block(
+                iTransportDoc:= True;
+                 if(LOCATE ('KRD_PAPERS_2', 'PAPERNO', [Bill.PrDocumentNumber]), Block(
+                     if(LOCATE ('KRD_MAIN_2', 'ID', [KRD_PAPERS_2.ID]), Block(
+                          if(KRD_MAIN_2.A_Mode <> 5, Block(
+		                         ), Block(
+                                  ImportKrdMain();
+                                  ImportData();
+                                    ));
+                             ));
+                     ));
+            ));
+           
+          iBillIndex := iBillIndex + 1;
+          ))
+      ),
+      RaiseException('Ошибка загрузки - Список накладных пуст')
+    ))
+);
+

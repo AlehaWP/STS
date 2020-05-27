@@ -1,0 +1,131 @@
+// *****************************************************************************
+// Название: запросить опись документов из журнала "Договоры"
+// Описание: запросить опись документов из журнала "Договоры"
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+FUNC ('GENERATEUUID_2', ,
+  Block(
+    Var('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+)),
+
+
+
+IF ((TRIM (CONTRACTS.DOC_NAME) <> '') * (TRIM (CONTRACTS.DOC_NO) <> '') * (CONTRACTS.DOC_DATE > 0) * (LENGTH (TRIM (CONTRACTS.DOC_TEXT)) > 0),
+Block(
+
+  VAR ('XmlDoc',         Integer, XMLDOCUMENTCREATE ());
+  VAR ('XmlRoot',        Integer, XMLDOCUMENTROOT (XmlDoc));
+  VAR ('XmlEDContainer', Integer, XMLNODEADDCHILD (XmlRoot, 'ED_Container'));
+
+    // Добавляем аттрибуты контейнеру
+    XMLNODESETATTRIBUTE (XmlEDContainer, 'xmlns:cat_ru',   'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XMLNODESETATTRIBUTE (XmlEDContainer, 'xmlns',      'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.10.0');
+    XMLNODESETATTRIBUTE (XmlEDContainer, 'DocumentModeID', '1006058E');
+
+    XMLNODESETVALUES (XmlEDContainer, '', 'cat_ru:DocumentID', GENERATEUUID_2 ());
+
+  VAR ('XmlContainerDoc', Integer, XMLNODEADDCHILD (XmlEDContainer,  'ContainerDoc'));
+  VAR ('XmlDocBody',      Integer, XMLNODEADDCHILD (XmlContainerDoc, 'DocBody'));
+  VAR ('XmlFreeDoc',      Integer, XMLNODEADDCHILD (XmlDocBody,      'frd:FreeDoc'));
+
+    // Добавляем аттрибуты неформализованному документу
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:frd',          'urn:customs.ru:Information:CustomsDocuments:FreeDoc:5.10.0');
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:CategoryCust', 'urn:customs.ru:Categories:3.0.0');
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:cat_ru',       'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:clt_ru',       'urn:customs.ru:CommonLeafTypes:5.10.0');
+//    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:xsi',          'http://www.w3.org/2001/XMLSchema-instance');
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'DocumentModeID',     '1006088E');
+
+    XMLNODESETVALUES (XmlFreeDoc, '', 'cat_ru:DocumentID', GENERATEUUID_2 ());
+
+    XMLNODESETVALUES (XmlFreeDoc, 'frd:DocumentHead',
+                                  'frd:DocumentName',   CONTRACTS.DOC_NAME,
+                                  'frd:DocumentDate',   FDT ('YYYY-MM-DD', CONTRACTS.DOC_DATE),
+                                  'frd:DocumentNumber', CONTRACTS.DOC_NO,
+    ); // XMLNODESETVALUES - //
+
+    VAR ('XmlBody',        Integer, XMLNODEADDCHILD (XmlFreeDoc, 'frd:DocumentBody'));
+    VAR ('XmlTextSection', Integer, XMLNODEADDCHILD (XmlBody,    'frd:TextSection'));
+    VAR ('mTextSection',   Memo,    STRINGLISTCREATE());
+
+    STRINGLISTSETTEXT (mTextSection, CONTRACTS.DOC_TEXT);
+
+    VAR ('i', Integer, 0);
+    VAR ('iRowCount', Integer, STRINGLISTGETCOUNT (mTextSection));
+
+    WHILE (i < iRowCount,
+      Block(
+        XMLNODESETVALUE (XMLNODEADDCHILD (XmlTextSection, 'frd:TextPara'), STRINGLISTGETITEM (mTextSection, i));
+        i := i + 1;
+      )
+    ); // WHILE - //
+
+    IF ((TRIM(CONTRACTS.PERSON1_SURNAME) <> '') * (TRIM(CONTRACTS.PERSON1_NAME) <> ''),
+      Block(
+        VAR ('XmlDocumentSign', Integer, XMLNODEADDCHILD (XmlFreeDoc, 'frd:DocumentSign'));
+        XMLNODESETVALUES (XmlDocumentSign, '',
+                                           'cat_ru:PersonSurname',    CONTRACTS.PERSON1_SURNAME,
+                                           'cat_ru:PersonName',       CONTRACTS.PERSON1_NAME,
+                                           'cat_ru:PersonMiddleName', CONTRACTS.PERSON1_MIDDLENAME,
+                                           'cat_ru:PersonPost',       CONTRACTS.PERSON1_POST,
+                                           'cat_ru:IssueDate',        FDT ('YYYY-MM-DD', CONTRACTS.SIGN_DATE1),
+        ); // XMLNODESETVALUES - //
+      )
+    ); // IF - //
+
+    IF ((TRIM(CONTRACTS.PERSON2_SURNAME) <> '') * (TRIM(CONTRACTS.PERSON2_NAME) <> ''),
+      Block(
+        VAR ('XmlDocumentSign', Integer, XMLNODEADDCHILD (XmlFreeDoc, 'frd:DocumentSign'));
+        XMLNODESETVALUES (XmlDocumentSign, '',
+                                           'cat_ru:PersonSurname',    CONTRACTS.PERSON2_SURNAME,
+                                           'cat_ru:PersonName',       CONTRACTS.PERSON2_NAME,
+                                           'cat_ru:PersonMiddleName', CONTRACTS.PERSON2_MIDDLENAME,
+                                           'cat_ru:PersonPost',       CONTRACTS.PERSON2_POST,
+                                           'cat_ru:IssueDate',        FDT ('YYYY-MM-DD', CONTRACTS.SIGN_DATE2),
+        ); // XMLNODESETVALUES - //
+      )
+    ); // IF - //
+
+
+    // Каталог для записи документа
+    VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+    IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+    FORCEDIRECTORIES (sDir);
+
+    VAR ('sRegNumber', String, '');
+
+    FORMCREATE (frmIR, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\genInventoryRequest.cfm');
+    IF (FORMSHOWMODAL (frmIR) = 2, RAISEEXCEPTION ('Отменено пользователем'));
+    sRegNumber := REPLACESTR (FORMGETPROPERTY (frmIR, 'rtRegNumber.Text'), '/', '-');
+
+    IF (LENGTH (TRIM (sRegNumber)) <> 23, RAISEEXCEPTION ('Ошибка: регистрационный номер описи введен неверно'));
+
+    //XMLDOCUMENTSAVE (XmlDoc, sDir + 'InverntoryRequest_' + sRegNumber + '.xml');
+
+    VAR ('XmlReqDoc',         Integer, XMLDOCUMENTCREATE ());
+    VAR ('XmlReqRoot',        Integer, XMLDOCUMENTROOT (XmlReqDoc));
+    VAR ('XmlInventoryRequest', Integer, XMLNODEADDCHILD (XmlReqRoot, 'InventoryRequest'));
+
+    XMLNODESETVALUE (XmlInventoryRequest, sRegNumber);
+
+    XMLDOCUMENTSAVE (XmlReqDoc, sDir + 'InventoryRequest_' + sRegNumber + '.xml');
+    XMLDOCUMENTSAVE (XmlDoc,    sDir + 'InventoryRequest_' + sRegNumber + '_AddDocs.docs');
+
+    showmessage ('Договор и запрос описи отправлены.');
+
+  ),
+  Block(
+    VAR ('sErrorMessage', String);
+    IF (TRIM (CONTRACTS.DOC_NAME) = '',         sErrorMessage := char(13)+'- Наименование');
+    IF (TRIM (CONTRACTS.DOC_NO) = '',           sErrorMessage := sErrorMessage +char(13)+ '- Номер');
+    IF (CONTRACTS.DOC_DATE <= 0,                sErrorMessage := sErrorMessage +char(13)+ '- Дата');
+    IF (LENGTH (TRIM (CONTRACTS.DOC_TEXT)) = 0, sErrorMessage := sErrorMessage +char(13)+ '- Текст документа');
+    RAISEEXCEPTION ('Заполните обязательные поля!' + sErrorMessage);
+  )
+); // IF - MAIN //

@@ -1,0 +1,369 @@
+// *****************************************************************************
+// Название: Создание ДО1 из Авто ПИ
+// Описание: Создание ДО1 из Авто ПИ
+// Кнопка вызова: 0
+// Подпись кнопки: ДО-1 АПИ
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+
+FUNC ('AddNotification', '',
+  Block(
+    OPENQUERY ('qNewMessages', 'SELECT DOCSTATUS FROM EPS_LOG WHERE READED=' +char(39)+ '0' +char(39), 'dbJournals');
+
+    VAR ('iMessageNo', Integer, RECORDCOUNT ('qNewMessages'));
+    VAR ('sMessageText', String, '');
+
+    IF (iMessageNo > 0,
+      Block(
+        LAST ('qNewMessages');
+        sMessageText := qNewMessages.DOCSTATUS;
+        //SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+        SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+    CLOSEDATASET ('qNewMessages');
+  )
+), // FUNC - AddNotification() //
+
+FUNC ('WriteLog', PARAM ('sText', String, 0),
+     BLOCK (
+            if (VAREXISTS ('sLcltLogFile')=0, var ('sLogFile', String , ''),);
+            sLogFile := IncludeTrailingBackslash (ProgramPath ()) + 'LOGS';
+            IF (DirectoryExists (sLogFile)=0, ForceDirectories (sLogFile),);
+            sLogFile := IncludeTrailingBackslash (sLogFile) + 'CreatDo1fromAviaPi.log';
+            if ( FileExists (sLogFile)=0, CREATELOGFILE (sLogFile, ''),);
+            if ( FileSize (sLogFile) > 10000000,
+               Block(
+                     ForceDirectories (IncludeTrailingBackslash (ProgramPath ()) + 'LOGS\BACKUP');
+                     ZipAddFile (IncludeTrailingBackslash (ProgramPath ()) + 'LOGS\BACKUP\'+ FDT('YYYY_MM_DD_HH_MM_SS', DATE()+TIME(1))+'.ZIP', sLogFile);
+                     DeleteFile (sLogFile);
+                     CREATELOGFILE (sLogFile, '');
+               ), );
+            APPENDLOGFILE (sLogFile, FDT ('YYYY.MM.DD HH:MM:SS', DATE()+TIME(1)) + ' | ' + sText);
+     )//block
+);//end func WriteLog
+
+WriteLog( '--- Начало работы скрипта.');
+VAR ('sFileXML', String);
+
+SELECTFILE ('sFileXML', 'Выбор Авто ПИ', '*.xml|*.xml','|');
+If(sFileXML = '',  RaiseException('Не выбран документ'));
+
+VAR ('vNBD', String, '');
+VAR ('XMLRoot', Integer, 0);
+VAR ('iNc', Integer, 0);
+VAR ('iPLACEID', Integer, 0);
+VAR ('iID', Integer, 0);
+VAR ('iIndex', Integer, 0);
+VAR ('iCountRoot', Integer, 0);
+VAR ('iIndex', Integer, 0);
+VAR ('iConsignee', Integer, 0);
+VAR ('iCarrier', Integer, 0);
+VAR ('iConsignor', Integer, 0);
+VAR ('iGoodsInform', Integer, 0);
+VAR ('iShippingInformation', Integer, 0);
+
+VAR ('iCountGoodsInform', Integer, 0);
+VAR ('iGoodsIndex', Integer, 0);
+VAR ('iTekGood', Integer, 0);
+
+VAR ('dtDODate', DateTime);
+VAR ('dtStoreDate', DateTime);
+VAR ('vStorePeriod', Integer, 1);
+VAR ('dtBegkeep', DateTime);
+VAR ('qLICENCENO', String);
+VAR ('qLICENCEDATE', DateTime);
+VAR ('PlaceIsSelected', Integer, 0);
+
+
+OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES where IN_ARCHIVE <> 1 or IN_ARCHIVE is null');
+LOCATE ('Stors', 'PLACEID', INIFILE ('CREATEDO1FROMAPI', 'IPLACEID', '1'));
+PlaceIsSelected := SelectValues ('Выбор склада, на который будет создан документ', 'Stors',
+                                        [
+                                          ['LICENCENO',   'Номер лицензии', 30],
+                                          ['LICENCENO_EXT',   ' ', 1],
+                                          ['STORE_NO',   'Номер склада', 10],
+                                          ['NAME',   'Название склада', 40],
+                                          ['PlaceId',   '', 5]
+                                        ],
+                                        [
+                                          ['PlaceId', 'iPLACEID'],
+                                          ['LICENCEDATE','qLICENCEDATE'],
+                                          ['LICENCENO','qLICENCENO']
+                                        ], '', 'STS_DB');
+ IF (PlaceIsSelected = 0,
+     RAISEEXCEPTION ('Отменено пользователем')
+ ); {IF - PlaceIsSelected = 0 }
+
+WRITEINIFILE ('CREATEDO1FROMAPI', 'IPLACEID',iPLACEID );
+
+VAR ('sSQL', String, '');
+VAR ('vPaperName', String, 'CMR');
+VAR ('vPaperNo', String, '');
+VAR ('vPaperDate', String, '');
+VAR ('vPaperCode', String, '02015');
+VAR ('sSHOW_NBD', String, '');
+vPaperNo := TRIM(INPUTTEXT ('Транспортная накладная', 'Укажите номер накладной:',INIFILE ('CREATEDO1FROMAPI', 'vPaperNo', '')));
+If(vPaperNo = '',  RaiseException('Не указан номер документа'));
+WRITEINIFILE ('CREATEDO1FROMAPI', 'vPaperNo',vPaperNo );
+WriteLog('vPaperNo=' + vPaperNo);
+INPUTDATE ('vPaperDate', 'Дата накладной', DATE()+1);
+vPaperDate := FDT('dd.mm.yyyy', vPaperDate);
+WriteLog('vPaperDate=' + vPaperDate);
+
+
+VAR ('XMLDoc', integer, XmlDocumentCreate ());
+XmlDocumentLoad ( XMLDoc, sFileXML);
+XMLRoot := XmlDocumentRoot (XMLDoc);
+iCountRoot := XmlNodeChildCount (XmlNodeFind (XMLRoot, 'PI_AutoArrive'));
+iIndex :=0;
+APPENDRECORD ('KRD_MAIN');
+//showmessage ('PLACEID='+ KRD_MAIN.PLACEID + ' ID=' + KRD_MAIN.ID);
+
+//iPLACEID := KRD_MAIN.PLACEID;
+iID := KRD_MAIN.ID;
+dtDODate := NOW();
+dtBegkeep := DATE() + 1;
+dtStoreDate := AddMonths(dtDODate + 1, 2);
+vStorePeriod := dtStoreDate - dtBegkeep;
+WriteLog('iPLACEID=' + iPLACEID);
+WriteLog('iID=' + iID);
+WriteLog('dtDODate=' + dtDODate);
+WriteLog('dtBegkeep=' + dtBegkeep);
+WriteLog('dtStoreDate=' + dtStoreDate);
+WriteLog('vStorePeriod=' + vStorePeriod);
+vNBD := SOLVE (INIFILE ('Docs', 'MAKEBD_NO', '00000001'));
+WriteLog('SOLVE=' + INIFILE ('Docs', 'MAKEBD_NO', '00000001'));
+WriteLog('vNBD=' + vNBD);
+
+
+while (iNc < iCountRoot,
+      Block(
+            iIndex := XMLNODECHILD ( XmlNodeFind (XMLRoot, 'PI_AutoArrive'), iNc);
+            if (XMLNODENAME (iIndex)= 'Consignee',
+               Block(
+                     SETFIELDVALUE ('KRD_MAIN',
+                                    'PLACEID',  iPLACEID,
+                                    'G011',     'ИМ',
+                                    'G012',     '40',
+                                    'PART_NO', 1,
+                                    'A_MODE', 6,
+                                    'Z_MODE', 3,
+                                    'BEG_KEEP', dtDODate + 1,
+                                    'STATUS_EPS', 'ДО-1 создана из Авто ПИ',
+                                    'BD_DATE',  dtDODate,
+                                    'NBD',      vNBD,
+                                    'G084C', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'cat_ru:RFOrganizationFeatures'),'cat_ru:INN')),
+                                    'G082', XMLNODEVALUE (XMLNODEFIND (iIndex, 'cat_ru:OrganizationName')),
+                                    'G17A', REFERENCE('OKSMT.DBF', 'ABC2', TRIM(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:CountryCode'))), 'KOD', 'DATE_MOD', 'DATE_NIL', Date()),
+                                    'G083', Copy ( XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:CounryName')) + ' ' +
+                                                   XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:PostalCode')) + ' ' +
+                                                   XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:Region')) + ' ' +
+                                                   XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:City')) + ' ' +
+                                                   XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:StreetHouse'))
+                                    , 1, 250)
+                     );//SETFIELDVALUE ('KRD_MAIN',
+               ),//block
+            );//if (XMLNODENAME (iIndex)= 'Consignee',
+            if (XMLNODENAME (iIndex)= 'Carrier',
+               Block(
+                     SETFIELDVALUE ('KRD_MAIN',
+                                              'G042',     XMLNODEVALUE (XMLNODEFIND (iIndex, 'cat_ru:OrganizationName')),
+                                              'G04_COUNTRY',     REFERENCE('OKSMT.DBF', 'ABC2', TRIM(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:CountryCode'))), 'KOD', 'DATE_MOD', 'DATE_NIL', Date()),
+                                              'G043',     Copy ( XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:CounryName')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:PostalCode')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:Region')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:City')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:StreetHouse'))
+                                                         , 1, 250)
+                     );//SETFIELDVALUE ('KRD_MAIN',
+               ),//block
+            );//if (XMLNODENAME (iIndex)= 'Consignor',
+            if (XMLNODENAME (iIndex)= 'Consignor',
+               Block(
+               
+                     SETFIELDVALUE ('KRD_MAIN',
+                                              'G022',     XMLNODEVALUE (XMLNODEFIND (iIndex, 'cat_ru:OrganizationName')),
+                                              'G15A',     REFERENCE('OKSMT.DBF', 'ABC2', TRIM(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:CountryCode'))), 'KOD', 'DATE_MOD', 'DATE_NIL', Date()),
+                                              'G023',     Copy ( XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:CounryName')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:PostalCode')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:Region')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:City')) + ' ' +
+                                                                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'Address'),'catpi_ru:StreetHouse'))
+                                                         , 1, 250)
+                     );//SETFIELDVALUE ('KRD_MAIN',
+               ),//block
+            );//if (XMLNODENAME (iIndex)= 'Consignor',
+            if (XMLNODENAME (iIndex)= 'ShippingInformation',
+               Block(
+                     SETFIELDVALUE ('KRD_MAIN', 'TRANSP_COUNTRY', REFERENCE('OKSMT.DBF', 'ABC2', TRIM(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'BorderTransport'),'catpi_ru:TransportMeansNationalityCode'))), 'KOD', 'DATE_MOD', 'DATE_NIL', Date()),
+                                                'G261',           XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'BorderTransport'),'catpi_ru:TransportModeCode'))
+                     );
+                     OPENTABLE('KRD_TRANSP_3', 'STS_DB', 'KR_TRANS', 'PLACEID;ID;COUNTER', 1);
+                     APPENDRECORD ('KRD_TRANSP_3');
+                     SETFIELDVALUE ('KRD_TRANSP_3',
+                                                 'PLACEID', iPLACEID,
+                                                 'ID',      iID,
+                                                 'COUNTER', 1,
+                                                 'CARNO',           TRIM( COPY (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'BorderTransport'),'catpi_ru:TransportIdentifier')),1,30)),
+                                                 'TRANSP_CODE',     XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'BorderTransport'),'catpi_ru:TransportModeCode')),
+                                                 'TRANSP_COUNTRY',  REFERENCE('OKSMT.DBF', 'ABC2', TRIM(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iIndex, 'BorderTransport'),'catpi_ru:TransportIdentifier'))), 'KOD', 'DATE_MOD', 'DATE_NIL', Date())
+                     );//SETFIELDVALUE ('KRD_TRANSP_3',
+                     POSTRECORD ('KRD_TRANSP_3');
+                     CLOSEDATASET('KRD_TRANSP_3');
+               ),//block
+            );//if (XMLNODENAME (iIndex)= 'Consignor',
+            if (XMLNODENAME (iIndex)= 'GoodsInform',
+               Block(
+                     OPENTABLE('KRD_COMM_PAPERS_3', 'STS_DB', 'KR_C_P', 'PLACEID;ID;G32', 1);
+                     OPENTABLE('KRD_PAPERS_3', 'STS_DB', 'KR_PAPER', 'PLACEID;ID;COUNTER', 1);
+                      APPENDRECORD('KRD_PAPERS_3');
+                      EDIT('KRD_PAPERS_3');
+                      SetFieldValue('KRD_PAPERS_3',
+                                                  'PLACEID', iPlaceId,
+                                                  'ID', iId,
+                                                  'Counter', 1,
+                                                  'PAPERNAME', vPaperName,
+                                                  'PAPERNO', vPaperNo,
+                                                  'PAPERDATE', vPaperDate,
+                                                  'PAPERCODE', vPaperCode
+                      );
+                      POST('KRD_PAPERS_3');
+                     CLOSEDATASET('KRD_PAPERS_3');
+                     OPENTABLE('KRD_COMM_3', 'STS_DB', 'KRD_COMM', 'PLACEID;ID;G32', 1);
+                     iCountGoodsInform := XmlNodeChildCount (iIndex, 'GoodsInform');
+                     iGoodsIndex:=1;
+                     While ( iGoodsIndex < iCountGoodsInform,
+                           Block(
+                                  iTekGood := XMLNODECHILD ( iIndex, iGoodsIndex);
+                                  if (XMLNODENAME (iTekGood)= 'Goods',
+                                      Block(
+                                            APPENDRECORD('KRD_COMM_3');
+                                            EDIT('KRD_COMM_3');
+                                            SetFieldValue('KRD_COMM_3',
+                                                                        'PLACEID', iPlaceId,
+                                                                        'ID', iId,
+                                                                        'G32',  XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsNumeric')),
+                                                                        'N_TTN_G32',  XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsNumeric')),
+                                                                        'GN',  XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsNumeric')),
+                                                                        'N_TTN',  1,
+                                                                        'COMMID',  XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsNumeric')),
+                                                                        'G33',  XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsTNVEDCode')),
+                                                                        'G312', REPLACECR (XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsDescription'))),
+                                                                        'G35',  REPLACESTR (XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GrossWeightQuantity')), ',', '.'),
+                                                                        'G38',  REPLACESTR (XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:NetWeightQuantity')), ',', '.'),
+                                                                        'G42',  REPLACESTR (XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:InvoicedCost')), ',', '.'),
+                                                                        'G42_CURRENCY', CURRENCYCODE (XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:CurrencyCode')), DATE()),
+                                                                        'G315A',  REPLACESTR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsMeasureQuantity'), 'catpi_ru:GoodsQuantity')), ',', '.'),
+                                                                        'G315',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsMeasureQuantity'), 'catpi_ru:MeasureUnitQualifierName')),
+                                                                        'G41A',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsMeasureQuantity'), 'catpi_ru:MeasureUnitQualifierCode')),
+                                                                        'G311',  REPLACESTR (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsPackaging'), 'catpi_ru:PakageQuantity')), ',', '.'),
+                                                                        'G313_CODE',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsPackaging'), 'catpi_ru:CargoCode')),
+                                                                        'G313',  COPY(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsPackaging'), 'catpi_ru:CargoDescription')),1,150),
+                                                                        'STORAGE_TYPE', 'НОР',
+                                                                        'ACCEPTDATE', dtDODate,
+                                                                        'LEG_PERIOD', '15' ,
+                                                                        'STORE_PERIOD', vStorePeriod ,
+                                                                        'STORAGE_DATE', dtStoreDate,
+                                                                        'BOXNO', KRD_MAIN.NBD + '/' + LEFTPAD(XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsNumeric')), '6', '0')
+
+                                            );
+                                            POST('KRD_COMM_3');
+                                            APPENDRECORD('KRD_COMM_PAPERS_3');
+                                            EDIT('KRD_COMM_PAPERS_3');
+                                            SetFieldValue('KRD_COMM_PAPERS_3',
+                                                                              'PLACEID', iPlaceId,
+                                                                              'Id', iId,
+                                                                              'G32', XMLNODEVALUE (XMLNODEFIND (iTekGood, 'catpi_ru:GoodsNumeric')),
+                                                                              'DOC_TYPE', 13,
+                                                                              'DOC_COUNTER', 1
+                                                                              );
+                                            POST('KRD_COMM_PAPERS_3');
+                                      ),//block
+                                  );//if (XMLNODENAME (iTekGood)= 'Goods',
+                                  iGoodsIndex := iGoodsIndex +1;
+                           )//block
+                     );//while
+                     CLOSEDATASET('KRD_COMM_3');
+                     CLOSEDATASET('KRD_COMM_PAPERS_3');
+               ),//block
+            );//if (XMLNODENAME (iIndex)= 'Consignor',
+
+            iNc := iNc +1;
+      )//block
+);//while iN < iCountRoot
+WriteLog( 'sFileXML=' + sFileXML);
+WriteLog( 'XMLRoot=' + XMLRoot);
+POSTRECORD ('KRD_MAIN');
+EDITRECORD ('KRD_MAIN');
+SetFieldValue('KRD_MAIN', 'SHOW_NBD', SOLVE (UPPERSTR (INIFILE('RegBook', 'BD_ExprIndex', 'FDT("YYYY", KRD_MAIN.BD_DATE)+LEFTPAD(RIGHT(KRD_MAIN.NBD, 5), 5, "0")'))));
+POSTRECORD ('KRD_MAIN');
+WriteLog( 'SHOW_NBD=' + KRD_MAIN.SHOW_NBD);
+sSQL := '';
+OPENQUERY ('Q_MAX', 'select max(JOURNAL_MASTER_ID) as MAXJMID from EPS_LOG', 'dbJournals');
+sSQL := sSQL + ' INSERT INTO EPS_LOG ( ';
+sSQL := sSQL + ' JOURNAL_MASTER_ID';
+sSQL := sSQL + ' ,JOURNAL_UUID';
+sSQL := sSQL + ' ,PLACEID';
+sSQL := sSQL + ' ,ID';
+sSQL := sSQL + ' ,COUNTER';
+sSQL := sSQL + ' ,DOCUMENTID';
+sSQL := sSQL + ' ,DOCTYPE';
+sSQL := sSQL + ' ,DOCNO';
+//sSQL := sSQL + ' ,DOCDATE';
+sSQL := sSQL + ' ,DOCSTATUS';
+//sSQL := sSQL + ' ,REGDATE';
+sSQL := sSQL + ' ,LICENCENO';
+sSQL := sSQL + ' ,LICENCEDATE';
+sSQL := sSQL + ' ,JOURGUID';
+sSQL := sSQL + ' ,SUBSTATUS';
+sSQL := sSQL + ' ,FILENAME';
+sSQL := sSQL + ' ,READED';
+sSQL := sSQL + ' ,USERLOGIN';
+sSQL := sSQL + ' ) ';
+sSQL := sSQL + ' VALUES ';
+sSQL := sSQL + '  ( ';
+sSQL := sSQL + '  ' + if (FIELDISNULL ('Q_MAX', 'MAXJMID'),1, Q_MAX.MAXJMID+1);
+sSQL := sSQL + ' ,' + CHAR(39) + GENERATEUUID () + CHAR(39);
+sSQL := sSQL + ' ,' + iPlaceId;
+sSQL := sSQL + ' ,' + iId;
+sSQL := sSQL + ' ,' + 0;
+sSQL := sSQL + ' ,' + CHAR(39) + CHAR(39);// + KRD_MAIN.DOCUMENTID;
+sSQL := sSQL + ' ,' + CHAR(39) + 'ДО-1' + CHAR(39);
+sSQL := sSQL + ' ,' + CHAR(39) + KRD_MAIN.NBD + CHAR(39);
+//sSQL := sSQL + ' ,' + SQLDate(KRD_MAIN.BD_DATE, GetBaseDriver(1));//DOCDATE
+sSQL := sSQL + ' ,' + CHAR(39) + 'ДО-1 создана из Авто ПИ' + CHAR(39);
+//sSQL := sSQL + ' ,'; REG_DATE
+sSQL := sSQL + ' ,' + CHAR(39) + qLICENCENO + CHAR(39) ;
+sSQL := sSQL + ' ,NULL'; 
+sSQL := sSQL + ' ,'  + CHAR(39) + GENERATEUUID () + CHAR(39);
+sSQL := sSQL + ' ,NULL';
+sSQL := sSQL + ' ,' +char(39)+ ExtractFileName (sFileXML) +char(39);
+sSQL := sSQL + ' ,' +char(39)+ '0' +char(39);
+sSQL := sSQL + ' ,' +char(39)+ USERINFO ('', 'UserLogin') +char(39);
+sSQL := sSQL + ' )';
+WriteLog( 'sSQL='+sSQL);
+IF ( TABLEEXISTS ('EPS_LOG', 'dbJournals') , EXECUTESQL ('dbJournals', sSQL), WriteLog( 'В базе Журналов нет таблицы EPS_LOG. Добавление иформации о созаднной ДО1 отменено.'));;
+sSQL := 'UPDATE EPS_LOG SET DOCDATE=' + SQLDate (KRD_MAIN.BD_DATE, GetBaseDriver(1)) +
+     ', REGDATE=' + SQLDate (Date () + Time (1), GetBaseDriver(1)) +
+     ', LICENCEDATE=' + SQLDate (qLICENCEDATE, GetBaseDriver(1)) +
+     ', DODT=' + SQLDate (Date () + Time (1), GetBaseDriver(1)) +
+     ' WHERE JOURNAL_MASTER_ID=' + if (FIELDISNULL ('Q_MAX', 'MAXJMID'),1, Q_MAX.MAXJMID+1);
+WriteLog( 'sSQL='+sSQL);
+EXECUTESQL ('dbJournals', sSQL);
+
+AddNotification();
+
+CLOSEDATASET ('Q_MAX');
+WriteLog( 'Создано ДО1 с номером : ' + KRD_MAIN.NBD);
+WriteLog( '--- Окончание работы скрипта.');
+
+
+
+

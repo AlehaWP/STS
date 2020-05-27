@@ -1,0 +1,715 @@
+// *****************************************************************************
+// Название: Сохранение ДО1(мв) в ГТД_XML
+// Описание:
+// Кнопка вызова: 1
+// Подпись кнопки: exp
+// *****************************************************************************
+//
+
+Func('WriteDoc', '', Block(
+  //showmessage(krd_main.nbd+'-'+krd_main.part_no);
+  if (FIELDISNULL('KRD_MAIN','NBD'), RAISEEXCEPTION('Не заполнен номер ДО!'));
+  //VAR ('XMLContainerDoc', Integer, XMLNodeAddChild(XMLED_ContainerId, 'ContainerDoc'));
+  VAR ('XMLContainerDoc', Integer, XMLNodeAddChild(XMLDoc, 'ContainerDoc'));
+
+  VAR ('XMLDocBody', Integer, XMLNodeAddChild(XMLContainerDoc, 'DocBody'));
+
+  VAR ('XMLNodeDO', Integer, XMLNodeAddChild(XMLDocBody, 'ESADout_CU'));
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns', 'urn:customs.ru:Information:CustomsDocuments:ESADout_CU:5.0.0');
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns:CategoryCust', 'urn:customs.ru:Categories:3.0.0');
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.0');
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns:clt_ru', 'urn:customs.ru:CommonLeafTypes:5.0.0');
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns:catESAD_cu', 'urn:customs.ru:CUESADCommonAggregateTypesCust:5.0.0');
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns:cltESAD_cu', 'urn:customs.ru:CUESADCommonLeafTypes:5.0.0');
+  XMLNodeSetAttribute(XMLNodeDO, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+  XMLNodeSetAttribute(XMLNodeDO, 'DocumentModeID', '1006043E'); {Код документа в альбоме форматов}
+  //XMLNodeSetAttribute(XMLNodeDO, '', '');
+
+{*****************ОБЩАЯ ЧАСТЬ*********************}
+
+{Уникальный идентификатор документа}
+  VAR ('XMLNodeDocumentId', Integer, XMLNodeAddChild(XMLNodeDO, 'cat_ru:DocumentID'));
+  XMLNodeSetValue(XMLNodeDocumentId, STORES.CUSTOMS_CODE+'-'+FORMATDATETIME('YYYYMMDD', KRD_MAIN.BD_DATE)+'-'+KRD_MAIN.NBD+'-'+KRD_MAIN.PART_NO);
+
+{Таможенная процедура}
+  VAR ('XMLNodeCustomsProcedure', Integer, XMLNodeAddChild(XMLNodeDO, 'CustomsProcedure'));
+  if ((FIELDISNULL('KRD_MAIN','G011')=0)*(KRD_MAIN.G011<>''),
+    XMLNodeSetValue(XMLNodeCustomsProcedure, KRD_MAIN.G011));
+
+{Код таможенного режима}
+  if (FIELDISNULL('KRD_MAIN','G012')=0,
+    Block(
+      VAR ('XMLNodeCUSTOMS_MODE_CODE', Integer, XMLNodeAddChild(XMLNodeDO, 'CustomsModeCode'));
+      XMLNodeSetValue(XMLNodeCUSTOMS_MODE_CODE, KRD_MAIN.G012)
+    )
+  );
+{Язык}
+VAR ('XMLNodeLanguageCUESAD', Integer, XMLNodeAddChild(XMLNodeDO, 'LanguageCUESAD'));
+XMLNodeSetValue(XMLNodeLanguageCUESAD, 'RU');
+VAR ('XMLNodeRecipientCountryCode', Integer, XMLNodeAddChild(XMLNodeDO, 'RecipientCountryCode'));
+XMLNodeSetValue(XMLNodeRecipientCountryCode, 'RU');
+
+{Вид таможенной декларации по Классификатору видов таможенных деклараций}
+  //VAR ('XMLNodeDeclarationKind', Integer, XMLNodeAddChild(XMLNodeDO, 'DeclarationKind'));
+  //XMLNodeSetValue(XMLNodeDeclarationKind, 'код');
+
+
+{**********GoodShipment**********}
+  VAR ('XMLNodeESAD', Integer, XMLNodeAddChild(XMLNodeDO, 'ESADout_CUGoodsShipment'));
+
+{Страна происхождения товара. Наименование}
+  first ('KRD_COMM');
+  Var('strCountry', String, '');
+  Var('codeCountry', String, '');
+  Var('countGoods', Integer, 0);
+  while(EOF ('KRD_COMM') <> 1,
+    Block(
+      if(FIELDISNULL('KRD_COMM','G34')=0,
+        Block(
+          if(strCountry='', Let('strCountry', REFERENCE('OKSMT', 'KOD', KRD_COMM.G34, 'ABC2')));
+          Let('codeCountry', KRD_COMM.G34);
+          if(codeCountry='EU', LET('strCountry','ЕС'));
+          if((strCountry<>'')*REFERENCE('OKSMT', 'KOD', KRD_COMM.G34, 'KRNAIM')<>strCountry,
+            strCountry := '00';
+          );
+        ),
+        if(strCountry<>'', Let('strCountry','00'))
+      );
+      countGoods:=countGoods+1;
+      NEXT('KRD_COMM');
+    )
+  );
+  if(strCountry='',Let('strCountry','00'));
+
+  {VAR ('XMLNodeOriginCountryName', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:OriginCountryName'));
+  XMLNodeSetValue(XMLNodeOriginCountryName, strCountry);}
+
+{Лицо, заполнившее(гр.54)}
+  VAR ('XMLNodeFilledPerson', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUFilledPerson'));
+  VAR ('XMLNodeFilledPersonSurname', Integer, XMLNodeAddChild(XMLNodeFilledPerson, 'cat_ru:PersonSurname'));
+  XMLNodeSetValue(XMLNodeFilledPersonSurname, KRD_MAIN.AUTHOR);
+  VAR ('XMLNodeFilledPersonPost', Integer, XMLNodeAddChild(XMLNodeFilledPerson, 'cat_ru:PersonPost'));
+  XMLNodeSetValue(XMLNodeFilledPersonPost, KRD_MAIN.AUTHOR_POST);
+
+
+
+{Всего наименований товаров}
+  VAR ('XMLNodeTotalGoodsNumber', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:TotalGoodsNumber'));
+  XMLNodeSetValue(XMLNodeTotalGoodsNumber, countGoods);
+
+{Общее количество грузовых мест}
+  VAR ('XMLNodeTotalPackageNumber', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:TotalPackageNumber'));
+  XMLNodeSetValue(XMLNodeTotalPackageNumber, KRD_MAIN.G06);
+
+{Страна происхождения товара. Код, устар.}
+{  if(strCountry<>'неизвестна',
+    Block(
+      VAR ('XMLNodeOriginCountryCode', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:OriginCountryCode'));
+      if(strCountry='разные',
+        XMLNodeSetValue(XMLNodeOriginCountryName, '00'),
+        XMLNodeSetValue(XMLNodeOriginCountryName, REFERENCE('OKSMT', 'KOD', CodeCountry, 'ABC2'));
+      );
+    )
+  );}
+
+{Признак кода страны, устар.}
+{  if((strCountry<>'неизвестна')*(strCountry<>'разные'), Block(
+    VAR('XMLNodeCountryCodeIndicator', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:CountryCodeIndicator'));
+    XMLNodeSetValue(XMLNodeCountryCodeIndicator, if(strCountry = 'ЕС','2','1'));
+  ));}
+
+
+{Общая таможенная стоимость}
+  if (FIELDISNULL('KRD_MAIN','G222')=0,
+    Block(
+      VAR ('XMLNodeTotalCustCost', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:TotalCustCost'));
+      XMLNodeSetValue(XMLNodeTotalCustCost, FormatFloat('0.##', KRD_MAIN.G222))
+  ));
+
+{Код валюты таможенной стоимости}
+  if (FIELDISNULL('KRD_MAIN','G221')=0,
+    Block(
+      VAR ('XMLNodeCustCostCurrencyCode', Integer, XMLNodeAddChild(XMLNodeESAD, 'catESAD_cu:CustCostCurrencyCode'));
+      XMLNodeSetValue(XMLNodeCustCostCurrencyCode, KRD_MAIN.G221)
+  ));
+
+{Consignor (Отправитель)}
+  VAR ('XMLNodeConsignor', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUConsignor'));
+      VAR ('XMLNodeConsignorOrganizationName', Integer, XMLNodeAddChild(XMLNodeConsignor, 'cat_ru:OrganizationName'));
+      if (FIELDISNULL('KRD_MAIN','G022')=0,
+        XMLNodeSetValue(XMLNodeConsignorOrganizationName, KRD_MAIN.G022));
+
+      if ((FIELDISNULL('KRD_MAIN','G02_OGRN')=0)|(FIELDISNULL('KRD_MAIN','G024C')=0)|(FIELDISNULL('KRD_MAIN','G02_KPP')=0),
+      Block(
+        VAR ('XMLNodeConsignorFeatures', Integer, XMLNodeAddChild(XMLNodeConsignor, 'cat_ru:RFOrganizationFeatures'));
+        if (FIELDISNULL('KRD_MAIN','G02_OGRN')=0,
+        Block(
+          VAR ('XMLNodeConsignorOGRN', Integer, XMLNodeAddChild(XMLNodeConsignorFeatures, 'cat_ru:OGRN'));
+          XMLNodeSetValue(XMLNodeConsignorOGRN, KRD_MAIN.G02_OGRN);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G024C')=0,
+      	Block(
+          VAR ('XMLNodeConsignorINN', Integer, XMLNodeAddChild(XMLNodeConsignorFeatures, 'cat_ru:INN'));
+          XMLNodeSetValue(XMLNodeConsignorINN, KRD_MAIN.G024C);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G02_KPP')=0,
+      	Block(
+          VAR ('XMLNodeConsignorKPP', Integer, XMLNodeAddChild(XMLNodeConsignorFeatures, 'cat_ru:KPP'));
+          XMLNodeSetValue(XMLNodeConsignorKPP, KRD_MAIN.G02_KPP);
+        ));
+      ));
+
+      VAR ('XMLNodeConsignorAddress', Integer, XMLNodeAddChild(XMLNodeConsignor, 'cat_ru:Address'));
+          VAR ('XMLNodeConsignorAddressCountryCode', Integer, XMLNodeAddChild(XMLNodeConsignorAddress, 'cat_ru:CountryCode'));
+          if (FIELDISNULL('KRD_MAIN','G15A')=0,
+            XMLNodeSetValue(XMLNodeConsignorAddressCountryCode, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G15A, 'ABC2')));
+          VAR ('XMLNodeConsignorAddressCountryName', Integer, XMLNodeAddChild(XMLNodeConsignorAddress, 'cat_ru:CounryName'));
+          if (FIELDISNULL('KRD_MAIN','G15A')=0,
+            XMLNodeSetValue(XMLNodeConsignorAddressCountryName, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G15A, 'KRNAIM')));
+          VAR ('XMLNodeConsignorAddressStreet', Integer, XMLNodeAddChild(XMLNodeConsignorAddress, 'cat_ru:StreetHouse'));
+          if (FIELDISNULL('KRD_MAIN','G023')=0,
+            XMLNodeSetValue(XMLNodeConsignorAddressStreet, KRD_MAIN.G023));
+
+      if (FIELDISNULL('KRD_MAIN','G02_DOC_NUMBER')=0,
+      Block(
+          VAR ('XMLNodeConsignorIdentityCard', Integer, XMLNodeAddChild(XMLNodeConsignor, 'cat_ru:IdentityCard'));
+          if (FIELDISNULL('KRD_MAIN','G02_DOC_KIND')=0, Block(
+            VAR ('XMLNodeConsignorIdentityCardCode', Integer, XMLNodeAddChild(XMLNodeConsignorIdentityCard, 'cat_ru:IdentityCardCode'));
+            XMLNodeSetValue(XMLNodeConsignorIdentityCardCode, KRD_MAIN.G02_DOC_KIND);
+          ));
+      	  if (FIELDISNULL('KRD_MAIN','G02_DOC_ABBR')=0, Block(
+            VAR ('XMLNodeConsignorIdentityCardName', Integer, XMLNodeAddChild(XMLNodeConsignorIdentityCard, 'cat_ru:IdentityCardName'));
+            XMLNodeSetValue(XMLNodeConsignorIdentityCardName, KRD_MAIN.G02_DOC_ABBR);
+          ));
+	        if (FIELDISNULL('KRD_MAIN','G02_DOC_Series')=0, Block(
+            VAR ('XMLNodeConsignorIdentityCardSeries', Integer, XMLNodeAddChild(XMLNodeConsignorIdentityCard, 'cat_ru:IdentityCardSeries'));
+            XMLNodeSetValue(XMLNodeConsignorIdentityCardSeries, KRD_MAIN.G02_DOC_Series);
+          ));
+          VAR ('XMLNodeConsignorIdentityCardNUMBER', Integer, XMLNodeAddChild(XMLNodeConsignorIdentityCard, 'cat_ru:IdentityCardNumber'));
+          XMLNodeSetValue(XMLNodeConsignorIdentityCardNUMBER, KRD_MAIN.G02_DOC_NUMBER);
+      ));
+
+
+{Consignee (Получатель)}
+    VAR ('XMLNodeConsignee', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUConsignee'));
+        VAR ('XMLNodeConsigneeOrganizationName', Integer, XMLNodeAddChild(XMLNodeConsignee, 'cat_ru:OrganizationName'));
+        if (FIELDISNULL('KRD_MAIN','G082')=0,
+          XMLNodeSetValue(XMLNodeConsigneeOrganizationName, KRD_MAIN.G082));
+
+
+      if ((FIELDISNULL('KRD_MAIN','G08_OGRN')=0)|(FIELDISNULL('KRD_MAIN','G084C')=0)|(FIELDISNULL('KRD_MAIN','G08_KPP')=0),
+      Block(
+        VAR ('XMLNodeConsigneeFeatures', Integer, XMLNodeAddChild(XMLNodeConsignee, 'cat_ru:RFOrganizationFeatures'));
+        if (FIELDISNULL('KRD_MAIN','G08_OGRN')=0,
+        Block(
+      	  VAR ('XMLNodeConsigneeOGRN', Integer, XMLNodeAddChild(XMLNodeConsigneeFeatures, 'cat_ru:OGRN'));
+          XMLNodeSetValue(XMLNodeConsigneeOGRN, KRD_MAIN.G08_OGRN);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G084C')=0,
+      	Block(
+          VAR ('XMLNodeConsigneeINN', Integer, XMLNodeAddChild(XMLNodeConsigneeFeatures, 'cat_ru:INN'));
+          XMLNodeSetValue(XMLNodeConsigneeINN, KRD_MAIN.G084C);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G08_KPP')=0,
+      	Block(
+          VAR ('XMLNodeConsigneeKPP', Integer, XMLNodeAddChild(XMLNodeConsigneeFeatures, 'cat_ru:KPP'));
+          XMLNodeSetValue(XMLNodeConsigneeKPP, KRD_MAIN.G08_KPP);
+        ));
+      ));
+
+
+        VAR ('XMLNodeConsigneeAddress', Integer, XMLNodeAddChild(XMLNodeConsignee, 'cat_ru:Address'));
+            VAR ('XMLNodeConsigneeAddressCountryCode', Integer, XMLNodeAddChild(XMLNodeConsigneeAddress, 'cat_ru:CountryCode'));
+            if (FIELDISNULL('KRD_MAIN','G17A')=0,
+              XMLNodeSetValue(XMLNodeConsigneeAddressCountryCode, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G17A, 'ABC2')));
+            VAR ('XMLNodeConsigneeAddressCountryName', Integer, XMLNodeAddChild(XMLNodeConsigneeAddress, 'cat_ru:CounryName'));
+            if (FIELDISNULL('KRD_MAIN','G17A')=0,
+              XMLNodeSetValue(XMLNodeConsigneeAddressCountryName, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G17A, 'KRNAIM')));
+            VAR ('XMLNodeConsigneeAddressStreet', Integer, XMLNodeAddChild(XMLNodeConsigneeAddress, 'cat_ru:StreetHouse'));
+            if (FIELDISNULL('KRD_MAIN','G083')=0,
+              XMLNodeSetValue(XMLNodeConsigneeAddressStreet, KRD_MAIN.G083));
+
+      if (FIELDISNULL('KRD_MAIN','G08_DOC_NUMBER')=0,
+      Block(
+          VAR ('XMLNodeConsigneeIdentityCard', Integer, XMLNodeAddChild(XMLNodeConsignee, 'cat_ru:IdentityCard'));
+          if (FIELDISNULL('KRD_MAIN','G08_DOC_KIND')=0, Block(
+            VAR ('XMLNodeConsigneeIdentityCardCode', Integer, XMLNodeAddChild(XMLNodeConsigneeIdentityCard, 'cat_ru:IdentityCardCode'));
+            XMLNodeSetValue(XMLNodeConsigneeIdentityCardCode, KRD_MAIN.G08_DOC_KIND);
+          ));
+      	  if (FIELDISNULL('KRD_MAIN','G08_DOC_ABBR')=0, Block(
+            VAR ('XMLNodeConsigneeIdentityCardName', Integer, XMLNodeAddChild(XMLNodeConsigneeIdentityCard, 'cat_ru:IdentityCardName'));
+            XMLNodeSetValue(XMLNodeConsigneeIdentityCardName, KRD_MAIN.G08_DOC_ABBR);
+          ));
+      	  if (FIELDISNULL('KRD_MAIN','G08_DOC_Series')=0, Block(
+            VAR ('XMLNodeConsigneeIdentityCardSeries', Integer, XMLNodeAddChild(XMLNodeConsigneeIdentityCard, 'cat_ru:IdentityCardSeries'));
+            XMLNodeSetValue(XMLNodeConsigneeIdentityCardSeries, KRD_MAIN.G08_DOC_Series);
+          ));
+          VAR ('XMLNodeConsigneeIdentityCardNUMBER', Integer, XMLNodeAddChild(XMLNodeConsigneeIdentityCard, 'cat_ru:IdentityCardNumber'));
+          XMLNodeSetValue(XMLNodeConsigneeIdentityCardNUMBER, KRD_MAIN.G08_DOC_NUMBER);
+      ));
+
+
+
+
+{Financial (плательщик)}
+    VAR ('XMLNodeFinancial', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUFinancialAdjustingResponsiblePerson'));
+        VAR ('XMLNodeFinancialOrganizationName', Integer, XMLNodeAddChild(XMLNodeFinancial, 'cat_ru:OrganizationName'));
+        if (FIELDISNULL('KRD_MAIN','G092')=0,
+          XMLNodeSetValue(XMLNodeFinancialOrganizationName, KRD_MAIN.G092));
+
+      if ((FIELDISNULL('KRD_MAIN','G09_OGRN')=0)|(FIELDISNULL('KRD_MAIN','G094C')=0)|(FIELDISNULL('KRD_MAIN','G09_KPP')=0),
+      Block(
+        VAR ('XMLNodeFinancialFeatures', Integer, XMLNodeAddChild(XMLNodeFinancial, 'cat_ru:RFOrganizationFeatures'));
+        if (FIELDISNULL('KRD_MAIN','G09_OGRN')=0,
+        Block(
+    	  VAR ('XMLNodeFinancialOGRN', Integer, XMLNodeAddChild(XMLNodeFinancialFeatures, 'cat_ru:OGRN'));
+          XMLNodeSetValue(XMLNodeFinancialOGRN, KRD_MAIN.G09_OGRN);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G094C')=0,
+      	Block(
+          VAR ('XMLNodeFinancialINN', Integer, XMLNodeAddChild(XMLNodeFinancialFeatures, 'cat_ru:INN'));
+          XMLNodeSetValue(XMLNodeFinancialINN, KRD_MAIN.G094C);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G09_KPP')=0,
+      	Block(
+          VAR ('XMLNodeFinancialKPP', Integer, XMLNodeAddChild(XMLNodeFinancialFeatures, 'cat_ru:KPP'));
+          XMLNodeSetValue(XMLNodeFinancialKPP, KRD_MAIN.G09_KPP);
+        ));
+      ));
+
+
+        VAR ('XMLNodeFinancialAddress', Integer, XMLNodeAddChild(XMLNodeFinancial, 'cat_ru:Address'));
+            VAR ('XMLNodeFinancialAddressCountryCode', Integer, XMLNodeAddChild(XMLNodeFinancialAddress, 'cat_ru:CountryCode'));
+            if (FIELDISNULL('KRD_MAIN','G09_Country')=0,
+              XMLNodeSetValue(XMLNodeFinancialAddressCountryCode, REFERENCE('OKSMT', 'KOD', KRD_COMM.G09_Country, 'ABC2')));
+            VAR ('XMLNodeFinancialAddressCountryName', Integer, XMLNodeAddChild(XMLNodeFinancialAddress, 'cat_ru:CounryName'));
+            if (FIELDISNULL('KRD_MAIN','G09_Country')=0,
+              XMLNodeSetValue(XMLNodeFinancialAddressCountryName, REFERENCE('OKSMT', 'KOD', KRD_COMM.G09_Country, 'KRNAIM')));
+            VAR ('XMLNodeFinancialAddressStreet', Integer, XMLNodeAddChild(XMLNodeFinancialAddress, 'cat_ru:StreetHouse'));
+            if (FIELDISNULL('KRD_MAIN','G093')=0,
+              XMLNodeSetValue(XMLNodeFinancialAddressStreet, KRD_MAIN.G093));
+
+        {VAR ('XMLNodeFinancialIdentityCard', Integer, XMLNodeAddChild(XMLNodeFinancial, 'cat_ru:IdentityCard'));
+            VAR ('XMLNodeFinancialIdentityCardCode', Integer, XMLNodeAddChild(XMLNodeFinancialIdentityCard, 'cat_ru:IdentityCardCode'));
+            if (FIELDISNULL('KRD_MAIN','G09_DOC_KIND')=0,
+              XMLNodeSetValue(XMLNodeFinancialIdentityCardCode, KRD_MAIN.G09_DOC_KIND));
+            VAR ('XMLNodeFinancialIdentityCardName', Integer, XMLNodeAddChild(XMLNodeFinancialIdentityCard, 'cat_ru:IdentityCardName'));
+            if (FIELDISNULL('KRD_MAIN','G09_DOC_ABBR')=0,
+              XMLNodeSetValue(XMLNodeFinancialIdentityCardName, KRD_MAIN.G09_DOC_ABBR));
+            VAR ('XMLNodeFinancialIdentityCardSeries', Integer, XMLNodeAddChild(XMLNodeFinancialIdentityCard, 'cat_ru:IdentityCardSeries'));
+            if (FIELDISNULL('KRD_MAIN','G09_DOC_Series')=0,
+              XMLNodeSetValue(XMLNodeFinancialIdentityCardSeries, KRD_MAIN.G09_DOC_Series));
+            VAR ('XMLNodeFinancialIdentityCardNUMBER', Integer, XMLNodeAddChild(XMLNodeFinancialIdentityCard, 'cat_ru:IdentityCardNumber'));
+            if (FIELDISNULL('KRD_MAIN','G09_DOC_NUMBER')=0,
+              XMLNodeSetValue(XMLNodeFinancialIdentityCardNUMBER, KRD_MAIN.G09_DOC_NUMBER));}
+
+
+
+
+{Carrier (Перевозчик)}
+    VAR ('XMLNodeCarrier', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUCarrier'));
+        VAR ('XMLNodeCarrierOrganizationName', Integer, XMLNodeAddChild(XMLNodeCarrier, 'cat_ru:OrganizationName'));
+        if (FIELDISNULL('KRD_MAIN','G042')=0,
+          XMLNodeSetValue(XMLNodeCarrierOrganizationName, KRD_MAIN.G042));
+
+      if ((FIELDISNULL('KRD_MAIN','G04_OGRN')=0)|(FIELDISNULL('KRD_MAIN','G044C')=0)|(FIELDISNULL('KRD_MAIN','G04_KPP')=0),
+      Block(
+        VAR ('XMLNodeCarrierFeatures', Integer, XMLNodeAddChild(XMLNodeCarrier, 'cat_ru:RFOrganizationFeatures'));
+        if (FIELDISNULL('KRD_MAIN','G04_OGRN')=0,
+        Block(
+    	  VAR ('XMLNodeCarrierOGRN', Integer, XMLNodeAddChild(XMLNodeCarrierFeatures, 'cat_ru:OGRN'));
+          XMLNodeSetValue(XMLNodeCarrierOGRN, KRD_MAIN.G04_OGRN);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G044C')=0,
+      	Block(
+          VAR ('XMLNodeCarrierINN', Integer, XMLNodeAddChild(XMLNodeCarrierFeatures, 'cat_ru:INN'));
+          XMLNodeSetValue(XMLNodeCarrierINN, KRD_MAIN.G044C);
+        ));
+      	if (FIELDISNULL('KRD_MAIN','G04_KPP')=0,
+      	Block(
+          VAR ('XMLNodeCarrierKPP', Integer, XMLNodeAddChild(XMLNodeCarrierFeatures, 'cat_ru:KPP'));
+          XMLNodeSetValue(XMLNodeCarrierKPP, KRD_MAIN.G04_KPP);
+        ));
+      ));
+
+
+        VAR ('XMLNodeCarrierAddress', Integer, XMLNodeAddChild(XMLNodeCarrier, 'cat_ru:Address'));
+            VAR ('XMLNodeCarrierAddressCountryCode', Integer, XMLNodeAddChild(XMLNodeCarrierAddress, 'cat_ru:CountryCode'));
+            if (FIELDISNULL('KRD_MAIN','G04_COUNTRY')=0,
+              XMLNodeSetValue(XMLNodeCarrierAddressCountryCode, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G04_COUNTRY, 'ABC2')));
+            VAR ('XMLNodeCarrierAddressCountryName', Integer, XMLNodeAddChild(XMLNodeCarrierAddress, 'cat_ru:CounryName'));
+            if (FIELDISNULL('KRD_MAIN','G04_COUNTRY')=0,
+              XMLNodeSetValue(XMLNodeCarrierAddressCountryName, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G04_COUNTRY, 'KRNAIM')));
+            VAR ('XMLNodeCarrierAddressStreet', Integer, XMLNodeAddChild(XMLNodeCarrierAddress, 'cat_ru:StreetHouse'));
+            if (FIELDISNULL('KRD_MAIN','G043')=0,
+              XMLNodeSetValue(XMLNodeCarrierAddressStreet, KRD_MAIN.G043));
+
+        {VAR ('XMLNodeCarrierIdentityCard', Integer, XMLNodeAddChild(XMLNodeCarrier, 'cat_ru:IdentityCard'));
+            VAR ('XMLNodeCarrierIdentityCardCode', Integer, XMLNodeAddChild(XMLNodeCarrierIdentityCard, 'cat_ru:IdentityCardCode'));
+            if (FIELDISNULL('KRD_MAIN','G04_DOC_KIND')=0,
+              XMLNodeSetValue(XMLNodeCarrierIdentityCardCode, KRD_MAIN.G04_DOC_KIND));
+            VAR ('XMLNodeCarrierIdentityCardName', Integer, XMLNodeAddChild(XMLNodeCarrierIdentityCard, 'cat_ru:IdentityCardName'));
+            if (FIELDISNULL('KRD_MAIN','G04_DOC_ABBR')=0,
+              XMLNodeSetValue(XMLNodeCarrierIdentityCardName, KRD_MAIN.G04_DOC_ABBR));
+            VAR ('XMLNodeCarrierIdentityCardSeries', Integer, XMLNodeAddChild(XMLNodeCarrierIdentityCard, 'cat_ru:IdentityCardSeries'));
+            if (FIELDISNULL('KRD_MAIN','G04_DOC_Series')=0,
+              XMLNodeSetValue(XMLNodeCarrierIdentityCardSeries, KRD_MAIN.G04_DOC_Series));
+            VAR ('XMLNodeCarrierIdentityCardNUMBER', Integer, XMLNodeAddChild(XMLNodeCarrierIdentityCard, 'cat_ru:IdentityCardNumber'));
+            if (FIELDISNULL('KRD_MAIN','G04_DOC_NUMBER')=0,
+              XMLNodeSetValue(XMLNodeCarrierIdentityCardNUMBER, KRD_MAIN.G04_DOC_NUMBER));  }
+
+
+
+{Местонахождение товаров}
+    //SETRANGE ('STORES', [FIELDVALUE ('KRD_MAIN.PLACEID')]);
+    VAR ('XMLNodeGoodsLocation', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUGoodsLocation'));
+      VAR ('XMLNodeGoodsLocationWarehouse', Integer, XMLNodeAddChild(XMLNodeGoodsLocation, 'GoodsLocationWarehouse'));
+        VAR ('XMLNodeGoodsLocationDocumentName', Integer, XMLNodeAddChild(XMLNodeGoodsLocationWarehouse, 'cat_ru:PrDocumentName'));
+        XMLNodeSetValue(XMLNodeGoodsLocationDocumentName, if (STRPOS('ЗТК', STORES.STORE_TYPE) > 0, 'СВИДЕТЕЛЬСТВО','ЛИЦЕНЗИЯ'));
+        VAR ('XMLNodeGoodsLocationDocumentNumber', Integer, XMLNodeAddChild(XMLNodeGoodsLocationWarehouse, 'cat_ru:PrDocumentNumber'));
+        XMLNodeSetValue(XMLNodeGoodsLocationDocumentNumber, STORES.LICENCENO);
+        VAR ('XMLNodeGoodsLocationDocumentDate', Integer, XMLNodeAddChild(XMLNodeGoodsLocationWarehouse, 'cat_ru:PrDocumentDate'));
+        XMLNodeSetValue(XMLNodeGoodsLocationDocumentDate, FormatDateTime('YYYY-MM-DD',STORES.LICENCEDATE));
+
+      {если пишем склад, то место не пишем}
+      {VAR ('XMLNodeGoodsLocationPlace', Integer, XMLNodeAddChild(XMLNodeGoodsLocation, 'catESAD_cu:GoodsLocationPlace'));
+        VAR ('XMLNodeGoodsLocationPlaceDesc', Integer, XMLNodeAddChild(XMLNodeGoodsLocationPlace, 'catESAD_cu:GoodsLocationPlaceDesc'));
+        if (FIELDISNULL('STORES','NAME')=0,
+          XMLNodeSetValue(XMLNodeGoodsLocationPlaceDesc, STORES.NAME));
+        VAR ('XMLNodeCustomsOfficeId', Integer, XMLNodeAddChild(XMLNodeGoodsLocationPlace, 'catESAD_cu:CustomsOffice'));
+        if (FIELDISNULL('STORES','CUSTOMS_CODE')=0,
+          XMLNodeSetValue(XMLNodeCustomsOfficeId, STORES.CUSTOMS_CODE));
+        VAR ('XMLNodeGoodsLocationAddress', Integer, XMLNodeAddChild(XMLNodeGoodsLocationPlace, 'catESAD_cu:Address'));
+          VAR ('XMLNodeGoodsLocationAddressStreet', Integer, XMLNodeAddChild(XMLNodeGoodsLocationAddress, 'cat_ru:StreetHouse'));
+          if (FIELDISNULL('STORES','ADDRESS')=0,
+            XMLNodeSetValue(XMLNodeGoodsLocationAddressStreet, STORES.ADDRESS));
+          VAR ('XMLNodeGoodsLocationCity', Integer, XMLNodeAddChild(XMLNodeGoodsLocationAddress, 'cat_ru:City'));
+          if (FIELDISNULL('STORES','TOWN')=0,
+            XMLNodeSetValue(XMLNodeGoodsLocationCity, STORES.TOWN));}
+
+
+{Сведения о перевозке грузов}
+  VAR ('XMLNodeConsigment', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUConsigment'));
+  {Признак контейнерных перевозок}
+  VAR ('XMLNodeConsigmentG19', Integer, XMLNodeAddChild(XMLNodeConsigment, 'catESAD_cu:ContainerIndicator'));
+  if (FIELDISNULL('KRD_MAIN','G19')=0,
+    XMLNodeSetValue(XMLNodeConsigmentG19, KRD_MAIN.G19));
+  {Страна отправления}
+  VAR ('XMLNodeConsigmentDispatchCountryCode', Integer, XMLNodeAddChild(XMLNodeConsigment, 'catESAD_cu:DispatchCountryCode'));
+  if (FIELDISNULL('KRD_MAIN','G15A')=0,
+    XMLNodeSetValue(XMLNodeConsigmentDispatchCountryCode, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G15A, 'ABC2')));
+  VAR ('XMLNodeConsigmentDispatchCountryName', Integer, XMLNodeAddChild(XMLNodeConsigment, 'catESAD_cu:DispatchCountryName'));
+  if (FIELDISNULL('KRD_MAIN','G15A')=0,
+    XMLNodeSetValue(XMLNodeConsigmentDispatchCountryName, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G15A, 'KRNAIM')));
+  {Страна назначения}
+  VAR ('XMLNodeConsigmentDestinationCountryCode', Integer, XMLNodeAddChild(XMLNodeConsigment, 'catESAD_cu:DestinationCountryCode'));
+  if (FIELDISNULL('KRD_MAIN','G17A')=0,
+    XMLNodeSetValue(XMLNodeConsigmentDestinationCountryCode, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G17A, 'ABC2')));
+  VAR ('XMLNodeConsigmentDestinationCountryName', Integer, XMLNodeAddChild(XMLNodeConsigment, 'catESAD_cu:DestinationCountryName'));
+  if (FIELDISNULL('KRD_MAIN','G17A')=0,
+    XMLNodeSetValue(XMLNodeConsigmentDestinationCountryName, REFERENCE('OKSMT', 'KOD', KRD_MAIN.G17A, 'KRNAIM')));
+
+   {Транспортные средства при прибытии/убытии(18,26 графы)}
+  VAR ('XMLNodeConsigmentArrivalTransport', Integer, XMLNodeAddChild(XMLNodeConsigment, 'ESADout_CUDepartureArrivalTransport'));
+    VAR ('XMLNodeConsigmentArrivalTransportModeCode', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransport, 'cat_ru:TransportModeCode'));
+    if (FIELDISNULL('KRD_MAIN','G261')=0,
+      XMLNodeSetValue(XMLNodeConsigmentArrivalTransportModeCode, KRD_MAIN.G261));
+    VAR ('XMLNodeConsigmentArrivalTransportNationalityCode', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransport, 'cat_ru:TransportNationalityCode'));
+    if (FIELDISNULL('KRD_MAIN','TRANSP_COUNTRY')=0,
+      XMLNodeSetValue(XMLNodeConsigmentArrivalTransportNationalityCode, REFERENCE('OKSMT', 'KOD', KRD_MAIN.TRANSP_COUNTRY, 'KRNAIM')));
+ {транспорт}
+  first ('KRD_TRANSP');
+  while(EOF ('KRD_TRANSP') <> 1,  Block(
+    VAR ('XMLNodeConsigmentArrivalTransportMeans', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransport, 'TransportMeans'));
+      VAR ('XMLNodeConsigmentArrivalTransportIdentifier', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'cat_ru:TransportIdentifier'));
+      if (FIELDISNULL('KRD_TRANSP','CARNO')=0,
+        XMLNodeSetValue(XMLNodeConsigmentArrivalTransportIdentifier, KRD_TRANSP.CARNO));
+      VAR ('XMLNodeConsigmentArrivalTrailerIdentifier', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'cat_ru:TrailerIdentifier'));
+      {if (FIELDISNULL('KRD_TRANSP','NTRAILER')=0,
+        XMLNodeSetValue(XMLNodeConsigmentArrivalTrailerIdentifier, KRD_TRANSP.NTRAILER));
+      VAR ('XMLNodeConsigmentArrivalTransportModeCode', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'cat_ru:TransportModeCode'));}
+      if (FIELDISNULL('KRD_TRANSP','TRANSP_CODE')=0,
+        XMLNodeSetValue(XMLNodeConsigmentArrivalTransportModeCode,  KRD_TRANSP.TRANSP_CODE));
+      VAR ('XMLNodeConsigmentArrivalTransportTableNationalityCode', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'cat_ru:TransportMeansNationalityCode'));
+      if (FIELDISNULL('KRD_TRANSP','TRANSP_COUNTRY')=0,
+        XMLNodeSetValue(XMLNodeConsigmentArrivalTransportTableNationalityCode, REFERENCE('OKSMT', 'KOD',KRD_MAIN.TRANSP_COUNTRY,'ABC2')));
+      VAR ('XMLNodeConsigmentArrivalTransportTraditionalName', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'cat_ru:TransportTraditionalName'));
+      {if (FIELDISNULL('KRD_TRANSP','TRANSP_CODE')=0,
+        XMLNodeSetValue(XMLNodeConsigmentArrivalTransportTraditionalName, REFERENCE('TRANTYPE', 'CODE', KRD_TRANSP.TRANSP_CODE, 'NAME')));
+      VAR ('XMLNodeConsigmentArrivalTransportG19', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'ContainerIndicator'));
+      if (FIELDISNULL('KRD_MAIN','G19')=0,
+        XMLNodeSetValue(XMLNodeConsigmentArrivalTransportG19, KRD_MAIN.G19));}
+      VAR ('XMLNodeConsigmentArrivalTransportSign', Integer, XMLNodeAddChild(XMLNodeConsigmentArrivalTransportMeans, 'cat_ru:TransportSign'));
+      XMLNodeSetValue(XMLNodeConsigmentArrivalTransportSign, 'true');
+
+    Next('KRD_TRANSP')
+  ));
+
+{Товарная часть}
+    first ('KRD_COMM');
+    while(EOF ('KRD_COMM') <> 1,  Block(
+      VAR ('XMLNodeGoods', Integer, XMLNodeAddChild(XMLNodeESAD, 'ESADout_CUGoods'));
+        VAR ('XMLNodeGoodsNumeric', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:GoodsNumeric'));
+        if (FIELDISNULL('KRD_COMM','G32')=0,
+          XMLNodeSetValue(XMLNodeGoodsNumeric, KRD_COMM.G32));
+        VAR ('XMLNodeGoodsDescription', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:GoodsDescription'));
+        if (FIELDISNULL('KRD_COMM','G312')=0,
+          XMLNodeSetValue(XMLNodeGoodsDescription, KRD_COMM.G312));
+        VAR ('XMLNodeGoodsGrossWeightQuantity', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:GrossWeightQuantity'));
+        if (FIELDISNULL('KRD_COMM','G35')=0,
+          XMLNodeSetValue(XMLNodeGoodsGrossWeightQuantity, FormatFloat('0.######',KRD_COMM.G35)));
+        VAR ('XMLNodeGoodsNetWeightQuantity', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:NetWeightQuantity'));
+        if (FIELDISNULL('KRD_COMM','G38')=0,
+          XMLNodeSetValue(XMLNodeGoodsNetWeightQuantity, FormatFloat('0.######',KRD_COMM.G38)));
+        VAR ('XMLNodeGoodsInvoicedCost', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:InvoicedCost'));
+        if (FIELDISNULL('KRD_COMM','G42')=0,
+          XMLNodeSetValue(XMLNodeGoodsInvoicedCost, FormatFloat('0.##', KRD_COMM.G42)));
+        VAR ('XMLNodeGoodsStatisticalCost', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:StatisticalCost'));
+        if (FIELDISNULL('KRD_COMM','G46')=0,
+          XMLNodeSetValue(XMLNodeGoodsStatisticalCost, FormatFloat('0.##', KRD_COMM.G46)));
+        VAR ('XMLNodeGoodsTNVEDCode', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:GoodsTNVEDCode'));
+        if (FIELDISNULL('KRD_COMM','G33')=0,
+          XMLNodeSetValue(XMLNodeGoodsTNVEDCode, KRD_COMM.G33));
+        VAR ('XMLNodeGoodsOriginCountryCode', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:OriginCountryCode'));
+        if (FIELDISNULL('KRD_COMM','G34')=0,
+          XMLNodeSetValue(XMLNodeGoodsOriginCountryCode, REFERENCE('OKSMT', 'KOD', KRD_COMM.G34, 'ABC2')));
+        VAR ('XMLNodeGoodsOriginCountryName', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:OriginCountryName'));
+        if (FIELDISNULL('KRD_COMM','G34')=0,
+          XMLNodeSetValue(XMLNodeGoodsOriginCountryName, REFERENCE('OKSMT', 'KOD', KRD_COMM.G34, 'KRNAIM')));
+        {VAR ('XMLNodeGoodsCountryCodeIndicator', Integer, XMLNodeAddChild(XMLNodeGoods, 'catESAD_cu:CountryCodeIndicator'));
+        if (FIELDISNULL('KRD_COMM','G34')=0,
+          XMLNodeSetValue(XMLNodeGoodsCountryCodeIndicator, 1));}
+        VAR ('XMLNodeGoodsPackaging', Integer, XMLNodeAddChild(XMLNodeGoods, 'ESADGoodsPackaging'));
+          VAR ('XMLNodeGoodsPackagingPakageQuantity', Integer, XMLNodeAddChild(XMLNodeGoodsPackaging, 'catESAD_cu:PakageQuantity'));
+          if (FIELDISNULL('KRD_COMM','G311')=0,
+            XMLNodeSetValue(XMLNodeGoodsPackagingPakageQuantity, KRD_COMM.G311));
+          {VAR ('XMLNodeGoodsPackaging', Integer, XMLNodeAddChild(XMLNodeGoodsPackaging, ''));
+          if (FIELDISNULL('KRD_COMM','G34')=0,
+            XMLNodeSetValue(XMLNodeGoodsPackaging, ));}
+
+        {контейнеры}
+        VAR ('XMLNodeGoodsContainer', Integer, XMLNodeAddChild(XMLNodeGoods, 'ESADContainer'));
+          Var('doccounter', Integer,0); {номер документа}
+          Var('doccount', Integer,0);    {количество документов}
+          SetRange('KRD_COMM_PAPERS',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID'),FIELDVALUE ('KRD_COMM.G32'),11]);
+          if (RecordCount('KRD_COMM_PAPERS')<>0,Block({есть связь документов с товарами}
+            VAR ('XMLNodeGoodsContainerCount', Integer, XMLNodeAddChild(XMLNodeGoodsContainer, 'catESAD_cu:ContainerQuantity'));
+            XMLNodeSetValue(XMLNodeGoodsContainerCount, RecordCount('KRD_COMM_PAPERS'));
+            first ('KRD_COMM_PAPERS');
+            while(EOF ('KRD_COMM_PAPERS') <> 1,  Block(
+               Let('doccounter', FieldValue('KRD_COMM_PAPERS','DOC_COUNTER'));
+               if(FindKey('KRD_CONT',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID'),doccounter]),
+                 if(FieldIsNull('KRD_CONT','CONTNO')=0,
+                   Block(
+                    VAR ('XMLNodeGoodsContainerNumber', Integer, XMLNodeAddChild(XMLNodeGoodsContainer, 'catESAD_cu:ContainerNumber'));
+                      VAR ('XMLNodeGoodsContainerNumberId', Integer, XMLNodeAddChild(XMLNodeGoodsContainerNumber, 'catESAD_cu:ContainerIdentificaror'));
+                      XMLNodeSetValue(XMLNodeGoodsContainerNumberId, KRD_CONT.CONTNO);
+                   ))
+                 );
+                Next('KRD_COMM_PAPERS')
+                ))
+            ),
+            Block(
+              if(FieldIsNull('KRD_COMM','N_CONT')=0,
+                Block(
+                  VAR ('XMLNodeGoodsContainerCount', Integer, XMLNodeAddChild(XMLNodeGoodsContainer, 'catESAD_cu:ContainerQuantity'));
+                  XMLNodeSetValue(XMLNodeGoodsContainerCount, '1');
+                  if(FindKey('KRD_CONT_2',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID'), FIELDVALUE ('KRD_COMM.N_CONT')]),
+                    Block(
+                      VAR ('XMLNodeGoodsContainerNumber', Integer, XMLNodeAddChild(XMLNodeGoodsContainer, 'catESAD_cu:ContainerNumber'));
+                        VAR ('XMLNodeGoodsContainerNumberId', Integer, XMLNodeAddChild(XMLNodeGoodsContainerNumber, 'catESAD_cu:ContainerIdentificaror'));
+                        XMLNodeSetValue(XMLNodeGoodsContainerNumberId, KRD_CONT_2.CONTNO);
+                    ))
+                ),
+                Block(
+                  SetRange('KRD_CONT',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);
+                  VAR ('XMLNodeGoodsContainerCount', Integer, XMLNodeAddChild(XMLNodeGoodsContainer, 'catESAD_cu:ContainerQuantity'));
+                  XMLNodeSetValue(XMLNodeGoodsContainerCount, RecordCount('KRD_CONT'));
+                  First ('KRD_CONT');
+                  while(EOF ('KRD_CONT') <> 1,  Block(
+                    if(FieldIsNull('KRD_CONT','CONTNO')=0,
+                      Block(
+                        VAR ('XMLNodeGoodsContainerNumber', Integer, XMLNodeAddChild(XMLNodeGoodsContainer, 'catESAD_cu:ContainerNumber'));
+                          VAR ('XMLNodeGoodsContainerNumberId', Integer, XMLNodeAddChild(XMLNodeGoodsContainerNumber, 'catESAD_cu:ContainerIdentificaror'));
+                          XMLNodeSetValue(XMLNodeGoodsContainerNumberId, KRD_CONT.CONTNO);
+                      )
+                    );
+                    NEXT('KRD_CONT')
+                  ));
+                  CancelRange('KRD_CONT')
+                )
+              )
+            )
+          );
+          CancelRange('KRD_COMM_PAPERS');
+
+  {акцизная марка}
+  if (FIELDISNULL('KRD_COMM','G31_4')=0,
+  Block(
+    VAR ('XMLNodeGoodsExcise', Integer, XMLNodeAddChild(XMLNodeGoods, 'ESADExcise'));
+    VAR ('XMLNodeGoodsExciseSeries', Integer, XMLNodeAddChild(XMLNodeGoodsExcise, 'catESAD_cu:ExciseSerieses'));
+    XMLNodeSetValue(XMLNodeGoodsExciseSeries, KRD_COMM.G31_4);
+  ));
+
+  {количество в доп. единице}
+  if (FIELDISNULL('KRD_COMM','G315A')=0,
+  Block(
+    VAR ('XMLNodeGoodsSupplementary', Integer, XMLNodeAddChild(XMLNodeGoods, 'SupplementaryGoodsQuantity'));
+    VAR ('XMLNodeGoodsSupplementaryGoodsQuantity', Integer, XMLNodeAddChild(XMLNodeGoodsSupplementary, 'cat_ru:GoodsQuantity'));
+    if (FIELDISNULL('KRD_COMM','G315A')=0,
+      XMLNodeSetValue(XMLNodeGoodsSupplementaryGoodsQuantity, KRD_COMM.G315A));
+    VAR ('XMLNodeGoodsSupplementaryMeasureUnitQualifierName', Integer, XMLNodeAddChild(XMLNodeGoodsSupplementary, 'cat_ru:MeasureUnitQualifierName'));
+    if (FIELDISNULL('KRD_COMM','G315')=0,
+      XMLNodeSetValue(XMLNodeGoodsSupplementaryMeasureUnitQualifierName, KRD_COMM.G315));
+    VAR ('XMLNodeGoodsSupplementaryMeasureUnitQualifierCode', Integer, XMLNodeAddChild(XMLNodeGoodsSupplementary, 'cat_ru:MeasureUnitQualifierCode'));
+    if (FIELDISNULL('KRD_COMM','G41A')=0,
+      XMLNodeSetValue(XMLNodeGoodsSupplementaryMeasureUnitQualifierCode, KRD_COMM.G41A));
+  ));
+
+      {Представленные документы}
+
+        Var('doccounter', Integer,0); {номер документа}
+        Var('doccount1', Integer,0);    {количество документов}
+        SetRange('KRD_COMM_PAPERS',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID'),FIELDVALUE ('KRD_COMM.G32'),13]);
+        if (RecordCount('KRD_COMM_PAPERS')<>0,Block({есть связь документов с товарами}
+          first ('KRD_COMM_PAPERS');
+          while(EOF ('KRD_COMM_PAPERS') <> 1,
+            Block(
+              Let('doccounter', FieldValue('KRD_COMM_PAPERS','DOC_COUNTER'));
+              if(FindKey('KRD_PAPERS',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID'),doccounter]),
+                if(FieldIsNull('KRD_PAPERS','PAPERNO')=0,
+                  Block(
+                    VAR ('XMLNodeGoodsBasicPresentedDocument', Integer, XMLNodeAddChild(XMLNodeGoods, 'ESADout_CUPresentedDocument'));
+                    VAR ('XMLNodeGoodsBasicPrDocumentName', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentName'));
+                    if(FieldIsNull('KRD_PAPERS','PAPERCODE')=0,
+                      XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentName, REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', KRD_PAPERS.PAPERCODE, 'PAPERFULLNAME')),
+                      XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentName, REFERENCE('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPERFULLNAME'))
+                    );
+                    VAR ('XMLNodeGoodsBasicPrDocumentNumber', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentNumber'));
+                    XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentNumber, KRD_PAPERS.PAPERNO);
+                    VAR ('XMLNodeGoodsBasicPrDocumentDate', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentDate'));
+                    if(FieldIsNull('KRD_PAPERS','PAPERDATE')=0,
+                      XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentDate, FormatDateTime('YYYY-MM-DD',KRD_PAPERS.PAPERDate)));
+                    VAR ('XMLNodeGoodsBasicPrDocumentEndActionsDate', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:DocumentEndActionsDate'));
+                    if(FieldIsNull('KRD_PAPERS','PAPERDEND')=0,
+                      XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentEndActionsDate, FormatDateTime('YYYY-MM-DD',KRD_PAPERS.PAPERDEND)));
+                    VAR ('XMLNodeGoodsBasicPrDocumentModeCode', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:PresentedDocumentModeCode'));
+                    XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentModeCode, KRD_PAPERS.PAPERCode);
+                    Let('doccount1', doccount1+1);
+                    {VAR ('XMLNodeGoodsBasicPrDocumentLineNumber', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:LineNumber'));
+                    XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentLineNumber, doccount1);}
+                  )
+                )
+              );
+              Next('KRD_COMM_PAPERS')
+            )
+          )
+        ),
+        Block(
+          if(FieldIsNull('KRD_COMM','N_TTN')=0,
+            Block(
+              if(FindKey('KRD_PAPERS',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID'), FIELDVALUE ('KRD_COMM.N_TTN')]),
+                Block(
+                  VAR ('XMLNodeGoodsBasicPresentedDocument', Integer, XMLNodeAddChild(XMLNodeGoods, 'ESADout_CUPresentedDocument'));
+                  VAR ('XMLNodeGoodsBasicPrDocumentName', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentName'));
+                  if(FieldIsNull('KRD_PAPERS','PAPERCODE')=0,
+                      XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentName, REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', KRD_PAPERS.PAPERCODE, 'PAPERFULLNAME')),
+                      XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentName, REFERENCE('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPERFULLNAME'))
+                    );
+                  VAR ('XMLNodeGoodsBasicPrDocumentNumber', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentNumber'));
+                  XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentNumber, KRD_PAPERS.PAPERNO);
+                  VAR ('XMLNodeGoodsBasicPrDocumentDate', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentDate'));
+                  if(FieldIsNull('KRD_PAPERS','PAPERDATE')=0,
+                    XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentDate, FormatDateTime('YYYY-MM-DD',KRD_PAPERS.PAPERDate)));
+                  VAR ('XMLNodeGoodsBasicPrDocumentEndActionsDate', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:DocumentEndActionsDate'));
+                  if(FieldIsNull('KRD_PAPERS','PAPERDEND')=0,
+                    XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentEndActionsDate, FormatDateTime('YYYY-MM-DD',KRD_PAPERS.PAPERDEND)));
+                  VAR ('XMLNodeGoodsBasicPrDocumentModeCode', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:PresentedDocumentModeCode'));
+                  XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentModeCode, KRD_PAPERS.PAPERCode);
+                  Let('doccount1', doccount1+1);
+                  {VAR ('XMLNodeGoodsBasicPrDocumentLineNumber', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:LineNumber'));
+                  XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentLineNumber, doccount1);}
+                )
+	      )
+            ),
+                Block(
+                  SetRange('KRD_PAPERS',[FIELDVALUE ('KRD_MAIN.PLACEID'),FIELDVALUE ('KRD_MAIN.ID')]);
+                  First ('KRD_PAPERS');
+                  while(EOF ('KRD_PAPERS') <> 1,  Block(
+                    if(FieldIsNull('KRD_PAPERS','PAPERNO')=0,
+                      Block(
+                        VAR ('XMLNodeGoodsBasicPresentedDocument', Integer, XMLNodeAddChild(XMLNodeGoods, 'ESADout_CUPresentedDocument'));
+                        VAR ('XMLNodeGoodsBasicPrDocumentName', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentName'));
+                        if(FieldIsNull('KRD_PAPERS','PAPERCODE')=0,
+                          XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentName, REFERENCE('PAPERS', 'PAPER_DOCG44_CODE', KRD_PAPERS.PAPERCODE, 'PAPERFULLNAME')),
+                          XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentName, REFERENCE('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPERFULLNAME'))
+                        );
+                        VAR ('XMLNodeGoodsBasicPrDocumentNumber', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentNumber'));
+                        XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentNumber, KRD_PAPERS.PAPERNO);
+                        VAR ('XMLNodeGoodsBasicPrDocumentDate', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'cat_ru:PrDocumentDate'));
+                        if(FieldIsNull('KRD_PAPERS','PAPERDATE')=0,
+                          XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentDate, FormatDateTime('YYYY-MM-DD',KRD_PAPERS.PAPERDate)));
+                        VAR ('XMLNodeGoodsBasicPrDocumentEndActionsDate', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:DocumentEndActionsDate'));
+                        if(FieldIsNull('KRD_PAPERS','PAPERDEND')=0,
+                          XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentEndActionsDate, FormatDateTime('YYYY-MM-DD',KRD_PAPERS.PAPERDEND)));
+                        VAR ('XMLNodeGoodsBasicPrDocumentModeCode', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:PresentedDocumentModeCode'));
+                        XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentModeCode, KRD_PAPERS.PAPERCode);
+                        Let('doccount1', doccount1+1);
+                        {VAR ('XMLNodeGoodsBasicPrDocumentLineNumber', Integer, XMLNodeAddChild(XMLNodeGoodsBasicPresentedDocument, 'catESAD_cu:LineNumber'));
+                        XMLNodeSetValue(XMLNodeGoodsBasicPrDocumentLineNumber, doccount1);}
+                      )
+                    );
+                    NEXT('KRD_PAPERS')
+                  ));
+                  CancelRange('KRD_PAPERS')
+                )
+              )
+
+
+
+        )
+        );
+        CancelRange('KRD_COMM_PAPERS');
+
+     NEXT('KRD_COMM');
+     )
+ )
+
+)),
+
+// основной цикл
+VAR ('XmlDoc', Integer, GETXMLDOCUMENT());
+IF (XMLNODECHILDCOUNT (XmlDoc) < 1,
+  BLOCK (
+    XmlDoc := XMLNODEADDCHILD (XmlDoc, 'ED_Container');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.0');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:CategoryCust', 'urn:customs.ru:Categories:3.0.0');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.0');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:clt_ru', 'urn:customs.ru:CommonLeafTypes:5.0.0');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+    XmlNodeSetAttribute (XmlDoc, 'DocumentModeID', '1006058E');
+  ),
+  XmlDoc := XMLNODECHILD (XmlDoc, 0);
+);
+
+OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN', 'PLACEID;MAIN_ID');
+
+{Уникальный идентификатор контейнера}
+VAR ('XMLED_ContainerId', Integer, XMLNodeAddChild(XmlDoc, 'cat_ru:DocumentID'));
+XMLNodeSetValue(XMLED_ContainerId, GENERATEUUID (1));
+
+IF ((KRD_MAIN.PART_MODE = 1) & (KRD_MAIN.A_MODE = 7),
+  BLOCK (
+    //Обработка партий ДО1мв
+    SETRANGE ('KRD_MAIN_3', [KRD_MAIN.PLACEID, KRD_MAIN.ID]);
+    FIRST ('KRD_MAIN_3');
+    WHILE (EOF('KRD_MAIN_3') = 0,
+      BLOCK (
+        IF (FINDKEY('KRD_MAIN', [KRD_MAIN_3.PLACEID, KRD_MAIN_3.ID]), WriteDoc());
+        NEXT('KRD_MAIN_3')
+      )
+    ),
+    CANCELRANGE('KRD_MAIN_3')
+  ),
+    WriteDoc()
+);

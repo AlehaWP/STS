@@ -1,0 +1,125 @@
+// *****************************************************************************
+// Название: Создание триггера проверки номера ДТ
+// Описание: Создание триггера проверки номера ДТ
+// Кнопка вызова: 0
+// Подпись кнопки: Создание триггера проверки номера ДТ
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+VAR ('DEBUG', Integer, 0);
+//IF( DEBUG, showmessage());
+//Ищем есть ли триггер в БД
+OPENQUERY('CheckTrig', 'select (case when exists(select id from dbo.sysobjects where Name = N'+
+                       char(39)+'CHECK_DT'+char(39)+' and xtype = '+char(39)+'TR'+char(39)+') then 1 else 0 end) as Finded', 'STS_DB');
+//Проверяем обрабатывали ли мы настройки БД Журналов. Если настройки БД изменили, будет удален наш ключ из секции JournalsDB
+VAR('sJourDbOptionsIsActual',string, INIFILE ('JournalsDB', 'ProcessedByCheckDtTrig', '0'));
+//Переменная в которую пишем создавать или нет БД. 1 создавать, 0 не создавать
+VAR('iCrTrigOnServer', integer, 0);
+//Если настройки БД менялись создаем триггер
+if (sJourDbOptionsIsActual='0', iCrTrigOnServer:=1);
+IF( DEBUG, showmessage('sJourDbOptionsIsActual=' + sJourDbOptionsIsActual));
+//Если триггер не найден, выставляем флажку создания 1. Если триггер найден, но ранее флажку создания присвоили 1, удаляем имеющийся триггер
+IF (CheckTrig.Finded = 0,
+   iCrTrigOnServer := 1,
+   IF (iCrTrigOnServer,
+       EXECUTESQL('STS_DB', 'DROP TRIGGER CHECK_DT')
+   )
+);
+IF( DEBUG, showmessage('CheckTrig.Finded='+ CheckTrig.Finded));
+//iCrTrigOnServer := 1; //тест
+//Создаем триггер в базе данных, если надо
+IF (iCrTrigOnServer,
+   BLOCK(
+         VAR ('sSQL', string, '');
+         //Формируем название БД журналов. Надо сформировать полное название для таблиц Журнала к которым будем обращаться в триггере [Название БД].[схема].[Имя таблицы журнала]
+         VAR ('sFullName', string, '');
+         VAR ('sDBName', string, '');
+         VAR ('sOwnerName', string, '');
+         IF( DEBUG, showmessage('Driver Name='+INIFILE ('JournalsDB', 'Driver Name', '0')));
+         CASE (INIFILE ('JournalsDB', 'Driver Name', '0'),
+              ['SQL Server',
+                    BLOCK(
+                          sDBName := INIFILE ('JournalsDB', 'DATABASE NAME', '');
+                          sOwnerName := INIFILE ('JournalsDB', 'DB OWNER', '');
+                          IF ((sDBName<>'')*(sOwnerName<>''),
+                             sFullName := '[' + sDBName + '].'+'[' + sOwnerName + '].',
+                             RAISEEXCEPTION ('Не корректные настройки БД журналов. Проверка номера ДТ не возможна!')
+                          );
+                          IF( DEBUG, showmessage('SQL Server; sFullName='+sFullName));
+                    ),
+               'ActiveX Data Objects (ADO)',
+                    BLOCK(
+                          sOwnerName := INIFILE ('JournalsDB', 'DB OWNER', '');
+                          VAR ('sConStr', string, INIFILE ('JournalsDB', 'ConnString', ''));
+                          IF ( STRPOS ('Initial Catalog=', sConStr),
+                             BLOCK(
+                                   sConStr := DELETE (sConStr, 1, STRPOS ('Initial Catalog=', sConStr)+ LENGTH ('Initial Catalog=')-1);
+                                   sDBName := COPY (sConStr, 0, STRPOS (';',sConStr)-1);
+                             )
+                          );
+                          IF ((sDBName<>'')*(sOwnerName<>''),
+                             sFullName := '[' + sDBName + '].'+'[' + sOwnerName + '].',
+                             RAISEEXCEPTION ('Не корректные настройки БД журналов. Проверка номера ДТ не возможна!')
+                          );
+                          IF( DEBUG, showmessage('ADO; sFullName='+sFullName));
+                    ),
+               '{ ProgramDatabase }',
+                  BLOCK(
+                        sFullName := '';
+                        IF( DEBUG, showmessage('ProgramDatabase; sFullName='+sFullName));
+                  )
+               ],
+               RAISEEXCEPTION ('Не удалось найти настройки БД Журналов. Проверка номера ДТ не возможна!')
+         );
+         IF( DEBUG, showmessage('sFullName='+sFullName));
+
+         sSQL := 'CREATE TRIGGER CHECK_DT ON RELEASE  AFTER UPDATE '+
+                 'as '+
+                 'BEGIN '+
+                 '  IF UPDATE(MC_STATUS) AND  EXISTS(SELECT I.ID FROM INSERTED I LEFT JOIN DELETED D ON (I.ID=D.ID AND I.COUNTER=D.COUNTER) WHERE I.MC_STATUS='+char(39)+'0'+char(39)+' AND D.MC_STATUS NOT IN ('+char(39)+'1'+char(39)+','+char(39)+'0'+char(39)+','+char(39)+'И'+char(39)+','+char(39)+'3'+char(39)+')) '+
+                 '   BEGIN '+
+                 '    SELECT I.PLACEID, I.ID, I.COUNTER, I.DOC_NO, I.OUT_DATE, I.MC_STATUS, J.JOURNAL_MASTER_ID, J.SendDate, '+
+                 '    (CASE WHEN J.JOURNAL_MASTER_ID IS NOT NULL THEN '+
+                 '      ISNULL((SELECT COUNT(P.PAPERNO) FROM KR_PAPER P WHERE P.ID=I.ID AND P.PAPERNO IN (SELECT DISTINCT PrDocumentNumber FROM '+sFullName+ 'DTTranspDoc2 TD WHERE TD.JOURNAL_MASTER_ID=J.JOURNAL_MASTER_ID)),0) '+
+                 '      + '+
+                 '      ISNULL((SELECT COUNT(D.PAPERNO) FROM KRD_DCD D WHERE D.ID=I.ID AND D.PAPERNO IN (SELECT DISTINCT PrDocumentNumber FROM '+sFullName+ 'DTTranspDoc2 TD WHERE TD.JOURNAL_MASTER_ID=J.JOURNAL_MASTER_ID)),0) '+
+                 '      ELSE Null END '+
+                 '    ) '+
+                 '    as CounTrDoc, '+
+                 '    (CASE WHEN J.SendDate>I.OUT_DATE THEN 1 ELSE 0 END) as ErrorDate '+
+                 '    INTO #REG1 '+
+                 '    FROM INSERTED I LEFT JOIN '+sFullName+ 'JrGoodOut2 J on (I.DOC_NO=J.PrDocumentNumber) WHERE MC_STATUS='+char(39)+'0'+char(39)+
+
+                 '    UPDATE R SET R.MC_STATUS='+char(39)+'1'+char(39)+
+                 '    FROM RELEASE R '+
+                 '    INNER JOIN #REG1 T ON (T.ID=R.ID AND T.COUNTER=R.COUNTER) '+
+                 '    WHERE (T.JOURNAL_MASTER_ID IS NULL) OR (T.CounTrDoc<=0) OR (T.ErrorDate=1) '+
+
+                 '    UPDATE K SET STATUS_EPS= '+
+                 '    (CASE '+
+                 '      WHEN R.JOURNAL_MASTER_ID IS NULL THEN '+char(39)+'Не найдено уведомление'+char(39)+
+                 '      WHEN R.CounTrDoc=0 THEN '+char(39)+'Не совпали ТД уведомления '+char(39)+
+                 '      ELSE '+char(39)+'Дата ДО2 < Даты уведомления'+char(39)+' END '+
+                 '    ) '+
+                 '    FROM KRD_MAIN K RIGHT JOIN #REG1 R ON (R.ID=K.ID) '+
+                 '    WHERE (R.JOURNAL_MASTER_ID IS NULL) OR (R.CounTrDoc=0) OR (R.ErrorDate=1) '+
+                 '    DROP TABLE #REG1 '+
+                 '  END '+
+                 'END ';
+         IF( DEBUG, showmessage('sSQL='+sSQL));
+         EXECUTESQL('STS_DB', sSQL);
+         WRITEINIFILE ('JournalsDB', 'ProcessedByCheckDtTrig', '1');
+
+   )
+);
+
+CLOSEDATASET('CheckTrig');
+
+
+
+
+

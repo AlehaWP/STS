@@ -1,0 +1,15 @@
+// *****************************************************************************
+// Название: отправку заявления о продлении срока временного хранения
+// Описание: Отправка ЗПСХ
+// Кнопка вызова: 1
+// Подпись кнопки: ЗПСХ
+// Вызов по событию:
+// *****************************************************************************
+//
+
+VAR ('sAlbumVersion', String, IF (TRIM(KRD_MAIN.ALBUM_VERSION) <> '', KRD_MAIN.ALBUM_VERSION, INIFILE ('XMLFormat', 'Version', '')));
+
+IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sAlbumVersion + '\req_wh_goods_prolong.exp'),
+  EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sAlbumVersion + '\req_wh_goods_prolong.exp'),
+  RAISEEXCEPTION ('Отправзка заявления о продлении срока ВХ не доступна')
+); // IF

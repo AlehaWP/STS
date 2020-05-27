@@ -1,0 +1,405 @@
+// *****************************************************************************
+// Название: Проверка остатков
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: Проверка остатков
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+Func('LogMessage', Block(
+  Param('sNumPP', String, 0),
+  Param('sInfoType', String, 1),
+  Param('sInInfo', String, 2),
+  Param('sOutInfo', String, 3),
+  Param('sRestInfo', String, 4),
+),        { функция для вывода строки в журнал }
+  AppendlogFile(sLogFile, '|' + CENTER(sNumPP, 5) + '| ' +
+                                CENTER(FIELDVALUE(sMainTable, 'NBD'), 23) + ' | ' +
+                                CENTER(FIELDVALUE(sMainTable, 'PART_NO'), 6) + ' | ' +
+                                CENTER(FIELDVALUE(sMainTable, 'STORE_DOC_NO'), 11) + ' | ' +
+                                CENTER(KRD_COMM_2.G32, 7) + ' | ' +
+                                CENTER(KRD_COMM_2.G312, 50) + ' | ' +
+                                CENTER(sInfoType, 27) + ' | ' +
+                                CENTER(sInInfo, 13) + '|' +
+                                CENTER(sOutInfo, 14) + '|' +
+                                CENTER(sRestInfo, 14) + '|')
+);
+
+FUNC('ExecuteCheckDocPeriodsDialog',,
+Block(
+  Const('CV', Integer, 0);
+  Const('sTable', String, '');
+  IF(GETSELECTEDCOUNT() > 0,
+    CV := CHOICEVARIANT('Заголовок формы', 1, 3, ['Текущий', 'Книга учета', 'Все документы (книга учета + архив)', 'Выделенные'], 'CV'),
+    CV := CHOICEVARIANT('Заголовок формы', 1, 1, ['Текущий', 'Книга учета', 'Все документы (книга учета + архив)'], 'CV')
+  );
+  sTable := 'KRD_MAIN_SELECTED';
+  IF(CV = -1, RAISEEXCEPTION ('Отменено пользователем'));
+  CASE(CV,
+    [0, sTable := 'CURRENT',
+    1, sTable := 'KRD_MAIN',
+    2, sTable := 'KRD_MAIN_2',
+    3, GETSELECTEDDOCS(sTable,
+      'PLACEID', 'ID', 'NBD', 'STORE_DOC_NO', 'PART_NO', 'BD_DATE')],
+    sTable := '');
+  sTable
+));
+
+Var('sIniFile', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'proc.ini');
+Var('sIniSection', String, 'chkrests.prd');
+
+Var('iRecordCount', Integer, 0);
+Var('iCurrentRecord', Integer, 1);
+Var('ProgrItem', Float, 0);
+
+Var('iPlaceId', Integer, 0);
+Var('dtPeriodBegin', DateTime, STRTODATE (INIFILE(sIniSection, 'PeriodBegin', DATE(), sIniFile), 'DD.MM.YYYY', '.') + ENCODETIME (0, 0, 0));
+Var('dtPeriodEnd', DateTime, STRTODATE (INIFILE(sIniSection, 'PeriodEnd', DATE(), sIniFile), 'DD.MM.YYYY', '.') + ENCODETIME (23, 59, 59));
+
+Var('fInG35', Float, 0);
+Var('fInG311', Float, 0);
+Var('fInG42', Float, 0);
+Var('fInG315A', Float, 0);
+Var('fInG315C', Float, 0);
+
+Var('fOutG35', Float, 0);
+Var('fOutG311', Float, 0);
+Var('fOutG42', Float, 0);
+Var('fOutG315A', Float, 0);
+Var('fOutG315C', Float, 0);
+
+Var('fRestG35', Float, 0);
+Var('fRestG311', Float, 0);
+Var('fRestG42', Float, 0);
+Var('fRestG315A', Float, 0);
+Var('fRestG315C', Float, 0);
+
+Var('fSumInG35', Float, 0);
+Var('fSumInG311', Float, 0);
+Var('fSumInG42', Float, 0);
+Var('fSumInG315A', Float, 0);
+Var('fSumInG315C', Float, 0);
+
+Var('fSumOutG35', Float, 0);
+Var('fSumOutG311', Float, 0);
+Var('fSumOutG42', Float, 0);
+Var('fSumOutG315A', Float, 0);
+Var('fSumOutG315C', Float, 0);
+
+Var('fSumRestG35', Float, 0);
+Var('fSumRestG311', Float, 0);
+Var('fSumRestG42', Float, 0);
+Var('fSumRestG315A', Float, 0);
+Var('fSumRestG315C', Float, 0);
+
+Var('bWasDiff', Boolean, False);
+
+Var('iDiffCounter', Integer);
+Var('iDiffCommCounter', Integer);
+Var('iCommCounter', Integer);
+Var('NumPP', String, '');
+
+Var('bByPeriod', Integer, 0);
+
+Var('sMainTable', String, '');
+
+Var('iResponse', Integer, 0);
+
+Var('sValCode', String, INIFILE(sIniSection, 'ValCode', '', sIniFile));
+
+//Взяли из ini-шника "Только таможенные документы учета"
+Var('CustomDocsOnly', Integer, CONVERT(IniFile('RegBook', 'CustomsDocsOnly', '0'), Integer));
+//Совместимость с АИСТом
+Var('AistCompatible', Integer, CONVERT(IniFile('Docs', 'AistCompatible', '0'), Integer)); {включина ли настройка "Совместимость с АИСТом", 1-да, 0-нет}
+//Отключен ли блок складских документов
+Var('StoreDocsBlock', Integer, CONVERT(IniFile('Database', 'StoreDocsBlock', '0'), Integer));
+Var('bUseStoreDocs', Boolean, False);
+
+VAR ('sLogFile', String, TempDirectory() + 'ChkRests.log');  { имя файла журнала }
+CREATELOGFILE (sLogFile);
+
+IF ((StoreDocsBlock = 1) * ((AistCompatible = 1) | ((AistCompatible = 0) * (CustomDocsOnly = 0))),
+  bUseStoreDocs := True,
+  bUseStoreDocs := False
+);
+AppendLogFile(sLogFile, 'Складские документы учета используются: ' + IF(bUseStoreDocs, 'Да', 'Нет'));
+AppendLogFile(sLogFile, '');
+
+IF(BOOKOPENED() <> 1,
+  sMainTable := 'KRD_MAIN_2',
+  sMainTable := ExecuteCheckDocPeriodsDialog()
+);
+
+IF(sMainTable = 'KRD_MAIN_2', Block(
+  iResponse := SELECTVALUES('Складcкие площадки ("Закрыть" - все площадки)', 'STORES', [['STORE_NO', '№ склада', 10],
+                                                                                        ['LICENCENO', '№ лицензии', 20],
+                                                                                        ['NAME', 'Название', 40]],
+                                                                                       [['PLACEID', 'iPlaceId']], , 'STS_DB');
+
+  //IF(iResponse = 0, RAISEEXCEPTION('Отменено пользователем'));
+
+  bByPeriod := INPUTDATERANGE ('dtPeriodBegin', 'dtPeriodEnd', 'Период для обработки ("Отмена" - нет периода)');
+
+  //IF(bByPeriod = 0, RAISEEXCEPTION ('Отменено пользователем'));
+  
+  WRITEINIFILE(sIniSection, 'PeriodBegin', FORMATDATETIME ('DD.MM.YYYY', dtPeriodBegin), sIniFile);
+  WRITEINIFILE(sIniSection, 'PeriodEnd', FORMATDATETIME ('DD.MM.YYYY', dtPeriodEnd), sIniFile);
+));
+
+sValCode := Trim(INPUTTEXT ('Код валюты', 'Код валюты итогов (отмена - не переводить ст-сть)', sValCode));
+
+IF(Trim(sValcode),
+  WRITEINIFILE(sIniSection, 'ValCode', sValCode, sIniFile)
+);
+
+IF(FINDKEY('STORES_2', [iPlaceId])*(sMainTable = 'KRD_MAIN_2')*(iResponse <> 0),
+  AppendLogFile(sLogFile, 'Склад № ' + Trim(STORES_2.STORE_NO) + ' ' + STORES_2.LICENCENO + ' "' + STORES_2.NAME + '" ')
+);
+
+AppendLogFile(sLogFile, '');
+
+
+IF(sMainTable = 'KRD_MAIN_2', Block(
+  IF(bByPeriod,
+    AppendLogFile(sLogFile, 'Период: с ' + FORMATDATETIME ('DD.MM.YYYY', dtPeriodBegin) + ' по ' + FORMATDATETIME ('DD.MM.YYYY', dtPeriodEnd)),
+    AppendLogFile(sLogFile, 'Период: по состоянию на ' + FORMATDATETIME ('DD.MM.YYYY', DATE()))
+  );
+), IF(sMainTable = 'CURRENT',
+    AppendLogFile(sLogFile, 'Период: по текущему документу'),
+    AppendLogFile(sLogFile, 'Период: по текущей книге учета')
+  )
+);
+
+
+AppendLogFile(sLogFile, '');
+AppendLogFile(sLogFile, 'Начало проверки: ' + CHARSTR(' ', 15) + FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+AppendLogFile(sLogFile, '');
+                        {         1         2         3         4         5         6         7         8         9          }
+                        {1234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890}
+AppendLogFile(sLogFile, '--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'),
+AppendLogFile(sLogFile, '|  №  |                         |   №    |    № по     |    №    |                                                    |            Тип              |                 Расхождение                |'),
+AppendLogFile(sLogFile, '| п/п |        № ДО1            | партии | книге учета |  товара |                Наименование                        |         информации          |--------------------------------------------|'),
+AppendLogFile(sLogFile, '|     |                         |        |             |         |                                                    |                             |    Приход    |    Расход    |   Остаток    |'),
+AppendLogFile(sLogFile, '--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'),
+
+OPENTABLE ('RELCOMM2', 'STS_DB', 'REL_COMM', 'PLACEID;ID;G32');
+
+IF(iResponse,
+  SETRANGE('KRD_MAIN_2', [iPlaceId])
+);
+
+IF(bByPeriod,
+  SETFILTER ('KRD_MAIN_2', 'BD_DATE >= ' + CHAR(39) + FORMATDATETIME ('DD.MM.YYYY HH:NN:SS', dtPeriodBegin) + CHAR(39) +
+                      ' AND BD_DATE <= ' + CHAR(39) + FORMATDATETIME ('DD.MM.YYYY HH:NN:SS', dtPeriodEnd) + CHAR(39))
+);
+
+iRecordCount := RECORDCOUNT('KRD_MAIN_2');
+LET('ProgrItem', CONVERT(iRecordCount, Float)/100.0);
+
+SHOWPROGRESS('Проверка остатков...');
+
+IF(sMainTable = 'CURRENT',
+  IF(FINDKEY('KRD_MAIN_2', [KRD_MAIN.PLACEID, KRD_MAIN.ID]), Block(
+    iRecordCount := 1;
+    sMainTable := 'KRD_MAIN_2';
+  ),
+    iRecordCount := 0;
+  ),
+Block(
+  iRecordCount := RECORDCOUNT(sMainTable);
+  FIRST(sMainTable);
+));
+
+iCurrentRecord := 1;
+
+WHILE(iCurrentRecord <= iRecordCount, Block(
+
+  // --> Товары
+  SETRANGE ('KRD_COMM_2', [FIELDVALUE (sMainTable, 'PLACEID'), FIELDVALUE (sMainTable, 'ID')]);
+  
+  NumPP := Trim(iDiffCounter + 1);
+  
+  FIRST('KRD_COMM_2');
+  WHILE(EOF('KRD_COMM_2') = 0, Block(
+
+    fInG35 := KRD_COMM_2.G35;
+    fInG311 := KRD_COMM_2.G311;
+    fInG42 := KRD_COMM_2.G42;
+    fInG315C := KRD_COMM_2.G315C;
+    fInG315A := KRD_COMM_2.G315A;
+
+    IF(bUseStoreDocs,
+      IF((INIFILE ('Docs', 'DoFactInfo', '0') = '1')*FINDKEY('IN_COMM_2', [KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32]), Block(
+        fInG35 := IN_COMM_2.G35;
+        fInG311 := IN_COMM_2.G311;
+        fInG42 := IN_COMM_2.G42;
+        fInG315C := IN_COMM_2.G315C;
+        fInG315A := IN_COMM_2.G315A;
+      )),
+      IF(INIFILE ('Docs', 'DoFactInfo', '0') = '1', Block(
+        fInG35 := KRD_COMM_2.FACT_G35;
+        fInG311 := KRD_COMM_2.FACT_G311;
+        fInG42 := KRD_COMM_2.FACT_G42;
+        fInG315C := KRD_COMM_2.FACT_G315C;
+        fInG315A := KRD_COMM_2.FACT_G315A;
+      ))
+    );
+    
+    // выпущено
+    IF(bUseStoreDocs = 0, Block(
+      // --> Выпуски товаров
+      SETRANGE('RELCOMM2', [KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32]);
+      
+      fOutG35 := SUMVALUES ('RELCOMM2', 'RELEASE_G35');
+      fOutG311 := SUMVALUES ('RELCOMM2', 'RELEASE_G311');
+      fOutG42 := SUMVALUES ('RELCOMM2', 'RELEASE_G42');
+      fOutG315C := SUMVALUES ('RELCOMM2', 'RELEASE_G315C');
+      fOutG315A := SUMVALUES ('RELCOMM2', 'RELEASE_G315A');
+
+      CANCELRANGE('RELCOMM2');
+      // --< Выпуски товаров
+    ), Block(
+      // --> Выпуски товаров
+      SETRANGE('OUT_COMM_2', [KRD_COMM_2.PLACEID, KRD_COMM_2.ID, KRD_COMM_2.G32]);
+
+      fOutG35 := SUMVALUES ('OUT_COMM_2', 'OUT_G35');
+      fOutG311 := SUMVALUES ('OUT_COMM_2', 'OUT_G311');
+      fOutG42 := SUMVALUES ('OUT_COMM_2', 'OUT_G42');
+      fOutG315C := SUMVALUES ('OUT_COMM_2', 'OUT_G315C');
+      fOutG315A := SUMVALUES ('OUT_COMM_2', 'OUT_G315A');
+
+      CANCELRANGE('OUT_COMM_2');
+      // --< Выпуски товаров
+    ));
+
+    // остатки
+    fRestG311 := fInG311 - fOutG311;
+    fRestG35 := fInG35 - fOutG35;
+    fRestG42 := fInG42 - fOutG42;
+    fRestG315C := fInG315C - fOutG315C;
+    fRestG315A := fInG315A - fOutG315A;
+    
+    IF (ABS(fRestG311) > 0.009, Block({ проверка веса брутто }
+      LogMessage(NumPP, 'Количество мест', FormatFloat('0.##', fInG311), FormatFloat('0.##', fOutG311), FormatFloat('0.#####', fRestG311));
+      NumPP := '';
+      fSumInG311 := fSumInG311 + fInG311;
+      fSumOutG311 := fSumOutG311 + fOutG311;
+      fSumRestG311 := fSumRestG311 + fRestG311;
+    ));
+    
+    IF (ABS(fRestG35) > 0.009, Block({ проверка количества мест }
+      LogMessage(NumPP, 'Вес брутто', FormatFloat('0.##', fInG35), FormatFloat('0.##', fOutG35), FormatFloat('0.#####', fRestG35));
+      NumPP := '';
+      fSumInG35 := fSumInG35 + fInG35;
+      fSumOutG35 := fSumOutG35 + fOutG35;
+      fSumRestG35 := fSumRestG35 + fRestG35;
+    ));
+
+    IF (ABS(fRestG42) > 0.009, Block({ проверка фактурной стоимости }
+      LogMessage(NumPP, 'Фактурная стоимость, ' + CURRENCYABBR (KRD_COMM_2.G42_CURRENCY), FormatFloat('0.##', fInG42), FormatFloat('0.##', fOutG42), FormatFloat('0.#####', fRestG42));
+      NumPP := '';
+      IF(sValCode <> '',
+        fSumInG42 := fSumInG42 + TRANSCURRENCY (FIELDVALUE(sMainTable, 'BD_DATE'), KRD_COMM_2.G42_CURRENCY, sValCode, fInG42),
+        fSumInG42 := fSumInG42 + fInG42
+      );
+      IF(sValCode <> '',
+        fSumOutG42 := fSumOutG42 + TRANSCURRENCY (FIELDVALUE(sMainTable, 'BD_DATE'), KRD_COMM_2.G42_CURRENCY, sValCode, fOutG42),
+        fSumOutG42 := fSumOutG42 + fOutG42
+      );
+      IF(sValCode <> '',
+        fSumRestG42 := fSumRestG42 + TRANSCURRENCY (FIELDVALUE(sMainTable, 'BD_DATE'), KRD_COMM_2.G42_CURRENCY, sValCode, fRestG42),
+        fSumRestG42 := fSumRestG42 + fRestG42
+      );
+    ));
+
+    IF (ABS(fRestG315C) > 0.009, Block({ проверка физического объема }
+      LogMessage(NumPP, 'Физический объем, ' + KRD_COMM_2.G315CN, FormatFloat('0.##', fInG315C), FormatFloat('0.##', fOutG315C), FormatFloat('0.#####', fRestG315C));
+      NumPP := '';
+      fSumInG315C := fSumInG315C + fInG315C;
+      fSumOutG315C := fSumOutG315C + fOutG315C;
+      fSumRestG315C := fSumRestG315C + fRestG315C;
+    ));
+
+    IF (ABS(fRestG315A) > 0.009, Block({ проверка кол-ва в доп. ед. изм. }
+      LogMessage(NumPP, 'Кол-во в доп. ед. изм., ' + KRD_COMM_2.G315, FormatFloat('0.##', fInG315A), FormatFloat('0.##', fOutG315A), FormatFloat('0.#####', fRestG315A));
+      NumPP := '';
+      fSumInG315A := fSumInG315A + fInG315A;
+      fSumOutG315A := fSumOutG315A + fOutG315A;
+      fSumRestG315A := fSumRestG315A + fRestG315A;
+    ));
+
+    IF ((ABS(fRestG35) > 0.009)|(ABS(fRestG311) > 0.009)|(ABS(fRestG42) > 0.009)|
+        (ABS(fRestG315C) > 0.009)|(ABS(fRestG315A) > 0.009), Block(
+      bWasDiff := True;
+      iDiffCommCounter := iDiffCommCounter + 1;
+    ));
+
+    iCommCounter := iCommCounter + 1;
+    
+    NEXT('KRD_COMM_2');
+  ));
+  
+  CANCELRANGE('KRD_COMM_2');
+  // --< Товары
+  
+  IF(bWasDiff, Block(
+    AppendLogFile(sLogFile, '--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'),
+    iDiffCounter := iDiffCounter + 1;
+  ));
+  bWasDiff := False;
+  
+  SETPROGRESS(iCurrentRecord/ProgrItem);
+  NEXT(sMainTable);
+  IF(CANCELPRESSED(), iRecordCount := iCurrentRecord);
+  iCurrentRecord := iCurrentRecord + 1;
+  
+));
+
+SETPROGRESS(100);
+
+IF(iResponse | bByPeriod, Block(
+  SETFILTER(sMainTable, '');
+  CANCELRANGE(sMainTable);
+));
+
+HideProgress();
+
+
+AppendLogFile(sLogFile, '|' + CHARSTR(' ', 110) + 'Итого: ' + '| ' + CENTER('Количество мест', 27) + ' | ' +
+                                                                    CENTER(FormatFloat('0.##', fSumInG311), 13) + '|' +
+                                                                    CENTER(FormatFloat('0.##', fSumOutG311), 14) + '|' +
+                                                                    CENTER(FormatFloat('0.##', fSumRestG311), 14) + '|');
+
+AppendLogFile(sLogFile, '|' + CHARSTR(' ', 117) + '| ' + CENTER('Вес брутто', 27) + ' | ' +
+                                                         CENTER(FormatFloat('0.##', fSumInG35), 13) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumOutG35), 14) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumRestG35), 14) + '|');
+
+AppendLogFile(sLogFile, '|' + CHARSTR(' ', 117) + '| ' + CENTER('Фактурная стоимость, ' + CURRENCYABBR (sValCode), 27) + ' | ' +
+                                                         CENTER(FormatFloat('0.##', fSumInG42), 13) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumOutG42), 14) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumRestG42), 14) + '|');
+
+AppendLogFile(sLogFile, '|' + CHARSTR(' ', 117) + '| ' + CENTER('Физический объем', 27) + ' | ' +
+                                                         CENTER(FormatFloat('0.##', fSumInG315C), 13) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumOutG315C), 14) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumRestG315C), 14) + '|');
+
+AppendLogFile(sLogFile, '|' + CHARSTR(' ', 117) + '| ' + CENTER('Кол-во в доп. ед. изм.', 27) + ' | ' +
+                                                         CENTER(FormatFloat('0.##', fSumInG315A), 13) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumOutG315A), 14) + '|' +
+                                                         CENTER(FormatFloat('0.##', fSumRestG315A), 14) + '|');
+
+AppendLogFile(sLogFile, '--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------'),
+
+
+AppendLogFile(sLogFile, '');
+AppendLogFile(sLogFile, 'Завершение проверки: ' + CHARSTR(' ', 15) + FormatDateTime('DD.MM.YYYY HH:NN:SS', DATE() + TIME(1)));
+AppendLogFile(sLogFile, '');
+AppendLogFile(sLogFile, CHAR(13) + 'Проверено документов: ' + Trim(iRecordCount) + ' (товаров ' + Trim(iCommCounter) + ')' + CHAR(13) +
+                                   'Обнаружено документов с остатками: ' + Trim(iDiffCounter) + ' (товаров: ' + Trim(iDiffCommCounter) + ')');
+                                   
+if (StopPressed() = 0, ShowLogFile(sLogFile, 'Проверка остатков'));
+

@@ -1,0 +1,41 @@
+// *****************************************************************************
+// Название: Очистка версии альбомов
+// Описание: Очистка версии альбомов
+// Кнопка вызова: 1
+// Подпись кнопки: Очистка версии альбомов
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC('ClearAlbumVersion',
+     BLOCK(
+           Param('vPlaceid', integer, 0),
+           Param('vId', integer, 1)
+     ),
+     BLOCK(
+      // showmessage('UPDATE KRD_MAIN SET ALBUM_VERSION='+char(39)+''+char(39)+' WHERE PLACEID='+vPLACEID+' AND ID='+ vID);
+       EXECUTESQL('STS_DB', 'UPDATE KRD_MAIN SET ALBUM_VERSION='+char(39)+''+char(39)+' WHERE PLACEID='+vPLACEID+' AND ID='+ vID);
+     )
+),
+
+
+GETSELECTEDDOCS ('DO1', 'PLACEID', 'ID');
+IF(RECORDCOUNT('DO1')<>0,
+   BLOCK(
+      FIRST('DO1');
+      WHILE(EOF('DO1')=0,
+            BLOCK(
+                  ClearAlbumVersion(DO1.PLACEID, DO1.ID);
+                  NEXT('DO1');
+            )
+      );
+   ),
+   BLOCK(
+
+     
+     ClearAlbumVersion(KRD_MAIN.PLACEID, KRD_MAIN.ID);
+     
+   )
+);
+
+GLOBALREFRESH();

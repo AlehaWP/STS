@@ -1,0 +1,402 @@
+// *****************************************************************************
+// Название: Импорт из Манифеста(CUSCAR) XML
+// Описание: Импорт из Манифеста(CUSCAR) XML
+// Кнопка вызова: 1
+// Подпись кнопки: Manifest-xml
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sFileName', String);
+VAR ('PlaceIsSelected', Integer, 0);
+VAR ('vPlaceId', Integer);
+VAR ('vID', Integer);
+VAR('sNBD', string);
+VAR('sSHOWNBD', string);
+VAR ('vMainId', Integer);   {текущие значения соотв. полей}
+VAR ('vGN', Integer, 0);
+VAR ('vPartNo', Integer);
+VAR ('vNBD', String);
+VAR ('vNu', String);
+VAR ('vCounter', Integer);
+VAR('vG144', string);
+VAR('vG142', string);
+VAR('vG143', string);
+VAR('vG1440', string);
+VAR('dG145', DateTime);
+VAR('sTranspName', string);
+VAR('sCarrier', string);
+VAR ('iCount', Integer);
+VAR ('i', Integer);
+Var('sBill', string);
+VAR ('dtDODate', DateTime);
+VAR ('dtStoreDate', DateTime);
+VAR ('vStorePeriod', Integer, 1);
+VAR ('dtBegkeep', DateTime);
+VAR('iFindCont', integer, 0);
+
+
+// uses
+Var('procPath', String, INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'PROCDOCS\');
+EXECUTESCRIPT(procPath+'date.prd'); // функции работы с датами
+
+
+
+FUNC ('ReadXML', ,
+  Block(
+    
+    VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+    XMLDOCUMENTLOAD( xmlDoc, sFileName );
+    VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+    Var('XMLDocRoot2', integer, XMLNodeChild(XMLDocRoot,'Manifest'));
+    VAR ('XMLDOCHEAD', Integer, XMLNodeChild(XMLDocRoot2,'DocHead'));
+    VAR ('XMLPartiesList', Integer, XMLNodeChild(XMLDocRoot2,'PartiesList'));
+    VAR ('XMLArrival', Integer, XMLNodeChild(XMLDocRoot2,'Arrival'));
+    VAR ('XMLBLslist', Integer, XMLNodeChild(XMLDocRoot2, 'BLsList'));
+   // VAR ('XMLLinksNodes', Integer, XMLNodeAddChild(XMLDocRoot2, 'LinksNodes'));
+  )
+),
+
+
+IF( SELECTFILE ('sFileName','Выбирите файл','XML - файлы (*.xml)|*.xml'),
+    Block(
+      OPENQUERY ('Stors', 'STS_DB', 'Select * from STORES');
+      PlaceIsSelected := SelectValues ('Выбор склада, на который будет создан документ', 'Stors',
+                                              [
+                                                ['LICENCENO',   'Номер лицензии', 15],
+                                                ['LICENCENO_EXT',   ' ', 1],
+                                                ['STORE_NO',   'Номер склада', 15],
+                                                ['NAME',   'Название склада', 30],
+                                                ['PlaceId',   '', 10]
+                                              ],
+                                              [
+                                                ['PlaceId', 'vPlaceId'],
+                                                ['LICENCENO', 'vG144'],
+                                                ['NAME', 'vG142'],
+                                                ['ADDRESS', 'vG143'],
+                                                ['LICENCEDATE', 'dG145'],
+                                              ], '', 'STS_DB');
+       IF (PlaceIsSelected = 0,
+           RAISEEXCEPTION ('Отменено пользователем')
+       ); {IF - PlaceIsSelected = 0 }
+       
+       ReadXML();
+       dtDODate := NOW();
+       dtBegkeep := DATE() + 1;
+       dtStoreDate := AddMonths(dtDODate + 1, 2);
+       vStorePeriod := dtStoreDate - dtBegkeep;
+       sTranspName:=XMLNODEVALUE (XMLNodeChild(XMLArrival,'Vessel'));//Имя парахода
+       sCarrier:=XMLNODEVALUE (XmlNodeChild(XMLNodeChild(XMLPartiesList, 1),'Name'));
+       iCount:= (XMLNODECHILDCOUNT (XMLBLslist));
+       //debugmessage(iCount,1);
+       i:=0;
+       OPENQUERY ('qryMaxId', 'STS_DB', 'SELECT MAX(ID) AS MAX_ID FROM KRD_Main WHERE PLACEID='+CHAR(39)+vPlaceID+CHAR(39));
+       vMainId:=Fieldvalue('qryMaxId','Max_Id') + 1;
+       vId:=Fieldvalue('qryMaxId','Max_Id') + 1;
+       sNBD := SOLVE (INIFILE('Docs','MakeBD_No',''));
+       sSHOWNBD := FormatDateTime('YYYYMMDD', DATE()) + LEFTPAD(RIGHT(sNBD, 5), 5, '0');
+
+       CLOSEDATASET('qryMaxId');
+       OPENTABLE ('KRD_MAIN_5', 'STS_DB', 'KRD_MAIN', 'PLACEID;ID');
+       OPENTABLE ('KRD_TRANSP_5', 'STS_DB', 'KR_TRANS', 'PLACEID;ID;COUNTER');
+       OPENTABLE ('KRD_PAPERS_5', 'STS_DB', 'KR_PAPER', 'PLACEID;ID;COUNTER');
+       OPENTABLE ('KRD_COMM_5', 'STS_DB', 'KRD_COMM', 'PLACEID;ID;G32');
+       OPENTABLE ('KRD_COMM_PAPERS_5', 'STS_DB', 'KR_C_P', 'PLACEID;ID;G32;DOC_COUNTER');
+       OPENTABLE ('KRD_CONT_5', 'STS_DB', 'KRD_CONT', 'PLACEID;ID;COUNTER');
+       OPENTABLE ('ORGANIZ_2', 'STS_DB', 'ORGANIZ', 'PLACEID;ORGID');
+       
+       //SHOWPROGRESS ('Создаем ДО1');
+       //Цикл по Child ветки BLsList
+       While(i<iCount,
+             Block(
+               var('XMLPartGoods', integer, XmlNodeChild(XMLBLslist, i));
+               var('XMLPartiesList', integer, XmlNodeChild(XMLPartGoods,'PartiesList'));
+               var('XMLContainerList', integer,XmlNodeChild(XMLPartGoods,'ContainerList'));
+               var('XMLBill', integer, XmlNodeChild(XMLPartGoods,'DocHead'));
+               var('iCountContList', integer, 1);
+               var('iContN', integer, 0);
+               VAR('iBruttoCont', integer, 0);
+               Var('vG32', integer, 0);
+               VAR('iStoreDoc', integer, 1);
+               VAR('sSql', string, '');
+               VAR('iSender', integer, 0);
+               VAR('iReceiver', integer, 0);
+               VAR('sSender', string, '');
+               VAR('sReceiver', string, '');
+               VAR('sSenderAdress', string, '');
+               VAR('sReceiverAdress', string, '');
+               IF(INIFILE('Docs','StoreDoc_No','') = '', Block(
+                                                            iStoreDoc := Convert(LEFTPAD (ReadCountersString('ContractDocNo', 'Default', 1), 6, 0), integer) + 1;
+                                                            WriteCountersString('ContractDocNo', 'Default', iStoreDoc);
+                                                         )
+                                                        , iStoreDoc := Convert(Solve(INIFILE('Docs','StoreDoc_No','')), integer);
+               );
+               
+               sBill := XMLNODEVALUE (XMLNodeChild(XMLBill,'DocNumber'));
+               //debugmessage(sBill,1);
+               //Создаем ДО1мв
+               sSQL := 'INSERT into KRD_MAIN ';
+               sSQL:= sSQL + '( ';
+               sSQL:= sSQL + 'PLACEID, ID, MAIN_ID, ';//1
+               sSQL:= sSQL + 'NBD, Store_DOC_NO, G022, ';//2
+               sSQL:= sSQL + 'G082, PART_NO, PART_MODE, ';//3
+               sSQL:= sSQL + 'A_MODE, SHIP_NAME, BEG_KEEP, ';//4
+               sSQL:= sSQL + 'BD_DATE, G142, G143, ';//5
+               sSQL:= sSQL + 'G144, G1440, G145, ';//6
+               sSQL:= sSQL + 'G261, WITH_PLACE, Z_MODE ';//7
+               sSQL:= sSQL + ') ';
+               sSQL:= sSQL + ' VALUES ';
+               sSQL:= sSQL + '( ';
+               sSQL:= sSQL + vPlaceId+', '+ vId+', '+ vMainId+', ';//1
+               sSQL:= sSQL + char(39) + sNBD + char(39)+', '+ char(39) + LEFTPAD (Convert(iStoreDoc, string), 6, 0) + char(39)+', '+  char(39) + REMOVECHAR (XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 0),'Name')), char(39)) + char(39)+', ';//2
+               sSQL:= sSQL + char(39) + REMOVECHAR (XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 0),'Name')),char(39)) + char(39)+', '+ convert((i+1), string) +', 1, ';//3
+               sSQL:= sSQL + '7, '+char(39) + sTranspName + char(39)+', '+char(39) + FormatDateTime('DD.MM.YYYY HH:MM:SS',dtDODate + 1) + char(39)+', ';//4
+               sSQL:= sSQL + char(39) + FormatDateTime('DD.MM.YYYY HH:MM:SS',dtDODate) + char(39)+', '+char(39) + vG142 + char(39)+', '+char(39) + vG143 + char(39)+', ';//5
+               sSQL:= sSQL + char(39) + vG144 + char(39)+', '+char(39) + '2' + char(39)+', '+char(39) + FormatDateTime('DD.MM.YYYY', dG145) + char(39)+', ';//6
+               sSQL:= sSQL + char(39) + '10' + char(39)+', 1, 3 ';//7
+               sSQL:= sSQL + ')';
+               //showmessage(sSql);
+               //EXECUTESQL('sts_db', sSQL);
+               //RAISEEXCEPTION (sSql);
+               
+
+               //OPENQUERY('ORGANIZID','STS_DB', 'SELECT ORGID FROM ORGANIZ WHERE ORGNAME IN ('+char+','++')');
+               //showmessage(1);
+               IF (LOCATE('ORGANIZ_2','ORGNAME',[char(39) +  XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 0),'Name')) + char(39)]),
+                   ,
+                   BLOCK(//showmessage(3);
+                     OPENQUERY('MAX','STS_DB', 'SELECT MAX(ORGID)  AS ORGID, MAX(PLACEID) AS PLACEID FROM ORGANIZ');
+                     APPENDRECORD('ORGANIZ_2');
+                     EDIT('ORGANIZ_2');
+                     SETFIELDVALUE('ORGANIZ_2',
+                                   'PLACEID', MAX.PLACEID,
+                                   'ORGID', MAX.ORGID + 1,
+                                   'ORGNAME', XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 0),'Name')),
+                                   'ORGTYPE', 1,
+                                   'ORG_IS_SENDER', 1
+                     );
+                     POST('ORGANIZ_2');
+                     CLOSEDATASET('MAX');
+                   )
+               );
+               sSender := ORGANIZ_2.ORGNAME;
+               sSenderAdress := ORGANIZ_2.ORGADDRESS;
+               iSender := ORGANIZ_2.ORGID;
+               
+               //SETFILTER('ORGANIZ_2','ORGNAME = '+char(39) +  XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 1),'Name')) + char(39));
+               IF (LOCATE('ORGANIZ_2','ORGNAME',[char(39) +  XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 0),'Name')) + char(39)]),
+                   ,
+                   BLOCK(
+                     OPENQUERY('MAX','STS_DB', 'SELECT MAX(ORGID)  AS ORGID, MAX(PLACEID) AS PLACEID FROM ORGANIZ');
+                     APPENDRECORD('ORGANIZ_2');
+                     EDIT('ORGANIZ_2');
+                     SETFIELDVALUE('ORGANIZ_2',
+                                   'PLACEID', MAX.PLACEID,
+                                   'ORGID', MAX.ORGID + 1,
+                                   'ORGNAME', XMLNODEVALUE (XMLNodeChild(XMLNodeChild(XMLPartiesList, 1),'Name')),
+                                   'ORGTYPE', 2,
+                                   'ORG_IS_RECEIVER', 1
+                     );
+                     POST('ORGANIZ_2');
+                     CLOSEDATASET('MAX');
+                   )
+               );
+               sReceiver := ORGANIZ_2.ORGNAME;
+               sReceiverAdress := ORGANIZ_2.ORGADDRESS;
+               iReceiver := ORGANIZ_2.ORGID;
+
+               APPENDRECORD ('KRD_MAIN_5');
+               EDIT ('KRD_MAIN_5');
+               SETFIELDVALUE ('KRD_MAIN_5',
+                              'PLACEID',   vPlaceId,
+                              'ID', vId,
+                              'Main_Id', vMainId,
+                              'NBD', sNBD,
+                              'SHOW_NBD', sSHOWNBD,
+                              'G011', 'ИМ',
+                              'G012', '40',
+                              'G19', 1,
+                              'G210', 1,
+                              'SENDER', iSender,
+                              'RECEIVER', iReceiver,
+                              'Store_DOC_NO', LEFTPAD (Convert(iStoreDoc, string), 6, 0),
+                              'DOC_STATE', 0,
+                              'G022', sSender ,
+                              'G023', sSenderAdress,
+                              'G082', sReceiverAdress,
+                              'G083', sReceiverAdress,
+                              'PART_NO',   i + 1,
+                              'PART_MODE', '1',
+                              'A_MODE',    '7',
+                              'SHIP_NAME', sTranspName,
+                              'BEG_KEEP', dtDODate + 1,
+                              'BD_DATE', dtDODate,
+                              'G142',vG142,
+                              'G143',vG143,
+                              'G144',vG144,
+                              'G1440','2',
+                              'G145',dG145,
+                              'G261', '10',
+                              'WITH_PLACE', 1,
+                              'Z_MODE', 3,
+                              'NOTICE_RW_ONLY', 0
+                              );
+              Post('KRD_MAIN_5');
+              //Добавляем транспортное средство
+              APPENDRECORD('KRD_TRANSP_5');
+              EDIT('KRD_TRANSP_5');
+              SETFIELDVALUE('KRD_TRANSP_5',
+                           'PLACEID',     vPlaceID,
+                           'ID',          vID,
+                           'COUNTER',     '1',
+                           'TRANSP_CODE', '10',
+                           'CARNO',       sTranspName
+              );
+              POST('KRD_TRANSP_5');
+              //Добавляем накладную
+              APPENDRECORD ('KRD_PAPERS_5');
+              EDIT ('KRD_PAPERS_5');
+              SETFIELDVALUE ('KRD_PAPERS_5',
+                             'PLACEID', vPlaceID,
+                             'ID',      vID,
+                             'COUNTER', '1',
+                             'PAPERNAME', 'КОН',  
+                             'PAPERDATE',StrToDate(Copy(XMLNODEVALUE(XMLNODEChild(XMLBill, 'DocDate')), 1, 10), 'YYYY-MM-DD', '-'),
+                             'PAPERNO',   XMLNODEVALUE (XMLNodeChild(XMLBill,'DocNumber')),
+                             'PAPERCODE', '02011' //возможно стоит PAPERNAME или PAPERCODE подтягивать из справочника по REFERENCE
+              );
+              POST ('KRD_PAPERS_5');
+              
+              iCountContList:= XMLNODECHILDCOUNT (XMLContainerList);
+              //Цикл по Child ветки ConteinerList. Каждая запись новый контейнер
+              While( iContN < iCountContList,
+                    block(
+                      VAR('XMLContainer', integer, XMLNODECHILD(XMLContainerList, iContN));
+                      VAR('iCountCont', integer);
+                      VAR('iContTov', integer, 0);
+                      VAR('sTareWeight', integer, 0);
+                      VAR('iNettoTare', integer, 0);
+                      VAR('sContNo', string, '');
+                      iCountCont:= (XMLNODECHILDCOUNT (XMLContainer));
+                      If(XMLNODEFIND(XMLContainer, 'TareWeight')<>0,
+                           Block(
+                             sTareWeight:= XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight'));
+                             iNettoTare := CONVERT (XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight')), integer);
+                             iBruttoCont : = CONVERT (XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight')), integer);
+                           ),
+                      );
+                      //sTareWeight:= XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight'));
+                      sContNo := XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'Prefix')) + XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'Number'));
+					  //iFindCont := 0;
+					  //IF(LOCATE('KRD_CONT_2', 'CONTNO', sContNo), iFindCont := 1);
+                      //iNettoTare := CONVERT (XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight')), integer);
+                      //iBruttoCont : = CONVERT (XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight')), integer);
+                      //Цикл по child ветки Conteiner. Сделано на случай, если в одном контейнере несколко товаров
+                      While(iContTov < iCountCont,
+                            block(
+                              CASE (XMLNODENAME (XMLNODECHILD(XMLContainer, iContTov)),
+                                   ['CargoName', Block(//Добавляем товар
+                                                    vGN := vGN + 1;
+                                                    vG32 := vG32 + 1;
+
+                                                    //Showmessage(iContTov );
+                                                    APPENDRECORD('KRD_COMM_5');
+                                                    EDIT('KRD_COMM_5');
+                                                    SETFIELDVALUE ('KRD_COMM_5',
+                                                                   'PLACEID', vPlaceID,
+                                                                   'ID',      vID,
+                                                                   'G32',     vG32,
+                                                                   'GN',      vGN,
+                                                                   'G312',    XMLNODEVALUE(XMLNODECHILD(XMLContainer, iContTov)),
+                                                                   'G311',    '1',
+                                                                   'ACCEPTDATE', dtDODate,
+                                                                   'STORAGE_TYPE', 'НОР',
+                                                                   'LEG_PERIOD', '15' ,
+                                                                   'STORE_PERIOD', vStorePeriod ,
+                                                                   'STORAGE_DATE', dtStoreDate,
+                                                                   'N_CONT', iContN + 1,
+                                                                   'N_TTN', '1',
+                                                                   'N_TTN_G32', vG32,
+                                                                   'G313', 'Контейнер',   //IF(iFindCont,'Контейнер', 'Часть контейнера'),
+                                                                   'BOXNO', sContNo,
+                                                                   'CONTNO',  sContNo
+                                                    );													
+                                                    POST('KRD_COMM_5');
+                                                    APPENDRECORD ('KRD_COMM_PAPERS_5');
+                                                    EDIT ('KRD_COMM_PAPERS_5');
+                                                    SETFIELDVALUE ('KRD_COMM_PAPERS_5',
+                                                                   'PLACEID', vPlaceID,
+                                                                   'ID', vID,
+                                                                   'G32', vG32,
+                                                                   'DOC_TYPE',    '11',
+                                                                   'DOC_COUNTER', iContN + 1
+                                                    );
+                                                    POST ('KRD_COMM_PAPERS_5');
+                                                    
+                                                    APPENDRECORD ('KRD_COMM_PAPERS_5');
+                                                    EDIT ('KRD_COMM_PAPERS_5');
+                                                    SETFIELDVALUE ('KRD_COMM_PAPERS_5',
+                                                                   'PLACEID', vPlaceID,
+                                                                   'ID', vID,
+                                                                   'G32', vG32,
+                                                                   'DOC_TYPE',    '13',
+                                                                   'DOC_COUNTER', '1'
+                                                    );
+                                                    POST ('KRD_COMM_PAPERS_5');
+                                                    
+                                                 ),
+                                    'CargoWeight', Block(
+                                                    EDIT('KRD_COMM_5');
+                                                    SETFIELDVALUE('KRD_COMM_5',
+                                                                  'G35', Convert(XMLNODEVALUE(XMLNODECHILD(XMLContainer, iContTov)), integer)// + iNettoTare,
+                                                                  //'G38', XMLNODEVALUE(XMLNODECHILD(XMLContainer, iContTov))
+                                                                  );
+                                                    POST('KRD_COMM_5');
+                                                    iBruttoCont := iBruttoCont + Convert(XMLNODEVALUE(XMLNODECHILD(XMLContainer, iContTov)), integer);
+                                                   )
+                                    ],
+                                    ''
+                              );
+
+                              iContTov := iContTov + 1;
+                            )
+                      );//While iContTov < iCountCont,
+                      //Добавлем контейнер
+                      APPENDRECORD ('KRD_CONT_5');
+                      EDIT ('KRD_CONT_5');
+                      SETFIELDVALUE ('KRD_CONT_5',
+                                     'PLACEID',  vPlaceID,
+                                     'ID',       vID,
+                                     'COUNTER',  iContN + 1,
+                                     'N_TTN',    '1',
+                                     'N_CONT',   '1',
+                                     'CONTNO',   sContNo,
+                                     'G35',      iBruttoCont - If(XMLNODEFIND(XMLContainer, 'TareWeight')<>0,convert(XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight')), integer),0),
+                                     'G38',      If(XMLNODEFIND(XMLContainer, 'TareWeight')<>0,XMLNODEVALUE(XMLNODECHILD(XMLContainer, 'TareWeight')),'')
+                      );
+
+                      POST('KRD_CONT_5');
+                      iContN:= iContN + 1;
+                    )
+              
+
+              );//While iContN < iCountContList
+              vId := vId + 1;
+              i:= i + 1;
+              //SETPROGRESS (i, 100, iCount);
+            )
+       );//While i<iCount
+       
+       
+
+       CLOSEDATASET ('KRD_MAIN_5');
+       CLOSEDATASET('KRD_TRANSP_5');
+       CLOSEDATASET ('KRD_PAPERS_5');
+       CLOSEDATASET ('KRD_COMM_5');
+       CLOSEDATASET ('KRD_COMM_PAPERS_5');
+       CLOSEDATASET('KRD_CONT_5');
+       CLOSEDATASET ('ORGANIZ_2');
+       //HIDEPROGRESS ();
+
+    ),
+);
+GLOBALREFRESH ();

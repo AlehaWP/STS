@@ -1,0 +1,27 @@
+// *****************************************************************************
+// Название: Создание протокола
+// Описание: Создание ДО1 для RZD (функции; используемые переменные определены в CreatDO1.prd)
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('SaveLogFile', PARAM ('mTextMessage', Memo, 0),
+     BLOCK(
+           if (iShortLog, APPENDLOGFILE (sLogFile1, ' ' + FDT('dd.mm.yyyy hh:mm:ss',DATE()+TIME(1)) + " " + mTextMessage), );
+     )//end block
+);//end func
+
+
+VAR ('sLogFile1', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH()) + 'LOGS\DO2print.log');
+FORCEDIRECTORIES(INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'LOGS');
+If(FileExists(sLogFile1)=0, CREATELOGFILE (sLogFile1, 1));
+APPENDLOGFILE (sLogFile1, '-----------------------------------------------------------------------');
+APPENDLOGFILE (sLogFile1, ' Формирование печатной формы ДО2: начало ' + FDT ('DD.MM.YYYY', Date()) + ' в ' + FDT ('HH:NN:SS', Time(1)));
+APPENDLOGFILE (sLogFile1, '-----------------------------------------------------------------------');
+APPENDLOGFILE (sLogFile1, '');
+
+VAR ('iShortLog', Integer, 0);// 0- короткий лог, 1-подробный лог
+iShortLog := 1;
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH(PROGRAMPATH())+'ProcDocs\date.prd');

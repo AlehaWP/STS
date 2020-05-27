@@ -1,0 +1,738 @@
+// *****************************************************************************
+// Название: Создание таблицы ДО2
+// Описание: Создание таблицы ДО2
+// Кнопка вызова: 0
+// Подпись кнопки: Создание таблицы ДО2
+// *****************************************************************************
+//
+
+VAR ('sFilePath', String, PROGRAMPATH() + 'TMP_DB\');
+VAR ('sSql', String, '');
+VAR ('iSumG35', Float, 0);
+VAR ('iSumOutG35', Float, 0);
+VAR ('iRestG35', Float, 0);
+VAR ('iSumG38', Float, 0);
+VAR ('iSumOutG38', Float, 0);
+VAR ('iRestG38', Float, 0);
+VAR ('iSumG311', Float, 0);
+VAR ('iSumOutG311', Float, 0);
+VAR ('iRestG311', Float, 0);
+VAR ('iSumG315A', Float, 0);
+VAR ('iSumOutG315A', Float, 0);
+VAR ('iRestG315A', Float, 0);
+VAR ('iSumG315C', Float, 0);
+VAR ('iSumOutG315C', Float, 0);
+VAR ('iRestG315C', Float, 0);
+VAR ('iSumG42', Float, 0);
+VAR ('iSumOutG42', Float, 0);
+VAR ('iRestG42', Float, 0);
+VAR ('SumInOnPeriodG35', Float, 0);
+VAR ('SumInOnPeriodG38', Float, 0);
+VAR ('SumInOnPeriodG311', Float, 0);
+VAR ('SumInOnPeriodG315A', Float, 0);
+VAR ('SumInOnPeriodG315C', Float, 0);
+VAR ('SumInOnPeriodG42', Float, 0);
+VAR ('sCodeVal', string, '');
+VAR ('sSumCode', string, '');
+
+
+
+
+sFilePath := TEMPDIRECTORY() + 'TMP_DB\';
+DELETEFILE (sFilePath+'tmpCOMM.DBF');
+    //sFilePath := PROGRAMPATH();
+  //создаём tmpMAIN
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sFilePath);
+    sSQL := 'CREATE TABLE '+CHAR(39)+sFilePath+'tmpCOMM.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'PLACEID INT, ';
+      sSQL := sSQL + 'ID INT, ';
+      sSQL := sSQL + 'G32 INT, ';
+      sSQL := sSQL + 'GN SMALLINT, ';
+      sSQL := sSQL + 'COUNTER SMALLINT, ';
+      sSQL := sSQL + 'MAIN_ID INTEGER, ';
+      sSQL := sSQL + 'MAIN_COUNT SMALLINT, ';
+      sSQL := sSQL + 'MAIN_NO SMALLINT, ';
+      sSQL := sSQL + 'NBD CHARACTER(100), ';
+      sSQL := sSQL + 'REL_NO CHARACTER(100), ';
+      sSQL := sSQL + 'REG_NO CHARACTER(254), ';
+      sSQL := sSQL + 'G33 CHARACTER(21), ';
+      sSQL := sSQL + 'G312 BLOB, ';
+      sSQL := sSQL + 'G082 CHARACTER(254), ';
+      sSQL := sSQL + 'REP_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'STOR_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'REL_OUT_D CHARACTER(50), ';
+      sSQL := sSQL + 'OUT_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'BOXNO  CHARACTER(254), ';
+      sSQL := sSQL + 'REL_BOXNO  CHARACTER(254), ';
+      sSQL := sSQL + 'STORENUM  CHARACTER(254), ';
+      sSQL := sSQL + 'G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315ACod CHARACTER(50), ';
+      sSQL := sSQL + 'REL_G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315CCod CHARACTER(50), ';
+      sSQL := sSQL + 'REL_G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REL_G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'REST_G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G42_CUR CHARACTER(15), ';
+      sSQL := sSQL + 'G221 CHARACTER(15), ';
+      sSQL := sSQL + 'DOC_NO CHARACTER(100), ';
+      sSQL := sSQL + 'LIC_NO CHARACTER(50), ';
+      sSQL := sSQL + 'NAME CHARACTER(254), ';
+      sSQL := sSQL + 'LIC_DATE CHARACTER(50), ';
+      sSQL := sSQL + 'STOR_TYPE CHARACTER(15), ';
+      sSQL := sSQL + 'PODPIS CHARACTER(254) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+//CLOSEDATASET('TmpCOMM');
+//CLOSEDATABASE ('TMP_DB');
+
+Func('Peremen',,
+     Block(
+         FIRST('qryRC');
+         WHILE (EOF('qryRC') = 0,
+                Block(
+                  VAR('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string), float, -1111111);
+                  VAR('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string), float, -1111111);
+                  VAR('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string), float, -1111111);
+                  VAR('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string), float, -1111111);
+                  VAR('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string), float, -1111111);
+                  VAR('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string), float, -1111111);
+                  VAR('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string), string, '');
+                  VAR('sStoreDate' + convert(qryRC.ID, string) + convert(qryRC.G32, string), string, '');
+
+                  NEXT('qryRC');
+                )
+         );
+     )
+),
+
+
+FUNC('PoDO1',
+     Param('poRelComm', integer, 0),
+     Block(
+        VAR('iG35', float, 0);
+        VAR('iG311', float, 0);
+        VAR('iG38', float, 0);
+        VAR('iG315A', float, 0);
+        VAR('iG315C', float, 0);
+        VAR('iG42', float, 0);
+        if(poRelComm = 1,
+           Block(
+              if((bUseFact = 'True')*(qryRC.FACT_G35 <> '')*(qryRC.FACT_G35 <> 0), iG35 := qryRC.FACT_G35, iG35 :=qryRC.G35 );
+              if((bUseFact = 'True')*(qryRC.FACT_G311 <> ''), iG311 := qryRC.FACT_G311, iG311 := qryRC.G311 );
+              if((bUseFact = 'True')*(qryRC.FACT_G315A <> ''), iG315A := qryRC.FACT_G315A, iG315A := qryRC.G315A );
+              if((bUseFact = 'True')*(qryRC.FACT_G315C <> ''), iG315C := qryRC.FACT_G315C, iG315C := qryRC.G315C );
+              if((bUseFact = 'True')*(qryRC.FACT_G38 <> ''), iG38 := qryRC.FACT_G38, iG38 := qryRC.G38 );
+              if((bUseFact = 'True')*(qryRC.FACT_G42 <> ''), iG42 := qryRC.FACT_G42, iG42 := qryRC.G42 );
+           ),
+           Block(
+              if(qryRC.IC_G35 <> '', iG35 := qryRC.IC_G35, if((bUseFact = 'True')*(qryRC.FACT_G35 <> '')*(qryRC.FACT_G35 <> 0), iG35 := qryRC.FACT_G35, iG35 :=qryRC.G35 ));
+              if(qryRC.IC_G311 <> '', iG311 := qryRC.IC_G311, if((bUseFact = 'True')*(qryRC.FACT_G311 <> ''), iG311 := qryRC.FACT_G311, iG311 := qryRC.G311 ));
+              if(qryRC.IC_G315A <> '', iG315A := qryRC.IC_G315A, if((bUseFact = 'True')*(qryRC.FACT_G315A <> ''), iG315A := qryRC.FACT_G315A, iG315A := qryRC.G315A ));
+              if(qryRC.IC_G315C <> '', iG315C := qryRC.IC_G315C, if((bUseFact = 'True')*(qryRC.FACT_G315C <> ''), iG315C := qryRC.FACT_G315C, iG315C := qryRC.G315C ));
+              if(qryRC.IC_G38 <> '', iG38 := qryRC.IC_G38, if((bUseFact = 'True')*(qryRC.FACT_G38 <> ''), iG38 := qryRC.FACT_G38, iG38 := qryRC.G38 ));
+              if(qryRC.IC_G42 <> '', iG42 := qryRC.IC_G42, if((bUseFact = 'True')*(qryRC.FACT_G42 <> ''), iG42 := qryRC.FACT_G42, iG42 := qryRC.G42 ));
+           )
+        );
+
+     )
+),
+
+Func('OstatkiALL',,
+     block(
+        LET('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG35 - RelaseAtPeriod.REL_G35);
+        LET('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG38 - RelaseAtPeriod.REL_G38);
+        LET('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG311 - RelaseAtPeriod.REL_G311);
+        LET('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG315A - RelaseAtPeriod.REL_G315A);
+        LET('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG315C - RelaseAtPeriod.REL_G315C);
+        LET('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG42 - RelaseAtPeriod.REL_G42);
+     )
+),
+
+FUNC('PrintCont',,
+     block(
+       VAR('sConstStore', string, '');
+       VAR('sConts', string, '');
+       
+       OPENQUERY('KRCP','STS_DB', 'SELECT' +
+                                  ' C.CONTTYPE, C.CONTNO, C.PLOMB '+
+                                  ' FROM KR_C_P KCP LEFT JOIN KRD_CONT C ON ((KCP.PLACEID = C.PLACEID) AND (KCP.ID = C.ID) AND (KCP.DOC_COUNTER = C.COUNTER))'+
+                                  'WHERE '+
+                                  ' KCP.PLACEID = ' + qryRC.PLACEID + ' AND KCP.ID = '  + qryRC.ID +
+                                  ' AND KCP.G32 = ' + qryRC.G32 + ' AND KCP.DOC_TYPE = 11'
+       );
+       if(RECORDCOUNT('KRCP') > 0,
+          block(
+            if( bPrintPlomb = 'True',
+                if(bPrintContType = 'True',
+                   sConstStore := UNIONVALUES('KRCP', ['CONTTYPE', 'CONTNO','PLOMB'], ', ', ' : '),
+                   sConstStore := UNIONVALUES('KRCP', ['CONTNO','PLOMB'], ', ', ' : ')
+                ),
+                if(bPrintContType = 'True',
+                   sConstStore := UNIONVALUES('KRCP', ['CONTTYPE', 'CONTNO'], ', ', ' : '),
+                   sConstStore := UNIONVALUES('KRCP', ['CONTNO'], ', ', ' : ')
+                )
+            );//if( bPrintPlomb = 'True'
+          ),
+          
+          block(
+            OPENQUERY('CONT', 'STS_DB', 'SELECT ' +
+                                      ' CONTTYPE, CONTNO, PLOMB ' +
+                                      'FROM'+
+                                      ' KRD_CONT '+
+                                      'WHERE '+
+                                      ' PLACEID = ' + qryRC.PLACEID + ' AND ID = '  + qryRC.ID
+            );
+            if( bPrintPlomb = 'True',
+                if(bPrintContType = 'True',
+                   sConstStore := UNIONVALUES('CONT', ['CONTTYPE', 'CONTNO','PLOMB'], ', ', ' : '),
+                   sConstStore := UNIONVALUES('CONT', ['CONTNO','PLOMB'], ', ', ' : ')
+                ),
+                if(bPrintContType = 'True',
+                   sConstStore := UNIONVALUES('CONT', ['CONTTYPE', 'CONTNO'], ', ', ' : '),
+                   sConstStore := UNIONVALUES('CONT', ['CONTNO'], ', ', ' : ')
+                )
+            );//if(bPrintPlomb = 'True'
+          )
+       );//if(RECORDCOUNT('KRCP') > 0,
+       if( bKPS_StoreNum = 'True', sConts := sConstStore, LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string), sConstStore));
+     )
+),
+
+Func('StoreNum',
+     Param('Rel_box', string, 0),
+     block(
+        if(bKPS_StoreNum = 'True',
+           block(
+             LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string), qryRC.NBD + '/' + LEFTPAD (qryRC.G32, 6, '0'));
+             if(qryRC.SVHAREA <>'',LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + CHAR(13) + 'Зона:' + qryRC.SVHAREA));
+             if(qryRC.SVHHANGAR <>'',LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + CHAR(13) + 'Анг.:' + qryRC.SVHHANGAR ));
+             if(qryRC.SVHRACK <>'',LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + CHAR(13) + 'Стел.:' + qryRC.SVHRACK ));
+             if(qryRC.SVHCELL <>'',LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + CHAR(13) + 'Яч.:' + qryRC.SVHCELL ));
+             if(bUseConts = 'True', block(
+                              PrintCont();
+                              if(sConts <> '', LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + CHAR(13) + 'Конт.:' + sConts ));
+                            )
+             );//if(bUseConts = 'True'
+           ),
+           block(
+             if(bUseConts = 'True', PrintCont());
+             if(VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = '',
+                if(Rel_box <> '', LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),Rel_box), LET('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string),qryRC.BOXNO))
+             );
+           )
+        );//if(bKPS_StoreNum = 'True'
+     )
+),
+
+
+
+
+
+
+Func('RecordTable',
+     param('poRelease', integer, 0),
+     block(
+        APPENDRECORD ('TmpCOMM');
+        EDITRECORD('TmpCOMM');
+        SETFIELDVALUE('TmpCOMM',
+                      'PLACEID', qryRC.PLACEID,
+                      'ID', qryRC.ID,
+                      'G32', qryRC.G32,
+                      'GN', qryRC.GN,
+                      'COUNTER', if(poRelease <> 0, qryRC.COUNTER, qryRC.ACTOUTID),
+                      'MAIN_ID', qryRC.MAIN_ID,
+                      'MAIN_COUNT', qryRC.MAIN_COUNTER,
+                      'MAIN_NO', if(poRelease <> 0, qryRC.MAIN_NO, ''),
+                      'NBD', qryRC.NBD,
+                      'REL_NO', if(poRelease <> 0, qryRC.RELEASE_NO, qryRC.NDA),
+                      'REG_NO', if(poRelease <> 0, qryRC.REG_RELEASE_NO, ''),
+                      'G33', qryRC.G33,
+                      //'REL_G33', if(poRelease <> 0, qryRC.RELEASE_G33, qryRC.OUT_G33),
+                      'G312', qryRC.G312,
+                      //'REL_G312', if(poRelease <> 0, qryRC.RELEASE_G312, ''),
+                      'G082', qryRC.G082,
+                      //'REL_G082', qryRC.Rel_G082,
+                      'REP_DATE', if(qryRC.ACCEPTDATE <> '', qryRC.ACCEPTDATE, ''),
+                      //'BEG_KEEP', if(poRelease <> 0, qryRC.BEG_KEEP, qryRC.G542),
+                      'STOR_DATE', VALUE('sStoreDate' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'REL_OUT_D', if(poRelease <> 0, if(qryRC.RELEASE_OUT_DATE <> '', qryRC.RELEASE_OUT_DATE, ''), ''),
+                      'OUT_DATE', if(poRelease <> 0, qryRC.OUT_DATE, qryRC.G542),
+                      'BOXNO', qryRC.BOXNO,
+                      //'REL_BOXNO', if(poRelease <> 0, qryRC.RELEASE_BOXNO, ''),
+                      'STORENUM', VALUE('sStoreNum' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G311', iG311,
+                      'REL_G311', qryRC.RELEASE_G311,
+                      'REST_G311', VALUE('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G35', iG35,
+                      'REL_G35', qryRC.RELEASE_G35,
+                      'REST_G35', VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G38', iG38,
+                      'REL_G38', qryRC.RELEASE_G38,
+                      'REST_G38', VALUE('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G315A', iG315A,
+                      'G315ACod', if( poRelease <> 0 , if(qryRC.G315 <> '', qryRC.G315, if(qryRC.G41A <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G41A, 'UNITNAME'),'')),''),
+                      'REL_G315A', qryRC.RELEASE_G315A,
+                      'REST_G315A', VALUE('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G315C', iG315C,
+                      'G315CCod', if( poRelease <> 0 , if(qryRC.G315CN <> '', qryRC.G315CN, if(qryRC.G31_82 <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G31_82, 'UNITNAME'),' КУБ.М')),''),
+                      'REL_G315C', qryRC.RELEASE_G315C,
+                      'REST_G315C', VALUE('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G42', iG42,
+                      'REL_G42', qryRC.RELEASE_G42,
+                      'REST_G42', VALUE('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string)),
+                      'G42_CUR', sCodeVal,
+                      'G221', qryRC.G221,
+                      'DOC_NO', if( poRelease <> 0, qryRC.DOC_NO, qryRC.ND_GTD),
+                      'LIC_NO', qryRC.LICENCENO,
+                      'NAME', qryRC.NAME,
+                      'LIC_DATE', qryRC.LICENCEDATE,
+                      'STOR_TYPE', qryRC.STORE_TYPE,
+                      'PODPIS', qryRC.RELEASE_GIVE + '    '+ qryRC.RELEASE_GIVE_POST
+        );
+        POSTRECORD('TmpCOMM');
+        sSQL := 'INSERT INTO tmpCOMM ';
+        sSQL := sSQL +  ' ( PLACEID, ID, G32, ';
+        sSQL := sSQL +  ' GN, COUNTER, MAIN_ID, ';
+        sSQL := sSQL +  ' MAIN_COUNT, MAIN_NO, NBD, ';
+        sSQL := sSQL +  ' REL_NO, REG_NO, ';
+        sSQL := sSQL +  ' G_33, ';
+        sSQL := sSQL +  ' G312, G_082, ';
+        sSQL := sSQL +  ' REP_DATE, STOR_DATE, ';
+        sSQL := sSQL +  ' OUT_DATE, ';
+        //sSQL := sSQL +  ' BOXNO, ';
+        //sSQL := sSQL +  ' STORENUM, ';
+        sSQL := sSQL +  ' G311, REL_G311, REST_G311,';
+        sSQL := sSQL +  ' G35, REL_G35, REST_G35, ';
+        sSQL := sSQL +  ' G38, REL_G38, REST_G38,';
+        sSQL := sSQL +  ' G315A, G315ACod, REL_G315A, REST_G315A, ';
+        sSQL := sSQL +  ' G315C, G315CCod, REL_G315C, REST_G315C,';
+        sSQL := sSQL +  ' G42, REL_G42, REST_G42, ';
+        sSQL := sSQL +  ' G42_CUR, G221 ';
+        //sSQL := sSQL +  ' DOC_NO, LIC_NO, NAME, ';
+        //sSQL := sSQL +  ' LIC_DATE, STOR_TYPE, PODPIS';
+        sSQL := sSQL +  ' ) ';
+        sSQL := sSQL +  ' values ( ';
+        sSQL := sSQL +    qryRC.PLACEID +', '+ qryRC.ID +', '+ qryRC.ID + ', ';
+        sSQL := sSQL +    qryRC.GN +', '+ if(poRelease <> 0, qryRC.COUNTER, qryRC.ACTOUTID) +', '+ qryRC.MAIN_ID +', ';
+        sSQL := sSQL +    qryRC.MAIN_COUNTER +', '+ if(poRelease <> 0, qryRC.MAIN_NO, 0) +', "' + qryRC.NBD + '", ';
+        sSQL := sSQL +    '"'+ if(poRelease <> 0, qryRC.RELEASE_NO, qryRC.NDA) +'", "'+ if(poRelease <> 0, qryRC.REG_RELEASE_NO, '') +'", ';
+        sSQL := sSQL +    '"'+ if(qryRC.RELEASE_G33 <> '', qryRC.RELEASE_G33, qryRC.G33) +'", ';
+        sSQL := sSQL +    '"'+ if((poRelease <> 0)*(qryRC.RELEASE_G312 <> ''), qryRC.RELEASE_G312, qryRC.G312) +'", "'+ if(qryRC.REL_G082 <> '', qryRC.REL_G082, qryRC.G082) +'", ';
+        sSQL := sSQL +    '"'+ if(poRelease <> 0, if(qryRC.ACCEPTDATE <> '', qryRC.ACCEPTDATE, qryRC.BEG_KEEP), if(qryRC.IM_G542 <> '', qryRC.IM_G542, qryRC.BEG_KEEP)) +'", "'+ VALUE('sStoreDate' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) +'", ';
+        sSQL := sSQL +    '"'+  +'", ';
+        //sSQL := sSQL +  '"'+  +'", "'+  +'", "'+  +'", ';
+        //sSQL := sSQL +  '"'+  +'", "'+  +'", "'+  +'", ';
+        //sSQL := sSQL +  '"'+  +'", "'+  +'", "'+  +'", ';
+        sSQL := sSQL +    iG311 + ', ' + qryRC.RELEASE_G311 + ', '+ VALUE('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + ', ';
+        sSQL := sSQL +    iG35 + ', ' + qryRC.RELEASE_G35 + ', '+ VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + ', ';
+        sSQL := sSQL +    iG38 + ', ' + qryRC.RELEASE_G38 + ', '+ VALUE('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + ', ';
+        sSQL := sSQL +    iG315A +', "' + if( poRelease <> 0 , if(qryRC.G315 <> '', qryRC.G315, if(qryRC.G41A <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G41A, 'UNITNAME'),'')),'') + '", '+ qryRC.RELEASE_G315A +', '+ VALUE('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) +', ';
+        sSQL := sSQL +    iG315C +', "' + if( poRelease <> 0 , if(qryRC.G315CN <> '', qryRC.G315CN, if(qryRC.G31_82 <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G31_82, 'UNITNAME'),'')),'')  +'", '+ qryRC.RELEASE_G315C +', '+ VALUE('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) +', ';
+        sSQL := sSQL +    iG42 + ', ' + qryRC.RELEASE_G42 + ', '+ VALUE('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) + ', ';
+        sSQL := sSQL +    '"' + sCodeVal +'", "' + sCodeVal + '"';
+        sSQL := sSQL +  ' )';
+        EXECUTESQL ('TMP_DB', sSQL);
+     )
+),
+
+Func('Stor_date',,
+     Block(
+       OPENQUERY('ZPSH','STS_DB', 'SELECT' +
+                                  ' KP.PAPERDEND, KP.PAPERNAME, KP.PAPERNO, KP.PAPERDATE '+
+                                  ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KCP.PLACEID = KP.PLACEID) AND (KCP.ID = KP.ID) AND (KCP.DOC_COUNTER = KP.COUNTER))'+
+                                  'WHERE '+
+                                  ' KCP.PLACEID = ' + qryRC.PLACEID + ' AND KCP.ID = '  + qryRC.ID +
+                                  ' AND KCP.G32 = ' + qryRC.G32 + ' AND KCP.DOC_TYPE = 13' +
+                                  ' AND KP.PAPERNAME = "ЗПСХ" '+
+                                  'ORDER BY ' +
+                                  ' KP.PAPERDATE '
+       );
+       if(RECORDCOUNT ('ZPSH') <> 0,
+          Block(
+             LAST('ZPSH');
+             LET('sStoreDate' + convert(qryRC.ID, string) + convert(qryRC.G32, string),
+                 if(ZPSH.PAPERDEND <> '',
+                    ZPSH.PAPERDEND + char(13) + ZPSH.PAPERNAME + ' №' + ZPSH.PAPERNO + ' от ' + ZPSH.PAPERDATE,
+                    ZPSH.PAPERNAME + ' №' + ZPSH.PAPERNO + ' от ' + ZPSH.PAPERDATE
+                 )
+             );
+          ),
+          LET('sStoreDate' + convert(qryRC.ID, string) + convert(qryRC.G32, string), qryRC.STORAGE_DATE)
+       );
+     )
+),
+
+FUNC('Itogo',
+     Param('i',integer,0),
+     Block(
+       if(i=1,
+          Block(//Если товар встречается впервые, тогда вычисляем сколько товара находится на складе на дату отчета и суммируем с предидущими значениями.
+            VAR ('iInOnPeriodG35', Float, 0);
+            VAR ('iInOnPeriodG38', Float, 0);
+            VAR ('iInOnPeriodG311', Float, 0);
+            VAR ('iInOnPeriodG315A', Float, 0);
+            VAR ('iInOnPeriodG315C', Float, 0);
+            VAR ('iInOnPeriodG42', Float, 0);
+            iSumG35 := iSumG35 + iG35;
+            iSumG38 := iSumG38 + iG38;
+            iSumG311 := iSumG311 + iG311;
+            iSumG315A := iSumG315A + iG315A;
+            iSumG315C := iSumG315C + iG315C;
+            iSumG42 := iSumG42 + TRANSCURRENCY( qryRC.BD_DATE, sCodeVal, sSumCode, iG42);
+            iInOnPeriodG35 := iG35 - RelaseAtPeriod.REL_G35;
+            iInOnPeriodG38 := iG38 - RelaseAtPeriod.REL_G38;
+            iInOnPeriodG311 := iG311 - RelaseAtPeriod.REL_G311;
+            iInOnPeriodG315A := iG315A - RelaseAtPeriod.REL_G315A;
+            iInOnPeriodG315C := iG315C - RelaseAtPeriod.REL_G315C;
+            iInOnPeriodG42 := TRANSCURRENCY( qryRC.BD_DATE, sCodeVal, sSumCode, iG42 - RelaseAtPeriod.REL_G42);
+            SumInOnPeriodG35 := SumInOnPeriodG35 + iInOnPeriodG35;
+            SumInOnPeriodG38 := SumInOnPeriodG38 + iInOnPeriodG38;
+            SumInOnPeriodG311 := SumInOnPeriodG311 + iInOnPeriodG311;
+            SumInOnPeriodG315A := SumInOnPeriodG315A + iInOnPeriodG315A;
+            SumInOnPeriodG315C := SumInOnPeriodG315C + iInOnPeriodG315C;
+            SumInOnPeriodG42 := SumInOnPeriodG42 + iInOnPeriodG42;
+          ),
+          Block(
+            iSumOutG35 := iSumOutG35 + qryRC.RELEASE_G35;
+            iSumOutG38 := iSumOutG38 + qryRC.RELEASE_G38;
+            iSumOutG311 := iSumOutG311 + qryRC.RELEASE_G311;
+            iSumOutG315A := iSumOutG315A + qryRC.RELEASE_G315A;
+            iSumOutG315C := iSumOutG315C + qryRC.RELEASE_G315C;
+            iSumOutG42 := iSumOutG42 + TRANSCURRENCY( qryRC.BD_DATE, sCodeVal, sSumCode, qryRC.RELEASE_G42);
+          )
+       );//if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111,
+     )
+),
+
+FUNC('WriteItog',
+     Param('StoreDoc', integer, 0),
+     Block(
+       { APPENDRECORD ('TmpCOMM');
+        EDITRECORD('TmpCOMM');
+        SETFIELDVALUE('TmpCOMM',
+                      'PLACEID', qryRC.PLACEID,
+                      'G33', '1',
+                      'G312', 'Итог',
+                      'G311', iSumG311,
+                      'REL_G311', iSumOutG311,
+                      'REST_G311', SumInOnperiodG311 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG311),//Если не стоит галка остатки по товарам, печатаем из-за особенностей запроса(<= Дате отчета) остатки по товарам равны полученому количеству на начало периода
+                      'G35', iSumG35,                                                                         // Иначе(стоит галка остатки по товарам) надо вычесть из того что было на начало периода, то что выдали
+                      'REL_G35', iSumOutG35,
+                      'REST_G35', SumInOnperiodG35 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG35),
+                      'G38', iSumG38,
+                      'REL_G38', iSumOutG38,
+                      'REST_G38', SumInOnperiodG38 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG38),
+                      'G315A', iSumG315A,
+                      'G315ACod', if( StoreDoc = 0 , if(qryRC.G315 <> '', qryRC.G315, if(qryRC.G41A <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G41A, 'UNITNAME'),'')),''),
+                      'REL_G315A', iSumOutG315A,
+                      'REST_G315A', SumInOnperiodG315A - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG315A),
+                      'G315C', iSumG315C,
+                      'G315CCod', if( StoreDoc = 0 , if(qryRC.G315CN <> '', qryRC.G315CN, if(qryRC.G31_82 <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G31_82, 'UNITNAME'),' КУБ.М')),' КУБ.M'),
+                      'REL_G315C', iSumOutG315C,
+                      'REST_G315C', SumInOnperiodG315C - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG315C),
+                      'G42', iSumG42,
+                      'REL_G42', iSumOutG42,
+                      'REST_G42', SumInOnperiodG42 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG42),
+                      'G42_CUR', sSumCode,
+                      'G221', sSumCode
+                      );
+        POSTRECORD('TmpCOMM');}
+        sSQL := 'INSERT INTO tmpCOMM ';
+        sSQL := sSQL +  ' ( PLACEID, G33, G312, ';
+        sSQL := sSQL +  ' G311, REL_G311, REST_G311,';
+        sSQL := sSQL +  ' G35, REL_G35, REST_G35, ';
+        sSQL := sSQL +  ' G38, REL_G38, REST_G38,';
+        sSQL := sSQL +  ' G315A, G315ACod, REL_G315A, REST_G315A, ';
+        sSQL := sSQL +  ' G315C, G315CCod, REL_G315C, REST_G315C,';
+        sSQL := sSQL +  ' G42, REL_G42, REST_G42, ';
+        sSQL := sSQL +  ' G42_CUR, G221 ';
+        sSQL := sSQL +  ' ) ';
+        sSQL := sSQL +  ' values ( ';
+        sSQL := sSQL +    qryRC.PLACEID +', "1", "Итог", ';
+        sSQL := sSQL +    iSumG311 + ', ' + iSumOutG311 + ', '+ (SumInOnperiodG311 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG311)) + ', ';
+        sSQL := sSQL +    iSumG35 + ', ' + iSumOutG35 + ', '+ (SumInOnperiodG35 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG35)) + ', ';
+        sSQL := sSQL +    iSumG38 + ', ' + iSumOutG38 + ', '+ (SumInOnperiodG38 - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG38)) + ', ';
+        sSQL := sSQL +    iSumG315A +', "' + if( StoreDoc = 0 , if(qryRC.G315 <> '', qryRC.G315, if(qryRC.G41A <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G41A, 'UNITNAME'),'')),'')  +'", '+ iSumOutG315A +', '+ (SumInOnperiodG315A - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG315A)) +', ';
+        sSQL := sSQL +    iSumG315C +', "' + if( StoreDoc = 0 , if(qryRC.G315CN <> '', qryRC.G315CN, if(qryRC.G31_82 <> '', REFERENCE('UNITS', 'UNITCODE', qryRC.G31_82, 'UNITNAME'),'')),'')  +'", '+ iSumOutG315C +', '+ (SumInOnperiodG315C - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG315C)) +', ';
+        sSQL := sSQL +    iSumG42 + ', ' + iSumOutG42 + ', '+ (FloatRound(SumInOnperiodG42, 4) - if((bRemainsIndiv = 'True')*(StoreDoc = 0), iSumOutG42)) + ', ';
+        sSQL := sSQL +    '"' + sSumCode + '", "' + sSumCode + '"';
+        sSQL := sSQL +  ' )';
+        EXECUTESQL ('TMP_DB', sSQL);
+
+        {sSQL := 'INSERT INTO tmpCOMM ';
+        sSQL := sSQL +  ' ( PLACEID, G33, G312, G311, REL_G311, REST_G311, G35, REL_G35, REST_G35, G38, REL_G38, REST_G38, G315A, G315ACod, REL_G315A, REST_G315A, G315C, G315CCod, REL_G315C, REST_G315C, G42, REL_G42, G42_CUR, G221)';
+        sSQL := sSQL +  ' values ( '+ qryRC.PLACEID +', 1, Итог, '+ char(39) + convert(iSumG311, string) + char(39) +', ' + iSumOutG311 + ', '+ SumInOnperiodG311 - if((bRemainsIndiv = "True")*(StoreDoc = 0), iSumOutG311) ;
+        sSQL := sSQL +  ' , '+ iSumG35 +', '+ iSumOutG35 +', '+ SumInOnperiodG35 - if((bRemainsIndiv = "True")*(StoreDoc = 0), iSumOutG35) +', '+ iSumG38 +', '+ iSumOutG38 +', '+ SumInOnperiodG38 - if((bRemainsIndiv = "True")*(StoreDoc = 0), iSumOutG38);
+        sSQL := sSQL +  ' , '+ iSumG315A +', '+ if( StoreDoc = 0 , if(qryRC.G315 <> '', qryRC.G315, if(qryRC.G41A <> '', REFERENCE("UNITS", "UNITCODE", qryRC.G41A, "UNITNAME"),"")),"");
+        sSQL := sSQL +  ' , '+ iSumOutG315A +', '+ SumInOnperiodG315A - if((bRemainsIndiv = "True")*(StoreDoc = 0), iSumOutG315A) +', '+ iSumG315C;
+        sSQL := sSQL +  ' , '+ if( StoreDoc = 0 , if(qryRC.G315CN <> "", qryRC.G315CN, if(qryRC.G31_82 <> "", REFERENCE("UNITS", "UNITCODE", qryRC.G31_82, "UNITNAME")," КУБ.М"))," КУБ.M") +', '+ iSumOutG315C +', '+ SumInOnperiodG315C - if((bRemainsIndiv = "True")*(StoreDoc = 0), iSumOutG315C);
+        sSQL := sSQL +  ' , '+ iSumG42 +', '+ iSumOutG42 +', '+ SumInOnperiodG42 - if((bRemainsIndiv = "True")*(StoreDoc = 0), iSumOutG42) +', '+ sSumCode +', '+ sSumCode + ') ';
+        EXECUTESQL ('TMP_DB', sSQL);}
+     )
+),
+
+FUNC ('CreateDO2',
+      Block(
+             Param('sPlaceID', integer, 0);
+             Param('sMainId', integer, 1);
+             Param('sMainCounter', integer, 2);
+             Param('bRemainsIndiv', string, 3);
+             Param('bUseFact', string, 4);
+             Param('bKPS_StoreNum', string, 5);
+             Param('bUseConts', string, 6);
+             Param('bPrintPlomb', string, 7);
+             Param('bPrintContType', string, 8);
+             Param('bPrintItog', string, 9);
+      ),//end block param
+      Block(
+        
+        OPENTABLE('tmpCOMM', sFilePath+'tmpCOMM.DBF', 'PLACEID', 'TMP_DB', 1);
+        
+        OPENQUERY ('qryRC', 'STS_DB', 'SELECT'+
+                                      '  RC.PLACEID, RC.ID,'+
+                                      '  RC.RELEASE_G311, RC.RELEASE_G35, RC.RELEASE_G38, RC.RELEASE_G315, RC.RELEASE_G33, RC.RELEASE_G312,'+
+                                      '  RC.RELEASE_G315A,  RC.RELEASE_G315C,  RC.RELEASE_G42, RC.RELEASE_BOXNO, RC.RELEASE_OUT_DATE, '+
+                                      '  R.MAIN_ID, R.MAIN_NO, R.MAIN_COUNTER, R.COUNTER, R.DOC_NO, R.DOC_TYPE,'+
+                                      '  R.DOC_CODE, R.RELEASE_NO, R.RELEASE_DATE,  R.OUT_DATE, R.OUT_DOC_DATE, '+
+                                      '  R.G082 as Rel_G082, R.G083, R.G084C, R.G08_KPP, R.G08_OGRN, R.G042 as Rel_G042, R.TRANSPNO, R.G022,'+
+                                      '  R.DELIVERYDOCS, R.TRANSPDOCS, R.REG_RELEASE_NO, R.RELEASE_GIVE, R.RELEASE_GIVE_POST, '+
+                                      '  KC.G32, KC.GN, KC.G312, KC.G315CN, KC.G33, KC.G311, KC.G35, KC.G38, KC.G315, KC.G41A, KC.G315CN, KC.G31_82, '+
+                                      '  KC.FACT_G35, KC.FACT_G38, KC.FACT_G315C, KC.FACT_G315A, KC.FACT_G311, KC.FACT_G42,' +
+                                      '  KC.G42, KC.G42_CURRENCY, KC.VALCODE,'+
+                                      '  KC.G315A, KC.G315, KC.G41A, KC.G315C, KC.G31_82, KC.BOXNO,'+
+                                      '  KC.SVHAREA, KC.SVHHANGAR, KC.SVHRACK, KC.SVHCELL,'+
+                                      '  KC.ACCEPTDATE, KC.STORAGE_DATE,'+
+                                      '  M.NBD, M.BD_DATE, M.PART_NO, M.BEG_KEEP, M.G082, M.G042, M.G221, M.G142, M.G145, M.G144, '+
+                                      '  S.NAME, S.LICENCEDATE, S.LICENCENO, S.STORE_TYPE '+
+                                      'FROM '+
+                                      '  REL_COMM RC LEFT JOIN RELEASE R ON ((RC.PLACEID = R.PLACEID) AND (RC.ID = R.ID) AND (RC.COUNTER = R.COUNTER)) '+
+                                      '  LEFT JOIN KRD_MAIN M ON ((M.PLACEID = RC.PLACEID) AND (M.ID = RC.ID) ) '+
+                                      '  LEFT JOIN KRD_COMM KC ON ((RC.PLACEID = KC.PLACEID) AND (RC.ID = KC.ID) AND (RC.G32 = KC.G32)) '+
+                                      '  LEFT JOIN STORES S ON (S.PLACEID = RC.PLACEID) '+
+                                      'WHERE ' +
+                                      '  (RC.PLACEID = '+  sPlaceId + ') AND (R.MAIN_ID = ' + sMainId +')  AND ' +
+                                      '  (R.MAIN_COUNTER = ' + sMainCounter +  ')  ' +
+                                      'ORDER BY ' +
+                                      '   R.MAIN_NO, KC.G32');//openquery('qryRC')
+
+
+         Peremen();
+         FIRST('qryRC');
+         sSumCode := if((qryRC.G221 <> '')*(qryRC.G221 <> '0'), qryRC.G221, '643');
+         WHILE (EOF('qryRC') = 0,
+                Block(
+                if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111,
+                   block(
+                      if((qryRC.RELEASE_OUT_DATE = '')|(bRemainsIndiv = 'False'),
+                         //вычисляем остатки
+                         block(
+
+                           OPENQUERY('RelaseAtPeriod','STS_DB', 'SELECT'+
+                                                                ' SUM(RC.RELEASE_G35) as REL_G35, SUM(RC.RELEASE_G38) as REL_G38, SUM(RC.RELEASE_G311) as REL_G311, '+
+                                                                ' SUM(RC.RELEASE_G315A) as REL_G315A, SUM(RC.RELEASE_G315C) as REL_G315C, SUM(RC.RELEASE_G42) as REL_G42 '+
+                                                                'FROM '+
+                                                                ' REL_COMM RC LEFT JOIN RELEASE R ON ((RC.PLACEID = R.PLACEID) AND (RC.ID = R.ID) AND (RC.COUNTER = R.COUNTER))'+
+                                                                'WHERE '+
+                                                                ' R.OUT_DATE ' + IF(bRemainsIndiv = 'True', '<', '<=') + char(39)  + qryRC.OUT_DATE + char(39) +
+                                                                ' AND RC.PLACEID = ' + qryRC.PLACEID + ' AND RC.ID = '  + qryRC.ID +
+                                                                ' AND RC.G32 = ' + qryRC.G32
+
+                           );
+                         ),//block(1
+                         block(
+                           OPENQUERY('RelaseAtPeriod','STS_DB', 'SELECT'+
+                                                                ' SUM(RELEASE_G35) as REL_G35, SUM(RELEASE_G38) as REL_G38, SUM(RELEASE_G311) as REL_G311, '+
+                                                                ' SUM(RELEASE_G315A) as REL_G315A, SUM(RELEASE_G315C) as REL_G315C, SUM(RELEASE_G42) as REL_G42 '+
+                                                                'FROM '+
+                                                                ' REL_COMM ' +
+                                                                'WHERE '+
+                                                                ' RELEASE_OUT_DATE <' + char(39) + qryRC.OUT_DATE + char(39)+
+                                                                ' AND PLACEID = ' + qryRC.PLACEID + ' AND ID = ' + qryRC.ID + ' AND G32 = ' + qryRC.G32
+                           );
+                         )//block(2
+                      );//if((qryRC.RELEASE_OUT_DATE = '')|(bRemainsIndiv = 'False'),
+
+                      
+                      
+                      
+                      //Получаем складской номер товара
+                      StoreNum(qryRC.RELEASE_BOXNO);
+
+                     //Получаем срок временного хранения через ЗПСХ
+                     Stor_date();
+                     
+                    )//if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111, block(
+                  );//if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111
+                  sCodeVal := if((qryRC.G42_CURRENCY <> '')*(qryRC.G42_CURRENCY <> '0'), qryRC.G42_CURRENCY, if((qryRC.G221 <> '')*(qryRC.G221 <> '0'), qryRC.G221, '643'));
+                  
+                  // Если не включенк галка "Остатки по товарам", запоминаем остатки для конкретного товара.
+                  if(bRemainsIndiv = 'False', block(
+                                                PoDO1(1);
+                                                if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111,
+                                                  Block(
+                                                    if(bPrintItog = 'True', Itogo(1));
+                                                    OstatkiALL();
+                                                  )
+                                                );
+                                              ),
+                                              block(
+                                               PoDO1(1);
+                                               if((bPrintItog = 'True')*(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111), Itogo(1));
+                                              )
+                                              );
+                  //Если включина галка остатки по товарам запоминаем остатки после каждого товара в переменную
+                  if( bRemainsIndiv = 'True',
+                      block(
+                        if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111 ,
+                           LET('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG35 - RelaseAtPeriod.REL_G35 - qryRC.RELEASE_G35),
+                          LET('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string), VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) - qryRC.RELEASE_G35)
+                        );
+                        if(VALUE('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111 ,
+                           LET('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG38 - RelaseAtPeriod.REL_G38 - qryRC.RELEASE_G38),
+                           LET('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string), VALUE('iRestG38' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) - qryRC.RELEASE_G38)
+                        );
+                        if(VALUE('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111 ,
+                           LET('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG311 - RelaseAtPeriod.REL_G311 - qryRC.RELEASE_G311),
+                           LET('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string), VALUE('iRestG311' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) - qryRC.RELEASE_G311)
+                        );
+                        if(VALUE('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111 ,
+                           LET('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG315A - RelaseAtPeriod.REL_G315A - qryRC.RELEASE_G315A),
+                           LET('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string), VALUE('iRestG315A' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) - qryRC.RELEASE_G315A)
+                        );
+                        if(VALUE('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111 ,
+                           LET('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG315C - RelaseAtPeriod.REL_G315C - qryRC.RELEASE_G315C),
+                           LET('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string), VALUE('iRestG315C' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) - qryRC.RELEASE_G315C)
+                        );
+                        if(VALUE('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111 ,
+                           LET('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string), iG42 - RelaseAtPeriod.REL_G42 - qryRC.RELEASE_G42),
+                           LET('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string), VALUE('iRestG42' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) - qryRC.RELEASE_G42)
+                        );
+                      )//block(
+                  );//if( bRemainsIndiv = 'True'
+                  
+                  
+                  if(bPrintItog = 'True', Itogo(2));
+                  RecordTable(1);
+                  NEXT('qryRC');
+                )//WHILE (EOF('qryRC') = 0, block(
+         );//WHILE (EOF('qryRC') = 0
+         
+         if(bPrintItog = 'True', WriteItog(0));
+      )//FUNC ('CreateDO2', , Block(
+
+),//FUNC ('CreateDO2',
+
+
+
+
+FUNC ('CreateDO2StoreDoc',
+      Block(
+             Param('sPlaceID', integer, 0);
+             Param('sId', integer, 1);
+             Param('sACTOUTID', integer, 2);
+             Param('bRemainsIndiv', string, 3);
+             Param('bUseFact', string, 4);
+             Param('bKPS_StoreNum', string, 5);
+             Param('bUseConts', string, 6);
+             Param('bPrintPlomb', string, 7);
+             Param('bPrintContType', string, 8);
+             Param('bPrintItog', string, 9);
+      ),//end block param
+      Block(
+        OPENTABLE('tmpCOMM', sFilePath+'tmpCOMM.DBF', 'PLACEID', 'TMP_DB', 1);
+
+        OPENQUERY ('qryRC', 'STS_DB', 'SELECT'+
+                                      '  IC.G311 as IC_G311, IC.G35 as IC_G35, IC.G38 as IC_G38, IC.G42 as IC_G42, IC.BOXNO  as IC_BOXNO, IC.G46 as IC_G46, IC.G315A as IC_G315A, IC.G315C as IC_G315C, '+
+                                      '  IM.G542 as IM_G542, IM.REMARK, IM.NRA, '+
+                                      '  OC.OUT_G311 as RELEASE_G311, OC.OUT_G35 as RELEASE_G35, OC.OUT_G38 as RELEASE_G38, OC.OUT_G315 as RELEASE_G315, OC.OUT_G33 as RELEASE_G33, '+
+                                      '  OC.OUT_G315A as RELEASE_G315A,  OC.OUT_G315C as RELEASE_G315C,  OC.OUT_G42 as RELEASE_G42, OC.DOC_TYPE, OC.ND_GTD, OC.ACTOUTID, OC.G32, OC.ID, OC.PLACEID, OC.ACTOUTID, OC.ND_GTD,'+
+                                      '  O.MAIN_ID,  O.MAIN_COUNTER, O.NDA,  O.G541 as RELEASE_GIVE, O.G541P RELEASE_GIVE_POST,'+
+                                      '  O.G542 , O.G082 as Rel_G082, O.G083, O.G084C, '+
+                                      '  KC.G32, KC.GN, KC.G312, KC.G315CN, KC.G33, KC.G311, KC.G35, KC.G38,'+
+                                      '  KC.FACT_G35, KC.FACT_G38, KC.FACT_G315C, KC.FACT_G315A, KC.FACT_G311, KC.FACT_G42,' +
+                                      '  KC.G42, KC.G42_CURRENCY, KC.VALCODE,'+
+                                      '  KC.G315A, KC.G315, KC.G41A, KC.G315C, KC.G31_82, KC.BOXNO,'+
+                                      '  KC.SVHAREA, KC.SVHHANGAR, KC.SVHRACK, KC.SVHCELL,'+
+                                      '  KC.ACCEPTDATE, KC.STORAGE_DATE,'+
+                                      '  M.NBD, M.BD_DATE, M.PART_NO, M.BEG_KEEP, M.G082, M.G042, M.G221, M.G142, M.G145, M.G144, '+
+                                      '  S.NAME, S.LICENCEDATE, S.LICENCENO, S.STORE_TYPE '+
+                                      'FROM '+
+                                      '  OUT_COMM OC LEFT JOIN OUT_MAIN O ON ((OC.PLACEID = O.PLACEID) AND (OC.ID = O.ID) AND (OC.ACTOUTID = O.ACTOUTID)) '+
+                                      '  LEFT JOIN KRD_MAIN M ON ((M.PLACEID = OC.PLACEID) AND (M.ID = OC.ID)) '+
+                                      '  LEFT JOIN KRD_COMM KC ON ((OC.PLACEID = KC.PLACEID) AND (OC.ID = KC.ID) AND (OC.G32 = KC.G32)) '+
+                                      '  LEFT JOIN IN_MAIN IM ON ((IM.PLACEID = OC.PLACEID) AND (IM.ID = OC.ID) ) '+
+                                      '  LEFT JOIN IN_COMM IC ON ((IC.PLACEID = OC.PLACEID) AND (IC.ID = OC.ID) AND (IC.G32 = OC.G32)) '+
+                                      '  LEFT JOIN STORES S ON (S.PLACEID = OC.PLACEID) '+
+                                      'WHERE ' +
+                                      '  (O.PLACEID = '+  sPlaceId + ') AND (O.ID = ' + sId +')  AND ' +
+                                      '  (O.ACTOUTID = ' + sACTOUTID +  ')  ' +
+                                      'ORDER BY ' +
+                                      '  OC.G32');//openquery('qryRC')
+
+
+         Peremen();
+
+         FIRST('qryRC');
+         sSumCode := if((qryRC.G221 <> '')*(qryRC.G221 <> '0'), qryRC.G221, '643');
+         WHILE (EOF('qryRC') = 0,
+                Block(
+                sCodeVal := if((qryRC.G42_CURRENCY <> '')*(qryRC.G42_CURRENCY <> '0'), qryRC.G42_CURRENCY, if((qryRC.G221 <> '')*(qryRC.G221 <> '0'), qryRC.G221, '643'));
+                if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111,
+                   block(
+                      
+                         //вычисляем остатки
+                        
+                      OPENQUERY('RelaseAtPeriod','STS_DB', 'SELECT'+
+                                                           ' SUM(OC.OUT_G35) as REL_G35, SUM(OC.OUT_G38) as REL_G38, SUM(OC.OUT_G311) as REL_G311, '+
+                                                           ' SUM(OC.OUT_G315A) as REL_G315A, SUM(OC.OUT_G315C) as REL_G315C, SUM(OC.OUT_G42) as REL_G42 '+
+                                                           'FROM '+
+                                                           ' OUT_COMM OC LEFT JOIN OUT_MAIN O ON ((OC.PLACEID = O.PLACEID) AND (OC.ID = O.ID) AND (OC.ACTOUTID = O.ACTOUTID))'+
+                                                           'WHERE '+
+                                                           ' O.G542 <= ' + char(39)  + qryRC.G542 + char(39) +
+                                                           ' AND OC.PLACEID = ' + qryRC.PLACEID + ' AND OC.ID = '  + qryRC.ID +
+                                                           ' AND OC.G32 = ' + qryRC.G32
+                      );
+                        
+
+                       
+                      // Если не включенк галка "Остатки по товарам", запоминаем остатки для конкретного товара.
+                      PoDO1(0);
+                      if((bPrintItog = 'True')*(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111), Itogo(1));
+                      if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111,
+                               OstatkiALL());
+
+                      //Получаем складской номер товара
+                      StoreNum(qryRC.IC_BOXNO);
+
+                      //Получаем срок временного хранения через ЗПСХ
+                      Stor_date();
+
+                    )//if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111, block(
+                  );//if(VALUE('iRestG35' + convert(qryRC.ID, string) + convert(qryRC.G32, string)) = -1111111
+
+                  
+                  
+                  if(bPrintItog = 'True', Itogo(2));
+                  RecordTable(0);
+                  NEXT('qryRC');
+                )//WHILE (EOF('qryRC') = 0, block(
+         );//WHILE (EOF('qryRC') = 0
+         if(bPrintItog = 'True', WriteItog(1));
+      )//FUNC ('CreateDO2StoreDoc', , Block(
+
+)

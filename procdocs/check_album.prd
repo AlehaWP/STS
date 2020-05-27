@@ -1,0 +1,31 @@
+// *****************************************************************************
+// Название: проверку соответствия версий альбома форматов в ВЭД-Склад и Монитор ЭД
+// Описание: проверку соответствия версий альбома форматов в ВЭД-Склад и Монитор ЭД
+// Кнопка вызова: 0
+// Подпись кнопки: Сверака версий Альбома
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sIniFileAlbum',     String, INIFILE ('XMLFormat', 'Version', '5.13.0'));
+VAR ('sRegistryAlbum',    String, REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\ExchangeVersions\WH', 'FmtVersion', '5.13.0'));
+
+FUNC ('CheckAlbum', '',
+  Block(
+    VAR ('ireturn', integer, 0);
+
+    IF (sRegistryAlbum <> sIniFileAlbum,
+      Block(
+        ireturn := 0;
+      ),
+      Block(
+        ireturn := 1;
+      )
+    ); // IF - //
+
+
+    ireturn;
+  )
+),
+
+

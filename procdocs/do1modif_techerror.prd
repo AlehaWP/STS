@@ -1,0 +1,64 @@
+// *****************************************************************************
+// Название: Подтверждение недоставки доблиста в АСТО
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: DO1ModifTechError
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//VAR ('XmlRoot', Integer, GETXMLDOCUMENT ());
+
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'DO1ModifTechError'));
+VAR ('sSQL', String);
+
+IF (XmlDoc,
+  Block(
+    VAR ('strStatus', String, 'Комм. акт\Доб. лист к ДО-1 отвергнут сервером АСТО');
+    VAR ('vPlaceID',   String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+    VAR ('vDO1Id',     String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+    VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlDoc, 'dodt'));
+    VAR ('DoType', String, '');
+    VAR ('DoNo', String, '');
+    VAR ('DoDate', DateTime);
+    VAR ('dRegDate', DateTime);
+    VAR ('sSubStatus', String, XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'ErrorDsc')));
+    IF (VAREXISTS ('iRecordType') = 0, VAR ('iRecordType', Integer, 0));
+    
+    sSQL := 'SELECT ID, DOCUMENTID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+    //showmessage (sSQL);
+    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+    VAR ('vID', String, qFindID.ID);
+    VAR ('DocId', String, qFindID.DOCUMENTID);
+    
+
+    OPENQUERY ('MaxDOP', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_DOP WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+    EXECUTESQL ('STS_DB', 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' + MaxDOP.MC);    
+
+    sSQL := 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DODT > ' +char(39)+ DoDt +char(39);
+    OPENQUERY ('qCheck', sSQL, 'dbJournals');
+    IF (RECORDCOUNT ('qCheck') <= 0,
+      Block(
+    EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Комм. акт\Доб. лист к ДО-1 отвергнут сервером АСТО' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+      )
+    ); // IF - //
+        
+    OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN');
+    If(LOCATE ('KRD_MAIN_3', 'PLACEID;ID', [vPlaceId, vId]) = 1,
+      Block(
+         DoNo := KRD_MAIN_3.NBD;
+         DoDate := KRD_MAIN_3.BD_DATE;
+         DoType   := 'ДО-1';
+         dRegDate := DATE()+TIME(1);
+         OPENQUERY ('qryNUM', ' SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+         sJourGuid :=qryNUM.JOURGUID;
+         iRecordType := 0;
+      )
+    );
+    CloseDataset('KRD_MAIN_3');
+         
+  )
+);
+
+

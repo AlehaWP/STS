@@ -1,0 +1,187 @@
+// *****************************************************************************
+// Название: Подгрузка ДО3
+// Описание: Подгрузка ДО3
+// Кнопка вызова: 0
+// Подпись кнопки: Подгрузка ДО3
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('getConnString', '',
+  Block(
+    VAR ('CSIDL_WINDOWS', Integer, 36);
+    Const('CSIDL_PROGRAM_FILES_COMMON', Integer, 43);
+    VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (CSIDL_PROGRAM_FILES_COMMON))+'CTM\ctm.cfg');
+
+    VAR ('sConnString', String, '');
+
+    IF (REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcType', '0') = 1,
+        BLOCK(
+           sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcDir', '')+'MONITORED.MDB;Persist Security Info=False';
+        ),
+        IF(REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcType', '0') = 2,
+           BLOCK(
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'ServerName', '') + ';Initial Catalog=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'DBName', '') + ';';
+                IF (REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'IntegratedSecurity', '') = '1',
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Login', '') + ';Password=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Password', '');
+                  )
+                ); // IF - //
+           )
+        )
+    );
+
+
+    IF(sConnString='',
+       BLOCK(
+          VAR ('sMonPath', String);
+
+          sMonPath := INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath);
+
+          // смотрим указанный пользователем каталог(запоминаем его в ini склада)
+          IF (sMonPath = '', sMonPath :=INIFILE('MONITOR_ED', 'InstallPath', ''));
+          // если не нашли по CTM.INI - работаем в терминале, спрашиваем пользователя
+          IF(sMonPath = '', Block(
+            SELECTDIRECTORY ('sMonPath');
+            WRITEINIFILE('MONITOR_ED', 'InstallPath', sMonPath);
+          ));
+
+          If(FILEEXISTS(INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI')=0, sMonPath := '');
+          IF(sMonPath = '', RAISEEXCEPTION ('Не найден Монитор ЭД'));
+
+          VAR ('sMonitorIniPath', String, INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI');
+
+            IF (INIFILE ('DB', 'ArcType', '1', sMonitorIniPath) = 1,
+              Block(
+                // База данных Access
+                VAR ('sDBPath', String, INIFILE ('DB', 'ArcDir', '', sMonitorIniPath) + 'MONITORED.MDB');
+                IF (sDBPath = '', RAISEEXCEPTION ('Не найден путь к базе Монитора ЭД'));
+                sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sDBPath +';Persist Security Info=False';
+              ),
+              Block(
+                sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + INIFILE ('DB', 'Arc_SQL_ServerName', '', sMonitorIniPath) + ';Initial Catalog=' + INIFILE ('DB', 'Arc_SQL_DBName', '', sMonitorIniPath) + ';';
+                IF (INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0', sMonitorIniPath) = '1',
+
+                  Block(
+                    sConnString := sConnString + 'Integrated Security=SSPI;';
+                  ),
+                  Block(
+                    sConnString := sConnString + 'User Id=' + INIFILE ('DB', 'Arc_SQL_Login', '', sMonitorIniPath) + ';Password=' + INIFILE ('DB', 'Arc_SQL_Password', '', sMonitorIniPath);
+                  )
+                ); // IF - //
+              )
+            ); // IF - //
+        )
+    );
+
+    //showmessage(sConnString);
+    sConnString
+  )
+),
+
+
+
+
+VAR ('sIOutDirectory', string, PROGRAMPATH () + 'STS-MED\iout\'+ USERINFO('', 'UserUuid'));
+sIOutDirectory := IncludeTrailingBackslash (sIOutDirectory);
+IF (DIRECTORYEXISTS (sIOutDirectory) = 0,
+   Block(
+        FORCEDIRECTORIES (sIOutDirectory);
+   ),
+); // IF - //
+
+VAR ('sConnString', string, '');
+sConnString := getConnString();
+//showmessage(sConnString);
+IF(LENGTH (sConnString) = 0, RAISEEXCEPTION ('Не найден путь к БД Монитор ЭД'));
+
+VAR ('sSQL', string, '');
+
+VAR ('dDateFrom', datetime, DATE()-7);
+VAR ('dDateTo', datetime, NOW());
+IF( INPUTDATERANGE ('dDateFrom', 'dDateTo', 'Укажите период отбора')=0,RAISEEXCEPTION ('Создание отменено'));
+
+VAR ('iFromDate', float, convert(dDateFrom, float));
+VAR ('iToDate', float, convert(dDateTo, float));
+//Наш формат даты отличается от MS SQL на 2 единицы. Т.е. у них 0='01.01.1990' а у нас 0='30.12.1899' . В Access 0= '30.12.1899'
+IF (STRPOS ('Provider=SQLOLEDB', sConnString),
+    BLOCK(
+          iFromDate := iFromDate - 2;
+          iToDate := iToDate - 2;
+    )
+);
+
+
+TRYEXCEPT (
+           BLOCK(
+                 OPENDATABASE ('dbMonitor', 'ActiveX Data Objects (ADO)', sConnString);
+                 sSQL := 'SELECT * FROM [ED_ProcMessages] E WHERE  E.[ProcessedAt]>='+iFromDate+ ' AND E.[ProcessedAt]<='+iToDate+'  AND E.[MsgID]=' +char(39)+ 'CMN.13013' +char(39)+ ' ORDER BY E.[ProcessedAt]';
+                 //showmessage(sSQL);
+                 OPENQUERY ('qPM', sSQL, 'dbMonitor');
+           ),,
+           BLOCK(
+                 CLOSEDATABASE('dbMonitor');
+                 RAISEEXCEPTION ('Не удалось подключиться к БД Монитор ЭД. Ошибка: ' + EXCEPTIONMESSAGE());
+           )
+);
+
+TRYEXCEPT(
+          BLOCK(
+                SHOWINFORMATION ('Подождите, идет загрузка требований ДО3');
+                VAR ('iCounter', integer, 0);
+                //showmessage (RECORDCOUNT('qPM'));
+                IF (FIELDISNULL ('qPM', 'ID')=0,
+                    WHILE(EOF('qPM')=0,
+                          BLOCK(
+                                VAR ('sBackupFile', string, qPM.BackupFile);
+                                VAR ('sFileName', string, ExtractFileName (sBackupFile));
+
+                                IF (FILEEXISTS(sBackupFile),
+                                  Block(
+                                    VAR ('XmlDoc', Integer);
+                                    VAR ('XmlObject', Integer);
+                                    VAR ('XmlBody', Integer);
+                                    VAR ('sTempFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + sFileName);
+                                    CopyFile (qPM.BackupFile, sTempFile);
+                                    XMLDoc := XMLDOCUMENTCREATE();
+                                    XMLDOCUMENTLOAD (XMLDoc, sTempFile);
+                                    XmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (XmlDoc), 0), 'Body'), 'Signature'), 'Object');
+                                    XmlBody := XMLNODECHILD (XmlObject, 0);
+                                    XMLNODESETATTRIBUTE (XmlBody, 'dodt', FormatDateTime('DD.MM.YYYY HH:MM:SS', Date () + Time (1)));
+                                    XMLNODESAVE (XMLBody, sIOutDirectory + sFileName);
+                                    NEXT ('qPM');
+                                    iCounter := iCounter + 1;
+                                  ),
+                                  Block(
+                                    showmessage ('Отсутствует файл резервной копии.' + sBackupFile);
+                                  )
+                                ); // IF - //
+                          )
+                    ),
+                    BLOCK(
+                          RAISEEXCEPTION ('Не найдены запросы ДО3 за указанный период')
+                    )
+                );
+                HIDEINFORMATION ();
+                showmessage('Загрузка закончена. Заново загружено ' + iCounter + ' требований ДО3');
+          ),,
+          BLOCK(
+                HIDEINFORMATION ();
+                CLOSEDATASET('qPM');
+                CLOSEDATABASE('dbMonitor');
+                RAISEEXCEPTION ('Ошибка выгрузки: ' + EXCEPTIONMESSAGE());
+          )
+);
+
+
+CLOSEDATASET('qPM');
+CLOSEDATABASE('dbMonitor');
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'data\impex\scripts\eps.imp');
+
+
+
+

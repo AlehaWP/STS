@@ -1,0 +1,143 @@
+// *****************************************************************************
+// Название: Перенос
+// Описание: Перенос
+// Кнопка вызова: 0
+// Подпись кнопки: Перенос
+// *****************************************************************************
+//
+VAR('iCountKRD', integer, 0);
+VAR('iCount', integer, 0);
+
+
+OPENTABLE ('KRD_COMM_DOC', 'STS_DB', 'KRD_COMD', 'PLACEID;ID;G32', 1);
+OPENTABLE ('KRD_COMM_3', 'STS_DB', 'KRD_COMM', 'PLACEID;ID;G32', 1);
+//SETFILTER ('KRD_COMM_3', 'FORESTSORT = 1');
+FIRST('KRD_COMM_DOC');
+iCountKRD := RECORDCOUNT ('KRD_COMM_DOC');
+SHOWPROGRESS ('Выполняется перенос данных');
+WHILE( EOF('KRD_COMM_DOC') = 0,
+  BLOCK(
+    Var ('iMain', Integer, EXTINFOCREATE ());
+    Var ('sSql', string, '');
+    Var ('sRemark', string, '');
+    FINDKEY('KRD_COMM_3', [KRD_COMM_DOC.PLACEID, KRD_COMM_DOC.ID, KRD_COMM_DOC.G32]);
+    IF(KRD_COMM_3.FORESTSORT = 1,
+       BLOCK(
+          //Удаляем запись с таким товаром из Доб. листов
+          EXECUTESQL ('STS_DB', 'Delete  from  KRD_CSDM KC WHERE  '+
+                                '(KC.PLACEID='+ KRD_COMM_DOC.PLACEID +
+                                ') AND (KC.ID =' + KRD_COMM_DOC.ID +
+                                ') AND (KC.G32= '+ KRD_COMM_DOC.G32 +')');
+          //Удаляем Доб.листы без товаров
+          EXECUTESQL ('STS_DB', 'Delete  from  KRD_DOP KD WHERE  '+
+                                '  ((SELECT MAX(PLACEID) FROM KRD_CSDM WHERE (KRD_CSDM.PLACEID= KD.PLACEID) AND (KRD_CSDM.ID=KD.ID) AND (KRD_CSDM.COUNTER= KD.COUNTER)) IS NULL )' +
+                                ' AND (KD.PLACEID='+ KRD_COMM_DOC.PLACEID +
+                                ') AND (KD.ID =' + KRD_COMM_DOC.ID +
+                                ') ');
+
+          OPENQUERY('DOCNO','STS_DB','SELECT NBD FROM KRD_MAIN WHERE PLACEID = '+KRD_COMM_DOC.PLACEID+' AND ID = ' + KRD_COMM_DOC.ID);
+          OPENQUERY('MAX','STS_DB','SELECT MAX(COUNTER) as nPP FROM KRD_DOP WHERE PLACEID = '+KRD_COMM_DOC.PLACEID+' AND ID = ' + KRD_COMM_DOC.ID);
+          //showmessage(MAX.nPP);
+          EXTINFOLOADFROMFIELD (iMain, 'KRD_COMM_3.EXTINFO');
+          EXTINFOSETCURRENT(iMain, 0);
+          
+          If((EXTINFOGETVALUE (iMain, 'rtPrDocumentName1') <> '')|(EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber1') <> ''),
+            block(
+              IF(sRemark <> '',  sRemark := sRemark + ', ');
+              sRemark := sRemark + EXTINFOGETVALUE (iMain, 'rtPrDocumentName1')+ ',' + EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber1') + ',' + FDT('DD.MM.YYYY', EXTINFOGETVALUE (iMain, 'rtPrDocumentDate1'));
+            )
+          );
+          If((EXTINFOGETVALUE (iMain, 'rtPrDocumentName2') <> '')|(EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber2') <> ''),
+            block(
+              IF(sRemark <> '',  sRemark := sRemark + char(13) + char(10));
+                sRemark := sRemark + EXTINFOGETVALUE (iMain, 'rtPrDocumentName2')+ ',' + EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber2') + ',' + FDT('DD.MM.YYYY', EXTINFOGETVALUE (iMain, 'rtPrDocumentDate2'));
+            )
+          );
+          If((EXTINFOGETVALUE (iMain, 'rtPrDocumentName3') <> '')|(EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber3') <> ''),
+            block(
+              IF(sRemark <> '',  sRemark := sRemark + char(13) + char(10));
+                sRemark := sRemark + EXTINFOGETVALUE (iMain, 'rtPrDocumentName3')+ ',' + EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber3') + ',' + FDT('DD.MM.YYYY', EXTINFOGETVALUE (iMain, 'rtPrDocumentDate3'));
+            )
+          );
+          If((EXTINFOGETVALUE (iMain, 'rtPrDocumentName4') <> '')|(EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber4') <> ''),
+            block(
+              IF(sRemark <> '',  sRemark := sRemark + char(13) + char(10));
+                sRemark := sRemark + EXTINFOGETVALUE (iMain, 'rtPrDocumentName4')+ ',' + EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber4') + ',' + FDT('DD.MM.YYYY', EXTINFOGETVALUE (iMain, 'rtPrDocumentDate4'));
+            )
+          );
+          If((EXTINFOGETVALUE (iMain, 'rtPrDocumentName5') <> '')|(EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber5') <> ''),
+            block(
+              IF(sRemark <> '',  sRemark := sRemark + char(13) + char(10));
+                sRemark := sRemark + EXTINFOGETVALUE (iMain, 'rtPrDocumentName5')+ ',' + EXTINFOGETVALUE (iMain, 'rtPrDocumentNumber5') + ',' + FDT('DD.MM.YYYY', EXTINFOGETVALUE (iMain, 'rtPrDocumentDate5'));
+            )
+          );
+
+          APPENDRECORD('KRD_DOP_2');
+          EDIT('KRD_DOP_2');
+          SETFIELDVALUE('KRD_DOP_2',
+                        'PLACEID', KRD_COMM_DOC.PLACEID,
+                        'ID',KRD_COMM_DOC.ID,
+                        'COUNTER', MAX.nPP + 1,
+                        'DOC_NO', DOCNO.NBD,
+                        'DOC_DATETIME', EXTINFOGETVALUE (iMain, 'rtDate')
+          );
+          POST('KRD_DOP_2');
+
+          APPENDRECORD('KRD_CSDM_2');
+          EDIT('KRD_CSDM_2');
+          SETFIELDVALUE('KRD_CSDM_2',
+                        'PLACEID', KRD_COMM_DOC.PLACEID,
+                        'ID',KRD_COMM_DOC.ID,
+                        'COUNTER', MAX.nPP + 1,
+                        'G32', KRD_COMM_DOC.G32,
+                        'SDM_DATETIME', EXTINFOGETVALUE (iMain, 'rtDate'),
+                        'DOC_G33', KRD_COMM_DOC.G33,
+                        'DOC_G312', KRD_COMM_DOC.G312,
+                        'DOC_G42', IF(KRD_COMM_DOC.G42 <> 'NULL', KRD_COMM_DOC.G42),
+                        'DOC_G311', IF(KRD_COMM_DOC.G311 <> 'NULL', KRD_COMM_DOC.G311),
+                        'DOC_G315A', IF(KRD_COMM_DOC.G315A <> 'NULL', KRD_COMM_DOC.G315A),
+                        'DOC_G35', IF(KRD_COMM_DOC.G35 <> 'NULL', KRD_COMM_DOC.G35),
+                        'DOC_G315C', IF(KRD_COMM_DOC.G315C <> 'NULL', KRD_COMM_DOC.G315C),
+                        'DOC_G315CN', KRD_COMM_DOC.G315CN,
+                        'DOC_G31_82', KRD_COMM_DOC.G31_82,
+                        'COMMERCEACT', sRemark
+
+          );
+          POST('KRD_CSDM_2');
+          //showmessage(KRD_CSDM_2.G32);
+
+          sSQL := " update KRD_COMM";
+          sSQL := sSQL + " set FORESTSORT=NULL";
+          If(EXTINFOGETVALUE (iMain, 'rtGoodsTNVEDCode') <> '', sSQL := sSQL + " , G33=" + CHAR(39) + EXTINFOGETVALUE (iMain, 'rtGoodsTNVEDCode') + CHAR(39));
+          If(EXTINFOGETVALUE (iMain, 'rtPlaceNumber') <> '', sSQL := sSQL + " , G311=" + EXTINFOGETVALUE (iMain, 'rtPlaceNumber'));
+          If(EXTINFOGETVALUE (iMain, 'rtPlaceNumber') <> '', sSQL := sSQL + " , FACT_G311=" + EXTINFOGETVALUE (iMain, 'rtPlaceNumber'));
+          If(EXTINFOGETVALUE (iMain, 'rtGoodsDescription') <> '', sSQL := sSQL + " , G312=" + CHAR(39) + REPLACECR(EXTINFOGETVALUE (iMain, 'rtGoodsDescription')) + CHAR(39));
+          If(EXTINFOGETVALUE (iMain, 'rtGoodsQuantity') <> '', sSQL := sSQL + " , G315A=" + EXTINFOGETVALUE (iMain, 'rtGoodsQuantity'));
+          If(EXTINFOGETVALUE (iMain, 'rtGoodsQuantity') <> '', sSQL := sSQL + " , FACT_G315A=" + EXTINFOGETVALUE (iMain, 'rtGoodsQuantity'));
+          If(EXTINFOGETVALUE (iMain, 'rtBruttoVolQuant') <> '', sSQL := sSQL + " , G35=" + EXTINFOGETVALUE (iMain, 'rtBruttoVolQuant'));
+          If(EXTINFOGETVALUE (iMain, 'rtBruttoVolQuant') <> '', sSQL := sSQL + " , FACT_G35=" + EXTINFOGETVALUE (iMain, 'rtBruttoVolQuant'));
+          If(EXTINFOGETVALUE (iMain, 'rtInvoiceCost') <> '', sSQL := sSQL + " , G42=" + EXTINFOGETVALUE (iMain, 'rtInvoiceCost'));
+          If(EXTINFOGETVALUE (iMain, 'rtInvoiceCost') <> '', sSQL := sSQL + " , FACT_G42=" + EXTINFOGETVALUE (iMain, 'rtInvoiceCost'));
+          sSQL := sSQL + " where (placeid =" + KRD_COMM_DOC.PLACEID +") AND ";
+          sSQL := sSQL + " (id =" + KRD_COMM_DOC.ID +") AND ";
+          sSQL := sSQL + " (g32 =" + KRD_COMM_DOC.G32 +")";
+          //SHOWMESSAGE (sSQL);
+          EXECUTESQL ('STS_DB', sSQL);
+          EXTINFODESTROY (iMain);
+          CLOSEDATASET('DOCNO');
+          CLOSEDATASET('MAX');
+       )
+    );
+    iCount:= iCount + 1;
+    SETPROGRESS (icount , 100, icountKRD);
+    NEXT('KRD_COMM_DOC');
+  )
+);
+HIDEPROGRESS ();
+CLOSEDATASET('KRD_COMM_DOC');
+CLOSEDATASET('KRD_COMM_3');
+//CLOSEDATASET();
+
+
+
+

@@ -1,0 +1,26 @@
+// *****************************************************************************
+// Название: STSHOSTEXECUTESCRIPT
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: eps
+// Язык: FuncScript
+// Вызов по событию: EpsImport
+// Без подтверждения: 1
+// *****************************************************************************
+//
+EXECUTESCRIPT (IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\writelog.prd');
+
+//WriteLog('aaa.log', 'Начало работы');
+IF( VAREXISTS ('iCountEpsimp') =0, VAR ('iCountEpsimp', Integer, 0), );
+iCountEpsimp := CONVERT (INIFILE (USERINFO ('', 'UserUUID') + 'iCountEpsimp', 'iCountEpsimp', '0', IncludeTrailingBackslash (ProgramPath ())+'sts.ini' ), Integer);
+//WriteLog('aaa.log', 'iCountEpsimp = ' + iCountEpsimp);
+IF (iCountEpsimp < 5,
+ BLOCK (
+       iCountEpsimp := (iCountEpsimp + 1);
+       WRITEINIFILE (USERINFO ('', 'UserUUID') + 'iCountEpsimp', 'iCountEpsimp', iCountEpsimp, IncludeTrailingBackslash (ProgramPath ())+'sts.ini' );
+       //WriteLog('aaa.log', 'IF = 0, ДО Data\Impex\SCRIPTS\eps.imp iCountEpsimp = ' + iCountEpsimp);
+       STSHOSTEXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Data\Impex\SCRIPTS\eps.imp', 1, 0);
+       //WriteLog('aaa.log', 'IF = 0, ПОСЛЕ Data\Impex\SCRIPTS\eps.imp iCountEpsimp = ' + iCountEpsimp);
+ ),
+ WriteLog('aaa.log', 'IF > 5, Пропускаем iCountEpsimp = ' + iCountEpsimp);
+);// if

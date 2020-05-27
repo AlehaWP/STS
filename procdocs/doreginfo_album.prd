@@ -1,0 +1,34 @@
+// *****************************************************************************
+// Название: Информация о регистрации ДО
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: DORegInfo
+// *****************************************************************************
+//
+VAR('XmlNodeDescript', integer, XMLNODECHILD (XmlRoot, 0));
+VAR('XmlCustInsp', integer, XMLNODEFIND (XmlNodeDescript, 'dori:CustomInspector'));
+VAR('XmlRegNum', integer, XMLNODEFIND (XmlNodeDescript, 'dori:RegisterNumberReport'));
+//showmessage(XmlRegNum);
+CASE (XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'dori:FormReport')), [0, BLOCK( 
+                                                                            EXECUTESQL('STS_DB', ' UPDATE KRD_MAIN SET REG_NBD = "' + XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:GTDNumber')) + '", ' +
+                                                                                                 ' MC_STATUS_BD = "3", ' +
+                                                                                                 ' GD1= "' + convert(strtodate(XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:RegistrationDate')),'YYYY-MM-DD', '-'), string) + '", '+
+                                                                                                 ' GD2= "' + XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'catWH_ru:LNP')) + '", '+
+                                                                                                 ' FIO_INSPECTOR= "'+ XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonSurname')) + ' ' +
+                                                                                                                      XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonName'))  + ' ' +
+                                                                                                                      XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonMiddleName')) +
+                                                                                                                      '", '+
+                                                                                                 ' POST_INSPECTOR= "'+ XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonPost')) + '" '+
+                                                                                                 ' WHERE PLACEID = '+XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'WHId'))+
+                                                                                                 ' AND MAIN_ID ='+ XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'DO1Id')) );
+                                                                           ),
+                                                                        1, BLOCK(
+                                                                           ),
+                                                                        2, BLOCK(
+                                                                           )
+                                                                       ]
+                                                                       
+);
+
+                     
+GLOBALREFRESH ();
