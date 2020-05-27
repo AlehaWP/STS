@@ -1,0 +1,110 @@
+// *****************************************************************************
+// Название: Отправка заявления на продление сроков временного хранения
+// Описание: Отправка заявления на продление сроков временного хранения
+// Кнопка вызова: 0
+// Подпись кнопки: ЗПСХ
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GENERATEUUID_2', '',
+  Block(
+    VAR ('sGuid', String, GENERATEUUID ());
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+  )
+), // FUNC - GENERATEUUID_2 () //
+
+VAR ('vPlaceID', String, KRD_MAIN.PLACEID);
+VAR ('vID', String, KRD_MAIN.ID);
+VAR ('vDocumentID', String, KRD_MAIN.DOCUMENTID);
+VAR ('vCounter', Integer, 0);
+VAR ('sPathToSave', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+
+IF (USERINFO ('', 'UserLogin') <> '', sPathToSave := sPathToSave + USERINFO ('', 'UserUUID') + '\');
+
+
+OPENQUERY ('qZPSH', 'STS_DB', 'SELECT * FROM KRD_PROL WHERE DOC_TYPE=' +char(39)+ 'ЗПСХ' +char(39)+ ' AND PLACEID=' + vPlaceID + ' AND ID=' + vID);
+
+IF (RECORDCOUNT ('qZPSH', 1) > 0,
+  Block(
+    SELECTVALUES ('Выберите ЗПСХ для отправки', 'qZPSH', [['DOC_TYPE', 'Тип документа', 20], ['DOC_NO', 'Номер документа', 40], ['DOC_DATE', 'Дата документа', 20]], [['COUNTER', 'vCounter']], 'PLACEID;ID;COUNTER', 'STS_DB');
+  ),
+); // IF - //
+
+
+IF (vCounter > 0,
+  Block(
+    VAR ('XmlFile', Integer, XMLDOCUMENTCREATE ());
+    VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlFile));
+    VAR ('XmlGoodsProlong', Integer, XMLNODEADDCHILD (XmlRoot, 'reqwh:ReqWHGoodsProlong'));
+    
+    XMLNODESETATTRIBUTE (XmlGoodsProlong, 'DocumentModeID', '1008022E');
+    //XMLNODESETATTRIBUTE (XmlGoodsProlong, 'xsi:schemaLocation', 'urn:customs.ru:Information:WarehouseDocuments:ReqWHGoodsProlong:5.0.7 ReqWHGoodsProlong.xsd');
+    XMLNODESETATTRIBUTE (XmlGoodsProlong, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+    XMLNODESETATTRIBUTE (XmlGoodsProlong, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+    XMLNODESETATTRIBUTE (XmlGoodsProlong, 'xmlns:reqwh', 'urn:customs.ru:Information:WarehouseDocuments:ReqWHGoodsProlong:5.0.7');
+    
+    XMLNODESETVALUE (XMLNODEADDCHILD (XmlGoodsProlong, 'cat_ru:DocumentID'), );
+    XMLNODESETVALUES (XmlGoodsProlong, '',
+                                       'cat_ru:DocumentID', GENERATEUUID_2 (),
+                                       'cat_ru:RefDocumentID', '',
+                                       'reqwh:SendDate', FDT ('YYYY-MM-DD', qZPSH.DOC_DATE),
+                                       'reqwh:SendTime', FDT ('HH:NN:SS', qZPSH.DOC_DATE),
+                                       'reqwh:RegNumber', qZPSH.DOC_NO
+    ); // XMLNODESETVALUES - //
+    
+    VAR ('sReason', Memo, qZPSH.DOC_REASON);
+    
+    IF (LENGTH (sReason) > 250,
+      Block(
+        XMLNODESETVALUES (XmlGoodsProlong, '', 'reqwh:Reason', COPY (sReason, 1, 250));
+        WHILE (LENGTH (sReason) > 0,
+          Block(
+            sReason := DELETE (sGoodsDescr, 1, 250);
+            IF (LENGTH (sReason) > 0,
+              XMLNODESETVALUE (XMLNODEADDCHILD (XmlGoodsProlong, 'reqwh:Reason'), IF (LENGTH (sReason) <= 250, sReason, COPY (sReason, 1, 250)));
+            ); // IF - //
+          )
+        ); // WHILE - //
+      ),
+      Block(
+        XMLNODESETVALUES (XmlGoodsProlong, '', 'reqwh:Reason', sReason);
+      )
+    ); // IF - LENGTH (sReason) > 250 //
+    
+    OPENQUERY ('qKRCP', 'STS_DB', 'SELECT * FROM KR_C_P WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND DOC_TYPE=' +char(39)+ '35' +char(39)+ ' AND DOC_COUNTER=' + vCounter);
+    FIRST ('qKRCP');
+    WHILE (EOF ('qKRCP') = 0,
+      Block(
+        VAR ('XmlGoodsReason', Integer, XMLNODEADDCHILD (XmlGoodsProlong, 'reqwh:GoodsReason'));
+        XMLNODESETVALUE (XMLNODEADDCHILD (XmlGoodsReason, 'reqwh:GoodsNumeric'), qKRCP.G32);
+        XMLNODESETVALUE (XMLNODEADDCHILD (XmlGoodsReason, 'reqwh:ReqPeriod'), FDT ('YYYY-MM-DD', qZPSH.STORAGE_DATE));
+
+        sReason := qZPSH.DOC_REASON;
+        IF (LENGTH (sReason) > 250,
+          Block(
+            XMLNODESETVALUES (XmlGoodsReason, '', 'reqwh:Reason', COPY (sReason, 1, 250));
+            WHILE (LENGTH (sReason) > 0,
+              Block(
+                sReason := DELETE (sGoodsDescr, 1, 250);
+                IF (LENGTH (sReason) > 0,
+                  XMLNODESETVALUE (XMLNODEADDCHILD (XmlGoodsReason, 'reqwh:Reason'), IF (LENGTH (sReason) <= 250, sReason, COPY (sReason, 1, 250)));
+                ); // IF - //
+              )
+            ); // WHILE - //
+          ),
+          Block(
+            XMLNODESETVALUES (XmlGoodsReason, '', 'reqwh:Reason', sReason);
+          )
+        ); // IF - LENGTH (sReason) > 250 //
+        
+        NEXT ('qKRCP');
+      )
+    ); // WHILE - //
+
+    XMLDOCUMENTSAVE (XmlFile, sPathToSave + 'DO1ProlongRequest_' + vPlaceID + '_' + vDocumentID + '.xml');
+  )
+); // IF - //
+
+DEBUGMESSAGE ('PLACEID = ' + vPlaceID +char(13)+ 'ID = ' + vID +char(13)+ 'COUNTER = ' + vCounter, 1);

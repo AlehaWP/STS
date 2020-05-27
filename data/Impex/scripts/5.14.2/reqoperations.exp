@@ -1,0 +1,245 @@
+// *****************************************************************************
+// Название: Заявление на проведение операций (ReqOperations, Экспорт)
+// Описание: Заявление на проведение операций в отношении товаров и ТС (ReqOperations, Экспорт)
+// Кнопка вызова: 1
+// Подпись кнопки: Заявл. на проведение операций
+// Вызов по событию:
+// *****************************************************************************
+//
+
+FUNC ('IntToBool',
+  BLOCK(
+    PARAM ('sIntValue', Integer, 0)
+  ),
+  BLOCK(
+    IF(sIntValue = 0,
+      'false',
+      'true'
+    )
+  )
+);
+
+VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'proc.ini');
+VAR ('sIniSection', String, 'RegOperations.exp');
+VAR ('iGoodsNumber', Integer, 1);
+
+// настройка на каталог обмена
+//VAR ('sDir', String, INIFILE ('STS-MED', 'iin', ''));
+//IF (sDir = '', IF (SELECTDIRECTORY ('sDir') = 0, RAISEEXCEPTION ('Отменено пользователем')));
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
+
+IF (DIRECTORYEXISTS (sDir) = 0, FORCEDIRECTORIES (sDir));
+
+VAR ('sDocumentID', String, UPPERSTR(JRREQOPER.DocumentID));
+VAR ('sNumber', String, JRREQOPER.REQNUMBER);
+
+VAR ('mSQL', Memo, '');
+
+mSQL := 'SELECT * FROM KRD_MAIN WHERE PLACEID=' + JRREQOPER.PLACEID +  ' AND ID=' + JRREQOPER.ID;
+OPENQUERY ('qDO1', 'STS_DB', mSQL);
+IF (FIELDISNULL ('qDO1', 'PLACEID') = 0,  vDocID := qDO1.DOCUMENTID);
+
+VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'ReqWHOperations_'+JRREQOPER.PLACEID+'_'+vDocID+'.xml');
+
+
+
+FUNC ('CreateXML', ,
+  Block(
+    VAR ('XMLDoc', Integer, XMLDocumentCreate());
+    VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+    VAR ('XMLReqOper', Integer, XMLNodeAddChild(XMLDocRoot, 'reqop:ReqOperations'));
+
+    //АТТРИБУТЫ ДОБАВЛЕНЫ, ЧТОБЫ XML-ФАЙЛ ОТКРЫВАЛСЯ В IE И КПС (НАЧАЛО)
+    XmlNodeSetAttribute (XMLReqOper, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XmlNodeSetAttribute (XMLReqOper, 'xmlns:reqop', 'urn:customs.ru:Information:CustomsDocuments:ReqOperations:5.10.0');
+    //АТТРИБУТЫ ДОБАВЛЕНЫ, ЧТОБЫ XML-ФАЙЛ ОТКРЫВАЛСЯ В IE И КПС (КОНЕЦ)
+
+    XmlNodeSetAttribute (XMLReqOper, 'DocumentModeID', '1006135E');
+    XMLNODESETVALUES (XMLReqOper, '',
+				    'cat_ru:DocumentID', sDocumentID,
+            'reqop:ReqNumber', sNumber,
+            'reqop:ReqDate', FDT ('YYYY-MM-DD', JRREQOPER.ReqDate),
+            'reqop:DocSign', 'true',
+    ); // XMLNODESETVALUES - //
+
+  )
+), // FUNC - CreateXML() //
+
+FUNC ('SaveXML', ,
+  Block(
+    XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
+  )
+), // FUNC - SaveTmpXML() //
+
+
+
+
+CreateXML ();
+
+//Данные о таможенном органе
+VAR ('XMLCustoms', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Customs'));
+XmlNodeSetValues (XMLCustoms, '',
+          'cat_ru:Code', JRREQOPER.CustomsCode,
+          'cat_ru:OfficeName', JRREQOPER.CustomsOfficeName,
+          'cat_ru:CustomsCountryCode', JRREQOPER.CustomsCountryCode,
+);
+
+//Данные о декларанте
+VAR ('XMLDeclarant', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Declarant'));
+
+If((FIELDISNULL ('JRREQOPER','DeclOrgName')=0)*(TRIM(JRREQOPER.DeclOrgName) <> ''),
+  XmlNodeSetValues (XMLDeclarant, '',
+          'cat_ru:OrganizationName', REMOVECHAR (JRREQOPER.DeclOrgName, char(39))
+  )
+);
+If((FIELDISNULL ('JRREQOPER','DeclINN')=0)*(TRIM(JRREQOPER.DeclINN) <> ''),
+  XmlNodeSetValues (XMLDeclarant, '',
+          'cat_ru:RFOrganizationFeatures\cat_ru:INN', JRREQOPER.DeclINN
+  )
+);
+// сведения о представителе
+If((FIELDISNULL ('JRREQOPER','ReprOrgName')=0)*(TRIM(JRREQOPER.ReprOrgName) <> ''),
+  XmlNodeSetValues (XMLDeclarant, '',
+          'reqop:Representative\cat_ru:OrganizationName', REMOVECHAR (JRREQOPER.ReprOrgName, char(39))
+  )
+);
+If((FIELDISNULL ('JRREQOPER','ReprINN')=0)*(TRIM(JRREQOPER.ReprINN) <> ''),
+  XmlNodeSetValues (XMLDeclarant, '',
+          'reqop:Representative\cat_ru:RFOrganizationFeatures\cat_ru:INN', JRREQOPER.ReprINN
+  )
+);
+
+// оп. Транспортировка
+VAR ('XMLOper1', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Transportation'));
+XmlNodeSetValues (XMLOper1, '',
+          'reqop:Value', IF(JRREQOPER.TranspValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','TranspRemark')=0)*(TRIM(JRREQOPER.TranspRemark) <> ''),
+  XmlNodeSetValues (XMLOper1, '',
+          'reqop:Remark', JRREQOPER.TranspRemark
+  )
+);
+
+// оп. Взвешивание
+VAR ('XMLOper2', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Weighing'));
+XmlNodeSetValues (XMLOper2, '',
+          'reqop:Value', If(JRREQOPER.WeighValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','WeighRemark')=0)*(TRIM(JRREQOPER.WeighRemark) <> ''),
+  XmlNodeSetValues (XMLOper2, '',
+          'reqop:Remark', JRREQOPER.WeighRemark
+  )
+);
+// оп. Иное определение количества
+VAR ('XMLOper3', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:DifferentDefinitionQuantity'));
+XmlNodeSetValues (XMLOper3, '',
+          'reqop:Value', If(JRREQOPER.DiffValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','DiffRemark')=0)*(TRIM(JRREQOPER.DiffRemark) <> ''),
+  XmlNodeSetValues (XMLOper3, '',
+          'reqop:Remark', JRREQOPER.DiffRemark
+  )
+);
+// оп. Погрузка
+VAR ('XMLOper4', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Loading'));
+XmlNodeSetValues (XMLOper4, '',
+          'reqop:Value', If(JRREQOPER.LoadValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','LoadRemark')=0)*(TRIM(JRREQOPER.LoadRemark) <> ''),
+  XmlNodeSetValues (XMLOper4, '',
+          'reqop:Remark', JRREQOPER.LoadRemark
+  )
+);
+// оп. Выгрузка
+VAR ('XMLOper5', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Unloading'));
+XmlNodeSetValues (XMLOper5, '',
+          'reqop:Value', If(JRREQOPER.UnloadValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','UnloadRemark')=0)*(TRIM(JRREQOPER.UnloadRemark) <> ''),
+  XmlNodeSetValues (XMLOper5, '',
+          'reqop:Remark', JRREQOPER.UnloadRemark
+  )
+);
+// оп. перегрузка
+VAR ('XMLOper6', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Overload'));
+XmlNodeSetValues (XMLOper6, '',
+          'reqop:Value', If(JRREQOPER.OverLoadValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','OverLoadRemark')=0)*(TRIM(JRREQOPER.OverLoadRemark) <> ''),
+  XmlNodeSetValues (XMLOper6, '',
+          'reqop:Remark', JRREQOPER.OverLoadRemark
+  )
+);
+// оп. исправление повр. упаковки
+VAR ('XMLOper7', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CorrectionPackaging'));
+XmlNodeSetValues (XMLOper7, '',
+          'reqop:Value', If(JRREQOPER.CorrPackValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','CorrPackRemark')=0)*(TRIM(JRREQOPER.CorrPackRemark) <> ''),
+  XmlNodeSetValues (XMLOper7, '',
+          'reqop:Remark', JRREQOPER.CorrPackRemark
+  )
+);
+// оп. вскрытие упаковки
+VAR ('XMLOper8', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Unpacking'));
+XmlNodeSetValues (XMLOper8, '',
+          'reqop:Value', If(JRREQOPER.UnpackValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','UnpackRemark')=0)*(TRIM(JRREQOPER.UnpackRemark) <> ''),
+  XmlNodeSetValues (XMLOper8, '',
+          'reqop:Remark', JRREQOPER.UnpackRemark
+  )
+);
+// оп. упаковка
+VAR ('XMLOper9', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Packing'));
+XmlNodeSetValues (XMLOper9, '',
+          'reqop:Value', If(JRREQOPER.PackValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','PackRemark')=0)*(TRIM(JRREQOPER.PackRemark) <> ''),
+  XmlNodeSetValues (XMLOper9, '',
+          'reqop:Remark', JRREQOPER.PackRemark
+  )
+);
+// оп. пееупаковка
+VAR ('XMLOper10', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Repackaging'));
+XmlNodeSetValues (XMLOper10, '',
+          'reqop:Value', If(JRREQOPER.RepackValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','RepackRemark')=0)*(TRIM(JRREQOPER.RepackRemark) <> ''),
+  XmlNodeSetValues (XMLOper10, '',
+          'reqop:Remark', JRREQOPER.RepackRemark
+  )
+);
+// оп. вскрытие помещений, и других мест где находятся товары
+VAR ('XMLOper11', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:OpeningLocationGoods'));
+XmlNodeSetValues (XMLOper11, '',
+          'reqop:Value', If(JRREQOPER.OpenValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','OpenRemark')=0)*(TRIM(JRREQOPER.OpenRemark) <> ''),
+  XmlNodeSetValues (XMLOper11, '',
+          'reqop:Remark', JRREQOPER.OpenRemark
+  )
+);
+// оп. разделения товарной партии
+VAR ('XMLOper12', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:DivisionConsignment'));
+XmlNodeSetValues (XMLOper12, '',
+          'reqop:Value', If(JRREQOPER.DivValue=0, 'false', 'true')
+);
+If((FIELDISNULL ('JRREQOPER','DivRemark')=0)*(TRIM(JRREQOPER.DivRemark) <> ''),
+  XmlNodeSetValues (XMLOper12, '',
+          'reqop:Remark', JRREQOPER.DivRemark
+  )
+);
+
+
+//Данные о должностном лице таможенного органа
+VAR ('XMLCustomsPerson', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CustomsPerson'));
+XmlNodeSetValues (XMLCustomsperson, '',
+          'cat_ru:PersonName', JRREQOPER.InspFIO,
+          'cat_ru:LNP', JRREQOPER.InspLNP
+);
+
+
+SaveXML ();
+
+WRITEINIFILE ('STS-MED', 'iin', INCLUDETRAILINGBACKSLASH (sDir));

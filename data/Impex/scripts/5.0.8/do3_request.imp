@@ -1,0 +1,74 @@
+// *****************************************************************************
+// Название: Загрузка требования ДО3
+// Описание: Загрузка требования ДО3
+// Кнопка вызова: 1
+// Подпись кнопки: загрузка требования ДО3
+// *****************************************************************************
+//
+
+
+VAR('XmlRequest', integer, XMLNODECHILD (XmlRoot, 0));
+VAR('XmlDocumentId', integer, XMLNODEFIND (XmlRequest, 'cat_ru:DocumentID'));
+IF (XmlDocumentId = 0, XmlDocumentId := XMLNodeFind (XmlRequest, 'DocumentID'));
+
+VAR('RefId', string, UPPERSTR(XMLNODEVALUE(XmlDocumentId)));
+
+OPENQUERY ('qryReq', 'Select * from jrdo3 where refdocumentid ='+char(39)+RefId+char(39), 'dbJournals');
+IF (RECORDCOUNT ('qryReq') > 0,
+  RaiseException('В журнале ДО3 уже есть ДО3/требование с таким идентификатором.'),
+  Block(
+
+    OPENTABLE ('JRDO3_2', 'JRDO3', '', 'dbJournals', 1);
+
+    EDITRECORD ('JRDO3_2');
+    APPENDRECORD ('JRDO3_2');
+
+    OPENQUERY ('qryNUM', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM JRDO3 ', 'dbJournals');
+    VAR('iMaxID', Integer, qryNUM.MAX_ID + 1);
+
+    SETFIELDVALUE('JRDO3_2', 'JOURNAL_MASTER_ID', iMaxId);    {Ключевое поле}
+    {SetFieldValue ('JRDO3_2',
+                      'COMMENTS', XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'Comments')),
+                      'SENDDATETIME',   XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'SendDate')),
+                      'REPORTBEGINDATE', XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'BeginDate')),
+                      'REPORTENDDATE', XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'EndDate')),
+                      'REFDOCUMENTID', RefId,
+                      'REQCUSTOMSCODE', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'Customs'), 'cat_ru:Code')),
+                      'REQPERSONNAME', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'CustomsPerson'), 'cat_ru:PersonName')),
+                      'REQLNP', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'CustomsPerson'), 'cat_ru:LNP')),
+                      'CERTIFICATENUMBER', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'Permits'), 'catWH_ru:CertificateNumber')),
+                      'CERTIFICATEDATE', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'Permits'), 'catWH_ru:CertificateDate'))
+    );}
+
+    SetFieldValue ('JRDO3_2',
+                      'COMMENTS', XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'Comments')),
+                      'SENDDATETIME', StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'SendDate')), 'YYYY-MM-DD', '-') + IF (TRIM (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'SendTime'))) <> '', ' ' +  XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'SendTime'))),
+                      'REPORTBEGINDATE', StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'BeginDate')), 'YYYY-MM-DD', '-'),
+                      'REPORTENDDATE',   StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'EndDate')), 'YYYY-MM-DD', '-'),
+                      'REFDOCUMENTID',   RefId,
+                      'REQCUSTOMSCODE',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'Customs'), 'cat_ru:Code')),
+                      'REQPERSONNAME',   XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'CustomsPerson'), 'cat_ru:PersonName')),
+                      'REQLNP',          XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'CustomsPerson'), 'cat_ru:LNP')),
+                      'CERTIFICATENUMBER', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'Permits'), 'catWH_ru:CertificateNumber')),
+                      'CERTIFICATEDATE', StrToDate (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'Permits'), 'catWH_ru:CertificateDate')), 'YYYY-MM-DD', '-'),
+                      'RECORDTYPE', 'Требование ДО3'
+                      
+    );
+    {SetFieldValue ('JRDO3_2',
+                      'COMMENTS', XmlRequest.Comments,
+                      'SENDDATETIME', StrToDate (XmlRequest.SendDate, 'YYYY-MM-DD', '-') + IF (TRIM (XmlRequest.SendTime) <> '', ' ' +  XmlRequest.SendDate),
+                      'REPORTBEGINDATE', StrToDate (XmlRequest.BeginDate, 'YYYY-MM-DD', '-'),
+                      'REPORTENDDATE',   StrToDate (XmlRequest.EndDate, 'YYYY-MM-DD', '-'),
+                      'REFDOCUMENTID',   RefId,
+                      'REQCUSTOMSCODE',  XmlRequest.Customs.Code,
+                      'REQPERSONNAME',   XmlRequest.CustomsPerson.PersonName,
+                      'REQLNP',          XmlRequest.CustomsPerson.LNP,
+                      'CERTIFICATENUMBER', XmlRequest.Permits.CertificateNumber,
+                      'CERTIFICATEDATE', XmlRequest.Permits.CertificateDate
+    );}
+   
+    POSTRECORD ('JRDO3_2');
+    CLOSEDATASET ('JRDO3_2');
+
+  )
+);

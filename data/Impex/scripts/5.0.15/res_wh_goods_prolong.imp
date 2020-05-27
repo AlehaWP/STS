@@ -1,0 +1,102 @@
+// *****************************************************************************
+// Название: Решение о продлении сроков ВХ
+// Описание: Решение о продлении сроков ВХ
+// Кнопка вызова: 0
+// Подпись кнопки: Решение о продлении
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('XmlDoc', integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+VAR ('vDO1ID', String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+VAR ('iCounter', Integer, 0);
+VAR ('iCount', Integer, 0);
+VAR ('sReason', String, '');
+VAR ('XmlGoodsDecision', Integer, XMLNODEFIND (XmlDoc, 'reswh:GoodsDecision'));
+VAR ('sSQL', String, '');
+
+VAR ('strStatus', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime);
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 1);
+
+  sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+  //showmessage (sSQL);
+  OPENQUERY ('qFindID', 'STS_DB', sSQL);
+  VAR ('vID', String, qFindID.ID);
+
+  OPENQUERY ('qryMax', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_PROL WhERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+  iCounter := qryMax.MC + 1;
+  IF (XMLNODEFIND (XmlDoc, 'reswh:Reason'), sReason := XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'reswh:Reason')));
+  IF (sReason = '', sReason := XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:Reason'))); // IF - //
+
+
+  APPENDRECORD ('KRD_PROL_2');
+  EDIT ('KRD_PROL_2');
+  SETFIELDVALUE ('KRD_PROL_2',
+                 'PLACEID', vPlaceID,
+                 'ID', vID,
+                 'COUNTER', iCounter,
+                 'DOC_TYPE',        'РПСВХ',
+                 'DOC_NO',          XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'reswh:RegNumber')),
+                 'DOC_DATE',        FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'reswh:SendDate')), 'YYYY-MM-DD', '-')),
+                 'DOC_STARTDATE',   '',
+                 'STORAGE_DATE',    FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod')), 'YYYY-MM-DD', '-')),
+                 'DOC_ARTICLE_NO',  '',
+                 'INSPECTOR_LNP',   '',
+                 'DOC_REASON',      sReason,
+// DOC_AUTHOR и DOC_AUTHOR_POST не видны из SETFIELDVALUE (), нужно обновлять SQL-Запросом
+//                'DOC_AUTHOR',      '',
+//                'DOC_AUTHOR_POST', '',
+  );
+  POST ('KRD_PROL_2');
+
+  // Цикл по поварам
+  // Для каждого товара вычисляем новое количество дней хранения (STORAGE_PERIOD)
+  // И обновляем дату истечения срока ВХ (STORAGE_DATE)
+  
+  VAR ('iGoodsCount', Integer, XMLNODECHILDCOUNT (XmlDoc));
+  VAR ('iGoodsIndex', Integer, 0);
+  VAR ('sSQL', String, '');
+  VAR ('iSP', Integer);
+  
+  WHILE (iGoodsIndex < iGoodsCount,
+    Block(
+      XmlGoodsDecision := XMLNODECHILD (XmlDoc, iGoodsIndex);
+      IF (XMLNODENAME (XmlGoodsDecision) = 'reswh:GoodsDecision',
+        Block(
+          OPENQUERY ('qryKC', 'STS_DB', 'SELECT G32, ACCEPTDATE FROM KRD_COMM WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND G32=' + XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:GoodsNumeric')));
+          IF (RECORDCOUNT ('qryKC') > 0,
+            Block(
+              iSP := ROUND (XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod')) - qryKC.ACCEPTDATE);
+              sSQL := 'UPDATE KRD_COMM SET STORE_PERIOD=' + iSP;
+              IF (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod'),
+                Block(
+                  sSQL := sSQL + ', STORAGE_DATE=' +char(39)+ StrToDate(XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod')), 'YYYY-MM-DD', '-') +char(39);
+                )
+              ); // IF - //
+              sSQL := sSQL + ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND G32=' + FIELDVALUE ('qryKC', 'G32');
+              EXECUTESQL ('STS_DB', sSQL);
+             )
+          ); // IF - //
+          CLOSEDATASET ('qryKC');
+        )
+      ); // IF - //
+      iGoodsIndex := iGoodsIndex + 1;
+    )
+  ); // WHILE - //
+  
+   EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Получено решение о продлении сроков ВХ' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+   OPENQUERY ('qGetDONo', 'STS_DB', 'SELECT NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+
+   strStatus := 'Получено решение о продлении сроков ВХ';
+   iReaded   := 0;
+   vPlaceID  := vPlaceID;
+   DocId     := vDO1Id;
+   DoType   := 'ДО-1';
+   DoNo     := qGetDONo.NBD;
+   DoDate   := qGetDONo.BD_DATE;
+   dRegDate  := Date () + Time(1);

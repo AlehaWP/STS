@@ -1,0 +1,1232 @@
+// *****************************************************************************
+// Название: ДО1.Альбом(ЭК) 5.0.8
+// Описание: ДО1.Альбом(ЭК) 5.0.8
+// Кнопка вызова: 0
+// Подпись кнопки: ДО1.Альбом(ЭК)
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GENERATEUUID_2', ,
+  Block(
+    Var('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+)),
+
+// вычисление количества мест
+FUNC ('CargoPlacesCount', ,
+  Block(
+    VAR ('dCargoPlacesCount', Float, 0);
+    IF ((KRD_MAIN.PART_MODE = 1) {& (KRD_MAIN.A_MODE = 7)},
+      Block(
+        OPENQUERY ('qryMain', 'STS_DB', 'SELECT Sum(G06) as SumG06 FROM KRD_MAIN WHERE PLACEID='+KRD_MAIN.PLACEID+' AND MAIN_ID='+KRD_MAIN.ID);
+        dCargoPlacesCount := FIELDVALUE('qryMain', 'SumG06');
+      ),
+      dCargoPlacesCount := KRD_MAIN.G06;
+    );
+    dCargoPlacesCount
+  )
+),
+
+FUNC ('WriteFreeDoc', '',
+  Block(
+    XMLContainerDoc := XMLNodeAddChild (XMLDoc, 'edc:ContainerDoc');
+    XmlNodeSetAttribute (XMLContainerDoc, 'xmlns:edc', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.8');
+    XMLDocBody := XMLNodeAddChild (XMLContainerDoc, 'edc:DocBody');
+    XmlNodeSetAttribute (XMLDocBody, 'xmlns:edc', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.8');
+    
+    OPENQUERY ('qryCSDM', 'STS_DB', 'SELECT * FROM KRD_CSDM WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' + qryDOP.COUNTER);
+
+    VAR ('XmlFreeDoc', Integer, XMLNODEADDCHILD (XMLDocBody, 'frd:FreeDoc'));
+    VAR ('mCommerceActs', Memo, STRINGLISTCREATE());
+
+    STRINGLISTSETTEXT (mCommerceActs, qryCSDM.COMMERCEACT);
+
+    VAR ('sCommerceAct', String, '');
+
+    sCommerceAct := STRINGLISTGETITEM (mCommerceActs, 0);
+
+    VAR ('sDocType', String, EXTRACTSTR (sCommerceAct, 1, ','));
+    VAR ('sDocNumber', String, EXTRACTSTR (sCommerceAct, 2, ','));
+    VAR ('sDocDate', String, EXTRACTSTR (sCommerceAct, 3, ','));
+
+    IF (REFERENCE ('PAPERS.DB', 'PAPERNAME', sDocType, 'PAPERFULLNAME') <> '', sDocType := REFERENCE ('PAPERS.DB', 'PAPERNAME', sDocType, 'PAPERFULLNAME'));
+
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'xmlns:frd', 'urn:customs.ru:Information:CustomsDocuments:FreeDoc:5.0.7');
+    XMLNODESETATTRIBUTE (XmlFreeDoc, 'DocumentModeID', '1006088E');
+
+    XMLNODESETVALUES (XmlFreeDoc, '', 'cat_ru:DocumentID', GENERATEUUID_2 ());
+    XMLNODESETVALUES (XmlFreeDoc, 'frd:DocumentHead',
+                                  'frd:DocumentName', sDocType,
+                                  'frd:DocumentDate', FDT ('YYYY-MM-DD', qryDOP.DOC_DATETIME),
+                                  'frd:DocumentNumber', qryDOP.DOC_NO,
+    ); // XMLNODESETVALUES - //
+
+    VAR ('XmlDocumentBody', Integer, XMLNODEADDCHILD (XmlFreeDoc, 'frd:DocumentBody'));
+    VAR ('XmlTextSection', Integer);
+
+    XmlTextSection := XMLNODEADDCHILD (XmlDocumentBody, 'frd:TextSection');
+
+    VAR ('mText', Memo, '');
+    VAR ('mTextChild', Memo, '');
+
+    VAR ('sStoreType', String);
+    sStoreType := CASE (KRD_MAIN.G1440, ['1', 'Свидетельство о включении в реестр владельцев СВХ',
+                                         '2', 'Лицензия склада ВХ',
+                                         '3', 'Решение таможни на ответственное хранение',
+                                         '4', 'Приказ о создании постоянной зоны таможенного контроля',
+                                         '5', 'Приказ о создании временной зоны таможенного контроля',
+                                        ], 'Свидетельство о включении в реестр владельцев СВХ'
+                  ); // CASE - //
+
+    VAR ('sTranspDoc', String, '');
+    OPENQUERY ('KPapers', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+    FIRST ('KPapers');
+    WHILE (EOF ('KPapers') = 0,
+      Block(
+        IF (REFERENCE ('PAPERS', 'PAPERNAME', KPapers.PAPERNAME, 'PAPER_IS_WAYBILL') = 1,
+          Block(
+            sTranspDoc := KPapers.PAPERNAME + ' ' + KPapers.PAPERNO + ' от ' + FDT ('DD.MM.YYYY', KPapers.PAPERDATE);
+          )
+        ); // IF - //
+        NEXT ('KPapers');
+      )
+    ); // WHILE - //
+
+    VAR ('sMismatchKind', String, '');
+    sMismatchKind := CASE (qryCSDM.SDM_KIND, ['0', 'несоответствием товаров сведениям в товаросопроводительных документах',
+                                               '1', 'отсутствием по факту товара, заявленного в товаросопроводительных документах',
+                                               '2', 'наличием по факту товара, отсутствующего в товаросопроводительных документах',
+                                              ], ''); // CASE - //
+
+    mText := 'Настоящий ' + sDocType + ' составлен ' + sDocDate + ' владельцем ' + STORES.STORE_TYPE + ' ' + KRD_MAIN.G142 +
+             ', действующим на основании разрешительного документа "' + sStoreType + ' №' + KRD_MAIN.G144 + '"' +
+             ' в отношении партии товаров, поступившей ' + FDT ('DD.MM.YYYY', KRD_MAIN.BD_DATE) + ' на склад по транспортному документу "' + sTranspDoc + '"' +
+             ' в адрес получателя "' + KRD_MAIN.G082 + '", и принятым на временное хранение по форме ДО-1 № ' + KRD_MAIN.NBD + ' в связи с ' + sMismatchKind + '.';
+    XMLNODESETVALUES (XmlTextSection, '',
+                                      'frd:TextPara', mText,
+                                      'frd:SectionName', 'Общие сведения',
+    ); // XMLNODESETVALUES - //
+
+    XmlTextSection := XMLNODEADDCHILD (XmlDocumentBody, 'frd:TextSection');
+    VAR ('sMismatchStage', String, '');
+    sMismatchStage := CASE (qryCSDM.SDM_STAGE, ['0', 'на этапе принятия товара',
+                                                 '1', 'в процессе временного хранения',
+                                                ], ''); // CASE - //
+    mText := 'Несоответствие выявлено ' + FDT ('DD.MM.YYYY', Date ()) + ' в ' + FDT ('HH:NN', Time(1)) + ' ' + sMismatchStage + '.';
+    mTextChild := qryCSDM.SDM_REASONS;
+    XMLNODESETVALUES (XmlTextSection, '',
+                                      'frd:TextPara', mText,
+                                      'frd:TextPara', mTextChild,
+                                      'frd:SectionName', 'Описание причин и обстоятельств выявленного несоответствия',
+    ); // XMLNODESETVALUES - //
+
+    XmlTextSection := XMLNODEADDCHILD (XmlDocumentBody, 'frd:TextSection');
+    mText := 'Таможенный орган "' + STORES.CUSTOMS_NAME + '", контролирующий нахождение партии товаров на временном хранении, в соответствии с действующим законодательством Российской Федерации уведомлен' +
+             ' об обстоятельствах выявленных несоответствий.';
+    XMLNODESETVALUES (XmlTextSection, '',
+                                      'frd:TextPara', mText,
+                                      'frd:SectionName', 'Заключительные положения',
+    ); // XMLNODESETVALUES - //
+
+    XMLNODESETVALUES (XmlFreeDoc, 'frd:DocumentSign',
+                                  'cat_ru:PersonSurname', EXTRACTSTR (KRD_MAIN.AUTHOR, 1, ' '),
+                                  'cat_ru:PersonName',    EXTRACTSTR (KRD_MAIN.AUTHOR, 2, ' '),
+                                  'cat_ru:PersonMiddleName',    EXTRACTSTR (KRD_MAIN.AUTHOR, 3, ' '),
+                                  'cat_ru:PersonPost',    KRD_MAIN.AUTHOR_POST,
+                                  'cat_ru:IssueDate',     FDT ('YYYY-MM-DD', qryDOP.DOC_DATETIME),
+    ); // XMLNODESETVALUES - //
+
+  )
+), // FUNC - WriteFreeDoc () //
+
+VAR ('vPLACEID', String);
+VAR ('vID', String);
+VAR ('XmlRoot', Integer, GETXMLDOCUMENT());
+VAR ('XmlDoc', Integer);
+VAR ('XMLDo1', Integer, 0);
+VAR ('vMPOSign', integer, 0);
+
+IF (XmlNodeChildCount (XmlRoot) < 1,
+  Block(
+
+    XmlDoc := XmlNodeAddChild (XmlRoot, 'edc:ED_Container');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:edc', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.8');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+    XmlNodeSetAttribute (XmlDoc, 'DocumentModeID', '1006058E');
+
+    //Уникальный идентификатор документа
+    VAR ('XMLNodeDocumentId', Integer, XMLNodeAddChild(XMLDoc, 'cat_ru:DocumentID'));
+    
+    XMLNodeSetValue (XMLNodeDocumentId, GENERATEUUID_2 ());
+    
+    VAR ('XMLContainerDoc', Integer, XMLNodeAddChild (XMLDoc, 'edc:ContainerDoc'));
+    XmlNodeSetAttribute (XMLContainerDoc, 'xmlns:edc', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.8');
+    
+    VAR ('XMLDocBody', Integer, XMLNodeAddChild (XMLContainerDoc, 'edc:DocBody'));
+    XmlNodeSetAttribute (XMLDocBody, 'xmlns:edc', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.8');
+    
+    XMLDo1 := XMLNodeAddChild (XMLDocBody, 'do1r:DO1Report');
+
+
+//    XMLDo1 := XMLNodeAddChild (XMLDoc, 'do1r:DO1Report');
+    XmlNodeSetAttribute (XmlDo1, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+    
+    XmlNodeSetAttribute (XmlDo1, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.0.7');
+    XmlNodeSetAttribute (XmlDo1, 'xmlns:do1r', 'urn:customs.ru:Information:WarehouseDocuments:DO1Report:5.0.7');
+    XmlNodeSetAttribute (XmlDo1, 'DocumentModeID', '1008001E');
+
+    {Уникальный идентификатор документа
+    Код вида основного ТС
+    Номер и дата отчета}
+    
+    XmlNodeSetValues(XmlDo1, '',
+              'cat_ru:DocumentID',              GENERATEUUID_2 (),
+              'catWH_ru:MainTransportModeCode', KRD_MAIN.G261,
+              'catWH_ru:ReportNumber',          CUSTOMSNOPART (KRD_MAIN.NBD, 3, RIGHT (KRD_MAIN.NBD, 7)),
+              'catWH_ru:ReportDate',            FDT ('YYYY-MM-DD', KRD_MAIN.BD_DATE),
+              'catWH_ru:ReportTime',            FDT ('HH:MM:SS', KRD_MAIN.BD_DATE),
+    );
+
+    //Данные о регистрации отчета в таможенном органе
+    
+    IF (KRD_MAIN.FIO_INSPECTOR <> '',
+      Block(
+        VAR ('XMLCustomRegistration', Integer, XMLNodeAddChild (XMLDo1, 'catWH_ru:CustomRegistration'));
+        XmlNodeSetValues (XMLCustomRegistration, '',
+                  'catWH_ru:CustomState', CASE (KRD_MAIN.MC_STATUS_BD, ['1', 'ds_Rebuilding',
+                                                                        'И', 'ds_OnInspect',
+                                                                        '3', 'ds_Registered'],
+                                                                        'ds_Editing')
+        );
+        XmlNodeSetValues (XmlDo1, 'catWH_ru:CustomRegistration',
+                  'catWH_ru:RegisterTime', FDT ('HH:MM:SS', KRD_MAIN.GD1),
+        );
+
+        VAR ('XMLInspector', Integer, XMLNodeAddChild (XMLCustomRegistration, 'catWH_ru:Inspector'));
+        XmlNodeSetValues (XmlInspector, '',
+                  'cat_ru:PersonSurname', EXTRACTSTR (KRD_MAIN.FIO_INSPECTOR, 1, ' '),
+                  'cat_ru:PersonName',  EXTRACTSTR (KRD_MAIN.FIO_INSPECTOR, 2, ' '),
+                  'cat_ru:PersonMiddleName', EXTRACTSTR (KRD_MAIN.FIO_INSPECTOR, 3, ' '),
+                  'cat_ru:PersonPost', KRD_MAIN.POST_INSPECTOR,
+                  'catWH_ru:LNP',      KRD_MAIN.GD2);
+        IF (KRD_MAIN.REG_NBD <> '',
+          Block(
+            VAR ('XMLRegisterNumber', Integer, XMLNodeAddChild (XMLCustomRegistration, 'catWH_ru:RegisterNumber'));
+            XmlNodeSetValues (XmlRegisterNumber, '',
+                      'cat_ru:CustomsCode',      CUSTOMSNOPART (KRD_MAIN.REG_NBD, 1, ''),
+                      'cat_ru:RegistrationDate', FDT('YYYY-MM-DD', EXCLUDEDATE (KRD_MAIN.REG_NBD)),
+                      'cat_ru:GTDNumber',        CUSTOMSNOPART (KRD_MAIN.REG_NBD, 3, '')
+            );
+          )
+        ); // IF - KRD_MAIN.REG_NBD <> '' //
+
+      )
+    ); {IF - KRD_MAIN.FIO_INSPECTOR <> '' }
+
+
+
+    // Данные о владельце склада //
+    VAR ('XMLWarehouseOwner', Integer, XMLNodeAddChild (XmlDo1, 'catWH_ru:WarehouseOwner'));
+    XmlNodeSetValues (XmlWarehouseOwner, '',
+              'cat_ru:OrganizationName', IF(KRD_MAIN.G142 <> '', KRD_MAIN.G142, STORES.NAME),
+	            'cat_ru:RFOrganizationFeatures\cat_ru:OGRN',             STORES.G140,
+              'cat_ru:RFOrganizationFeatures\cat_ru:INN',              STORES.G144C,              
+              'cat_ru:RFOrganizationFeatures\cat_ru:KPP',              STORES.KPP
+    );
+
+    VAR ('XmlWarehouseOwnerAddress', Integer, XMLNodeAddChild (XMLWarehouseOwner, 'catWH_ru:Address'));
+    XmlNodeSetValues (XmlWarehouseOwnerAddress, '',
+                        'catWH_ru:AddressLine', IF (KRD_MAIN.G143 <> '', KRD_MAIN.G143, STORES.ADDRESS)
+    );
+    VAR ('XMLWarehouseOwnerWarehouseLicense', Integer, XMLNodeAddChild (XMLWarehouseOwner, 'catWH_ru:WarehouseLicense'));
+    XmlNodeSetValues (XmlWarehouseOwnerWarehouseLicense, '',
+              'catWH_ru:CertificateKind', CASE (KRD_MAIN.G1440, ['1', 'lic_Certificate',
+          		                                        				   '2', 'lic_Licence',
+          							                                         '3', 'lic_Permition',
+          							                                         '4', 'lic_PermZtk',
+          							                                         '5', 'lic_TempZtk'
+          							                                        ], 'lic_Certificate'),
+              'catWH_ru:CertificateNumber', IF (KRD_MAIN.G144 <> '',  KRD_MAIN.G144, STORES.LICENCENO),
+              'catWH_ru:CertificateDate', IF (KRD_MAIN.G145 > 0, FDT ('YYYY-MM-DD', KRD_MAIN.G145), FDT ('YYYY-MM-DD', STORES.LICENCEDATE))
+
+    );
+
+    If(KRD_MAIN.AUTHOR <> '',
+    Block(
+      VAR ('XMLWarehouseOwnerWarehousePerson', Integer, XMLNodeAddChild (XMLWarehouseOwner, 'catWH_ru:WarehousePerson'));
+      XmlNodeSetValues (XmlWarehouseOwnerWarehousePerson, '',
+                      'cat_ru:PersonSurname', EXTRACTSTR (KRD_MAIN.AUTHOR, 1, ' '),
+                      'cat_ru:PersonName', EXTRACTSTR (KRD_MAIN.AUTHOR, 2, ' '),
+                      'cat_ru:PersonPost', KRD_MAIN.AUTHOR_POST
+      );
+    ));
+    
+    {Перевозчик}
+    VAR ('XMLCarrier', Integer, XMLNodeAddChild (XMLDo1, 'do1r:Carrier'));
+    XmlNodeSetValues (XmlCarrier, '',
+              'cat_ru:OrganizationName', KRD_MAIN.G042
+    );
+
+    XmlNodeSetValues (XmlCarrier, '',
+              'cat_ru:OrganizationName', KRD_MAIN.G042
+    );
+    If(KRD_MAIN.G04_COUNTRY = '643',
+      XmlNodeSetValues (XmlCarrier, '',
+              'cat_ru:RFOrganizationFeatures\cat_ru:OGRN',             KRD_MAIN.G04_OGRN,
+              'cat_ru:RFOrganizationFeatures\cat_ru:INN',              KRD_MAIN.G044C,
+              'cat_ru:RFOrganizationFeatures\cat_ru:KPP',              KRD_MAIN.G04_KPP
+      )
+    );
+
+    XmlNodeSetValues (XmlCarrier, '',
+              'catWH_ru:CountryCode',    KRD_MAIN.G04_COUNTRY
+    );
+
+
+    VAR ('XMLCarrierAddress', Integer, XMLNodeAddChild (XMLCarrier, 'catWH_ru:Address'));
+    XmlNodeSetValues (XmlCarrierAddress, '',
+              'catWH_ru:AddressLine', KRD_MAIN.G043
+    );
+
+    If(KRD_MAIN.G040 <> '',
+    Block(
+      VAR ('XMLCarrierPers', String);
+      VAR ('XMLCarrierPerson', Integer, XMLNodeAddChild (XMLCarrier, 'catWH_ru:CarrierPerson'));
+
+      XMLCarrierPers := EXTRACTSTR (KRD_MAIN.G040, 1, ' ');
+      IF(Trim(XMLCarrierPers) = '', XMLCarrierPers := '-');
+      XmlNodeSetValues (XmlCarrierPerson, '',
+              'cat_ru:PersonSurname', XmlCarrierPers
+
+      );
+      XMLCarrierPers := EXTRACTSTR (KRD_MAIN.G040, 2, ' ');
+      IF(Trim(XMLCarrierPers) = '', XMLCarrierPers := '-');
+      XmlNodeSetValues (XmlCarrierPerson, '',
+              'cat_ru:PersonName', XmlCarrierPers
+
+      );
+
+      XmlNodeSetValues (XmlCarrierPerson, '',
+              'cat_ru:PersonPost', KRD_MAIN.G040P
+      );
+    ));
+    
+    {Описание транспортных средств}
+    VAR ('XmlDuTransport', Integer);
+    VAR ('sTranspCode', String);
+    VAR ('sTransport', String);
+
+    FIRST ('KRD_TRANSP');
+    WHILE (EOF ('KRD_TRANSP') = 0,
+      Block(
+        XmlDuTransport := XmlNodeAddChild (XmlDo1, 'do1r:Transports');
+        sTranspCode := IF (KRD_TRANSP.TRANSP_CODE <> '', KRD_TRANSP.TRANSP_CODE, KRD_MAIN.G261);
+        sTransport := KRD_TRANSP.CARNO;
+
+
+        // собственно транспорт
+        XmlNodeSetValues (XmlDuTransport, '',
+                  'catWH_ru:TransportModeCode',   sTranspCode,
+                  'catWH_ru:TransportIdentifier', sTransport
+        );
+        {If(KRD_TRANSP.TRANSP_BRUTTO > 0,
+           XmlNodeSetValues (XmlDuTransport, '',
+                  'GrossWeightQuantity',          KRD_TRANSP.TRANSP_BRUTTO
+           )
+        );}
+
+        {XmlNodeSetValues (XmlDuTransport, 'do1r:KeepingPlace',
+                  'do1r:Comments',  IF (LENGTH (KRD_TRANSP.SVHCOMMENT) > 0, KRD_TRANSP.SVHCOMMENT, ''),
+                  'do1r:Area',      IF (LENGTH (KRD_TRANSP.SVHAREA) > 0, KRD_TRANSP.SVHAREA, ''),
+                  'do1r:Parking',   IF (LENGTH (KRD_TRANSP.SVHPARKING) > 0, KRD_TRANSP.SVHPARKING, ''),
+                  'do1r:Square',    IF (KRD_TRANSP.SVHSQR > 0, KRD_TRANSP.SVHSQR, ''));}
+
+        IF (INIFILE ('XMLKPS', 'WriteOnlyCARNO', '0')= '1',
+  	      IF (STRPOS (sTranspCode, '10|12|16|40|43|80|81') <> 0,
+            IF((KRD_MAIN.SHIP_NAME <> '')*KRD_MAIN.ARR_DATE, sTransport := KRD_TRANSP.CARNO) // пароход
+          ),
+	        IF (STRPOS (sTranspCode, '10|12|16|40|43|80|81') <> 0,
+            IF((KRD_MAIN.SHIP_NAME <> '')*KRD_MAIN.ARR_DATE, sTransport := KRD_TRANSP.CARNO + ' ОТ '+ FDT('DD.MM.YYYY', KRD_MAIN.ARR_DATE)) // пароход+дата рейса
+          )
+        );
+        IF ((STRPOS (sTranspCode, '10|80|81') <> 0)*(LENGTH (KRD_TRANSP.NTRAILER) > 0),
+          Block(
+            VAR ('XMLTransportsSea', Integer, XMLNodeAddChild (XmlDuTransport, 'catWH_ru:Sea'));
+            XmlNodeSetValues(XMLTransportsSea, '',
+                  		'catWH_ru:EntryNumber',               KRD_TRANSP.NTRAILER,
+                   		'catWH_ru:CountryCode',               IF (KRD_TRANSP.TRANSP_COUNTRY <> '', KRD_TRANSP.TRANSP_COUNTRY, KRD_MAIN.TRANSP_COUNTRY)
+        );
+        {If(KRD_MAIN.G040 <> '',
+              XmlNodeSetValues(XMLTransportsSea, '',
+                  		'catWH_ru:Captain\cat_ru:PersonSurname', EXTRACTSTR (KRD_MAIN.G040, 1, ' '),
+                   		'catWH_ru:Captain\cat_ru:PersonName', EXTRACTSTR (KRD_MAIN.G040, 2, ' ')
+              )
+            );}
+          )
+        ); {IF - (STRPOS (sTranspCode, '10|80|81') <> 0)*(LENGTH (KRD_TRANSP.NTRAILER) > 0)}
+        IF ((STRPOS (sTranspCode, '12|20') <> 0)*(LENGTH (KRD_TRANSP.NTRAILER) > 0),
+          Block(
+            VAR ('XMLTransportsRailRoad', Integer, XMLNodeAddChild (XmlDuTransport, 'catWH_ru:RailRoad'));
+            XmlNodeSetValues (XMLTransportsRailRoad, '',
+                   		'catWH_ru:RailStation', COPY (KRD_TRANSP.NTRAILER, 1, 5)
+            );
+          )
+        ); {IF - (STRPOS(sTranspCode, '12|20') <> 0)*(LENGTH (KRD_TRANSP.NTRAILER) > 0) }
+        IF((sTranspCode = '40')*(LENGTH (KRD_TRANSP.NTRAILER) > 0),
+          Block(
+            VAR ('XMLTransportsAvia', Integer, XMLNodeAddChild (XmlDuTransport, 'catWH_ru:Avia'));
+            XmlNodeSetValues (XMLTransportsAvia, '',
+                		'catWH_ru:FlightNumber', KRD_TRANSP.NTRAILER
+            );
+        IF(KRD_MAIN.ARR_DATE,
+             XmlNodeSetValues (XMLTransportsAvia, '',
+                		'catWH_ru:FlightDate', FDT ('YYYY-MM-DD', KRD_MAIN.ARR_DATE)
+            ));
+
+          )
+        ); {IF - (sTranspCode = '40')*(LENGTH (KRD_TRANSP.NTRAILER) > 0) }
+        IF ((STRPOS (sTranspCode, '16|23|30|31|39|43|55')<>0)*(LENGTH (KRD_TRANSP.NTRAILER) > 0),
+          Block(
+            VAR ('XMLTransportsAvto', Integer, XMLNodeAddChild (XmlDuTransport, 'catWH_ru:Avto'));
+            XmlNodeSetValues (XMLTransportsAvto, '',
+    		              'catWH_ru:TrailerIdentifier', KRD_TRANSP.NTRAILER
+            );
+          )
+        ); {IF - (STRPOS(sTranspCode, '16|23|30|31|39|43|55')<>0)*(LENGTH (KRD_TRANSP.NTRAILER) > 0) }
+
+
+
+        NEXT ('KRD_TRANSP');
+      )
+    ); {WHILE - EOF ('KRD_TRANSP') = 0 }
+  ),
+  XmlDoc := XmlNodeChild (XmlRoot, 0);
+);
+
+
+VAR ('XmlGoodsShipment', Integer, XmlNodeAddChild (XmlDo1, 'do1r:GoodsShipment'));
+XmlNodeSetValues (XmlGoodsShipment, '', 'do1r:TotalPackageNumber', CargoPlacesCount());
+XmlNodeSetValues (XmlGoodsShipment, '', 'do1r:MPOSign', vMPOSign);  //признак МПО
+
+VAR ('wCustomDoc', String, '');
+
+
+FUNC ('FindTransportDocByG32', PARAM ('GoodsNumber', Integer, 0),
+  Block (
+    VAR ('Result', Integer, 0);
+    VAR ('TransportDoc', Integer);
+    VAR ('GoodDoc', Integer);
+    VAR ('iNodesIndex', Integer, 0);
+    VAR ('iNodesCount', Integer, 0);
+    VAR ('iGoodsIndex', Integer, 0);
+    VAR ('iGoodsCount', Integer, 0);
+
+    iNodesCount := XMLNodeChildCount (XmlGoodsShipment);
+    WHILE (iNodesIndex < iNodesCount,
+      Block(
+        TransportDoc := XmlNodeChild (XmlGoodsShipment, iNodesIndex);
+        IF (XmlNodeName (TransportDoc) = 'do1r:TransportDocs',
+          Block(
+            iGoodsCount := XmlNodeChildCount (TransportDoc);
+            iGoodsIndex := 0;
+            WHILE (iGoodsIndex < iGoodsCount,
+              Block(
+                GoodDoc := XmlNodeChild (TransportDoc, iGoodsIndex);
+                IF (XmlNodeName (GoodDoc) = 'do1r:Goods',
+                  IF ((XmlNodeValue (XmlNodeFind (GoodDoc, 'catWH_ru:GoodsNumber')) = GoodsNumber)*(Result=0),
+                    Result := TransportDoc
+                  ) {IF - (XMLNODEVALUE (XmlNodeFind(GoodDoc, 'catWH_ru:GoodsNumber')) = GoodsNumber)*(Result=0)}
+                ); {IF - XMLNODENAME (GoodDoc) = 'Goods' }
+                iGoodsIndex := iGoodsIndex + 1;
+              )
+            ); {IF - iGoodsIndex < iGoodsCount }
+          )
+        ); {IF - XmlNodeName (TransportDoc) = 'TransportDocs' }
+        iNodesIndex := iNodesIndex + 1;
+      )
+    ); {WHILE - iNodesIndex < iNodesCount}
+    Result
+  )
+), {FUNC - FindTransportDocByG32 }
+
+
+// запись CompletteList
+FUNC ('WriteCompletteList', '',
+  Block(
+    Var('strG32', String);
+    //OPENQUERY ('qryComm1', 'STS_DB', 'SELECT G32 FROM KR_C_P WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND DOC_COUNTER='+KRD_PAPERS.COUNTER+' AND DOC_TYPE='+CHAR(39)+'13'+CHAR(39));
+    OPENQUERY ('qryComm1', 'STS_DB', 'SELECT KP.PAPERNAME, KP.PAPERNO, KCP.DOC_COUNTER '+
+      ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KP.PLACEID=KCP.PLACEID)  AND (KP.ID=KCP.ID) AND (KP.COUNTER=KCP.DOC_COUNTER)) '+
+      ' WHERE KCP.G32 IN ('+
+                         ' SELECT G32 FROM KR_C_P WHERE PLACEID='+KRD_PAPERS.PLACEID+' AND ID='+KRD_PAPERS.ID+' AND DOC_COUNTER='+KRD_PAPERS.COUNTER+' AND DOC_TYPE='+CHAR(39)+'13'+CHAR(39)+
+                       ')'+
+        ' AND KCP.DOC_TYPE = 13 AND KCP.DOC_COUNTER <> '+KRD_PAPERS.COUNTER+' AND KP.PAPERNAME <> '+CHAR(39)+'ЗПСХ'+CHAR(39));
+    FIRST ('qryComm1');
+    WHILE (EOF ('qryComm1') = 0,
+      Block(
+        IF (REFERENCE ('PAPERS', 'PAPERNAME', qryComm1.PAPERNAME, 'PAPER_IS_WAYBILL') = 1,
+          XmlNodeSetValues (XmlTransportDocs, '',
+                 'catWH_ru:CompletteList', qryComm1.PAPERNO); // товар уже есть на другой накладной - добавляем эту в CompletteList
+        );
+        Next('qryComm1');
+      )
+    );
+
+  )
+),
+
+// запись накладных
+FUNC ('WriteTransportDocs', '',
+  Block(
+  
+    FIRST ('KRD_PAPERS');
+    WHILE ((EOF ('KRD_PAPERS') = 0) | iFirstPaper,
+      Block(
+        sPaperCode := KRD_PAPERS.PAPERCODE;
+        //IF (Length(sPaperCode) = 4, sPaperCode := '0'+sPaperCode); // времянка, использовали при отсутствии справочника 5-значных кодов
+        IF ((REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPER_IS_WAYBILL') = 1)*
+                            (LOCATE ('KRD_COMM', 'N_TTN', [KRD_PAPERS.COUNTER]) | iFirstPaper),
+
+
+          Block(
+            // создание transportdocs
+              XmlTransportDocs := XmlNodeAddChild (XmlGoodsShipment, 'do1r:TransportDocs');
+              XmlNodeSetValues (XmlTransportDocs, '',
+                        'cat_ru:PrDocumentName',                                              REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPERFULLNAME'),
+                        'cat_ru:PrDocumentNumber',                                            KRD_PAPERS.PAPERNO,
+                        'cat_ru:PrDocumentDate',                                              FDT ('YYYY-MM-DD', KRD_PAPERS.PAPERDATE),
+                        'catWH_ru:PresentedDocumentModeCode',                                 sPaperCode
+              );
+              WriteCompletteList();
+              If(KRD_PAPERS.PAPER_REG_NO <> '',
+                XmlNodeSetValues (XmlTransportDocs, '',
+                        'catWH_ru:CustomNumber\cat_ru:CustomsCode',                           CUSTOMSNOPART (KRD_PAPERS.PAPER_REG_NO, 1),
+                        'catWH_ru:CustomNumber\cat_ru:RegistrationDate',                      FDT ('YYYY-MM-DD', EXCLUDEDATE (KRD_PAPERS.PAPER_REG_NO)),
+                        'catWH_ru:CustomNumber\cat_ru:GTDNumber',                             CUSTOMSNOPART (KRD_PAPERS.PAPER_REG_NO, 3),
+                        'catWH_ru:CustomNumber\catWH_ru:WaybillNumPP',                        CUSTOMSNOPART (KRD_PAPERS.PAPER_REG_NO, 4)
+                )
+              );
+              If(KRD_MAIN.G022 <> '',
+                XmlNodeSetValues (XmlTransportDocs, '',
+                        'catWH_ru:Consignor\catWH_ru:CountryCode',                            KRD_MAIN.G15A,
+                        'catWH_ru:Consignor\catWH_ru:OrganizationName',                       KRD_MAIN.G022,
+                        'catWH_ru:Consignor\catWH_ru:Address\catWH_ru:AddressLine',           KRD_MAIN.G023
+                        
+                )
+              );
+              XmlNodeSetValues (XmlTransportDocs, '',
+                        'catWH_ru:Consignee\cat_ru:OrganizationName',                         KRD_MAIN.G082
+              );
+
+              If(KRD_MAIN.G17A = '643',
+                XmlNodeSetValues (XmlTransportDocs, '',
+                        'catWH_ru:Consignee\cat_ru:RFOrganizationFeatures\cat_ru:OGRN',       KRD_MAIN.G08_OGRN,
+                        'catWH_ru:Consignee\cat_ru:RFOrganizationFeatures\cat_ru:INN',        KRD_MAIN.G084C,
+                        'catWH_ru:Consignee\cat_ru:RFOrganizationFeatures\cat_ru:KPP',        KRD_MAIN.G08_KPP
+                )
+              );
+
+              XmlNodeSetValues (XmlTransportDocs, '',
+                        'catWH_ru:Consignee\catWH_ru:Address\catWH_ru:AddressLine',           KRD_MAIN.G083,
+                        'catWH_ru:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardCode',   KRD_MAIN.G08_DOC_KIND,
+                        'catWH_ru:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardName',   KRD_MAIN.G08_DOC_ABBR,
+                        'catWH_ru:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardSeries', KRD_MAIN.G08_DOC_SERIES,
+                        'catWH_ru:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardNumber', KRD_MAIN.G08_DOC_NUMBER
+              );
+
+
+              // выгружаем поклажедателя
+{
+              If(bLoadBailor*(KRD_MAIN.G052 <> ''), Block(
+                VAR ('XMLBailor', Integer, XMLNodeAddChild (XmlTransportDocs, 'Bailor'));
+                XmlNodeSetValues (XMLBailor, '',
+                        'cat_ru:OrganizationName',                         KRD_MAIN.G052,
+                        'catWH_ru:Address\catWH_ru:AddressLine',           KRD_MAIN.G053,
+                        'cat_ru:RFOrganizationFeatures\cat_ru:OGRN',       KRD_MAIN.G05_OGRN,
+                        'cat_ru:RFOrganizationFeatures\cat_ru:INN',        KRD_MAIN.G05_INN,
+                        'cat_ru:RFOrganizationFeatures\cat_ru:KPP',        KRD_MAIN.G05_KPP
+
+                );
+              If(KRD_MAIN.G040 <> '',
+		            Block(
+		              VAR ('XMLBailorPerson', Integer, XMLNodeAddChild (XMLBailor, 'catWH_ru:BailorPerson'));
+		              XmlNodeSetValues (XmlBailorPerson, '',
+			              'cat_ru:PersonPost', KRD_MAIN.G050P,
+			              'cat_ru:PersonSurname', EXTRACTSTR (KRD_MAIN.G050, 1, ' '),
+			              'cat_ru:PersonName', EXTRACTSTR (KRD_MAIN.G050, 2, ' ')
+		              );
+		            )
+              );
+
+              ));
+}
+
+              // товары
+              
+              FIRST ('KRD_COMM');
+              WHILE (EOF ('KRD_COMM') = 0,
+                Block(
+                  vPlaceID := KRD_COMM.PLACEID;
+                  vID := KRD_COMM.ID;
+                  IF ((KRD_COMM.N_TTN = KRD_PAPERS.COUNTER) | ((CONVERT (KRD_COMM.N_TTN, String) = '0') * iFirstPaper),
+                    Block(
+                      sRemark := '';
+     		              sRemark := REPLACECR (KRD_COMM.REMARK);
+                      sValCode := IF (KRD_COMM.G42_CURRENCY <> '',
+                                     IF(CURRENCYABBR (KRD_COMM.G42_CURRENCY) <> '', CURRENCYABBR (KRD_COMM.G42_CURRENCY), KRD_COMM.G42_CURRENCY),
+                                     IF(CURRENCYABBR (KRD_MAIN.G221) <> '', CURRENCYABBR (KRD_MAIN.G221), KRD_MAIN.G221)
+                      );
+                      XmlAcceptanceGood := XmlNodeAddChild (XmlTransportDocs, 'do1r:Goods');
+                      
+    		              //If(MPOнесоответствие XmlAcceptanceMPOBillBruttoVolQuant := XMLNodeAddChild (XmlAcceptanceGood, 'MPOBillBruttoVolQuant');
+
+
+                      IF (INIFILE ('XMLKPS', 'WriteFactInfo', '0')= '1',
+                        Block( // фактические
+                          XmlNodeSetValues (XmlAcceptanceGood, '',
+                                    'catWH_ru:GoodsNumber',      KRD_COMM.G32,
+                                    //!'catWH_ru:GoodsTNVEDCode',   KRD_COMM.G33
+                                    'carWH_ru:GoodsTNVEDCode',   KRD_COMM.G33
+                          );
+                          XmlNodeSetValues (XmlAcceptanceGood, '',
+                                    'catWH_ru:InvoiceCost',      IF (KRD_COMM.FACT_G42>0, KRD_COMM.FACT_G42,KRD_COMM.G42),
+                                    'catWH_ru:CurrencyCode',     sValCode
+                          );
+
+                          IF(vMPOSign = 0,
+                  			    Block( //Описание товара
+                              // разбиваем описание на много строк по 150 символов
+                              VAR ('sGoodsDescr', Memo, KRD_COMM.G312);
+                              IF (LENGTH (sGoodsDescr) > 250,
+                                Block(
+                              XmlNodeSetValues (XmlAcceptanceGood, '',
+                                        'catWH_ru:GoodsDescription', IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150));
+                                  ); // XmlNodeSetValues - //
+                              While( Length(sGoodsDescr) > 0,
+                                Block(
+                                  sGoodsDescr := DELETE (sGoodsDescr, 1, 150);
+                                  IF (LENGTH (sGoodsDescr) > 0,
+                                    XmlNodeSetValue (XMLNODEADDCHILD (XmlAcceptanceGood, 'catWH_ru:GoodsDescription'),  IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150)))
+                                      ); // IF - //
+                        		        )
+                      			      ); // WHILE - //
+                                ),
+                                Block(
+                                  XmlNodeSetValues (XmlAcceptanceGood, '', 'catWH_ru:GoodsDescription', sGoodsDescr);
+                    		        )
+                              ); // IF - //
+                  			    ),
+                  			    If(vMPOSign = 1,
+                              BLOCK(
+                                                //Номер МПО
+                                XmlNodeSetValues (XmlAcceptanceGood, 'catWH_ru:MPONumber',
+                                            'catWH_ru:ServiceIndicator',  KRD_COMM.ServiceIndicator,
+                                            'catWH_ru:SerialNumber',      KRD_COMM.SerialNumber,
+                                            'catWH_ru:CountryCode',       if(FIELDISNULL('KRD_COMM','G34')=0, REFERENCE('OKSMT', 'KOD', KRD_COMM.G34, 'ABC2'), '00')
+                                );
+                                      //Номер емкости, в которой находится МПО
+                                XmlNodeSetValues (XmlAcceptanceGood, '',
+                                          'catWH_ru:MPOCaseNum', KRD_COMM.MPOCaseNum
+                                );
+                              )
+                            )
+                          );
+                          XmlAcceptanceGoodCargoPlace := XMLNodeAddChild (XmlAcceptanceGood, 'catWH_ru:CargoPlace');
+                          XmlNodeSetValues (XmlAcceptanceGoodCargoPlace, '',
+                                    'catWH_ru:PlaceNumber',      IF(KRD_COMM.FACT_G311>0, KRD_COMM.FACT_G311,KRD_COMM.G311),
+                                    'catWH_ru:PlaceDescription', KRD_COMM.G313
+                          );
+                          XmlAcceptanceGoodBruttoVolQuant := XMLNodeAddChild (XmlAcceptanceGood, 'catWH_ru:BruttoVolQuant');
+                          XmlNodeSetValues (XmlAcceptanceGoodBruttoVolQuant, '',
+                                    'catWH_ru:GoodsQuantity',            IF (KRD_COMM.FACT_G35>0, KRD_COMM.FACT_G35,KRD_COMM.G35),
+                                    'catWH_ru:MeasureUnitQualifierName', 'КГ',
+                                    'catWH_ru:MeasureUnitQualifierCode', '166'
+                          );
+
+                          IF ((KRD_COMM.G315A > 0)|(KRD_COMM.G315C > 0), XmlAcceptanceGoodMeasureQuantity := XmlNodeAddChild (XmlAcceptanceGood, 'catWH_ru:MeasureQuantity'));
+                 	        IF (KRD_COMM.G315A > 0,
+                    	      XmlNodeSetValues(XmlAcceptanceGoodMeasureQuantity, '',
+                                    'catWH_ru:GoodsQuantity',            KRD_COMM.G315A,                                    
+                                    'catWH_ru:MeasureUnitQualifierName', IF (KRD_COMM.G41A <> '', REFERENCE ('UNITS', 'UNITCODE', KRD_COMM.G41A, 'UNITNAME'), ''),									
+									'catWH_ru:MeasureUnitQualifierCode', KRD_COMM.G41A,
+                    	      )
+                          );
+                          IF (KRD_COMM.G315C > 0,
+                            XmlNodeSetValues (XmlAcceptanceGoodMeasureQuantity, '',
+                                      'catWH_ru:GoodsQuantity',            KRD_COMM.G315C,
+                                      'catWH_ru:MeasureUnitQualifierName', IF (KRD_COMM.G31_82 <> '', REFERENCE ('UNITS', 'UNITCODE', KRD_COMM.G31_82, 'UNITNAME'), ''),
+                                      'catWH_ru:MeasureUnitQualifierCode', KRD_COMM.G31_82,
+                		        )
+                		      ); {IF - KRD_COMM.G315C > 0 }
+
+                  			  // складской номер
+                          XmlNodeSetValues (XmlAcceptanceGood, '',
+                  				          'do1r:GoodsWHNumber',        KRD_COMM.BOXNO
+                          );
+                          XmlNodeSetValues (XmlAcceptanceGood, '', 'do1r:Comments', sREMARK);
+
+
+
+                          // Вес брутто МПО по сопроводительным документам (при несоответствии)
+                          {IF(MPO несоответствие
+ 			                    XmlNodeSetValues (XmlAcceptanceMPOBillBruttoVolQuant, '',
+                                    'catWH_ru:GoodsQuantity',            IF (KRD_COMM.FACT_G35>0, KRD_COMM.FACT_G35,KRD_COMM.G35),
+                                    'catWH_ru:MeasureUnitQualifierCode', '166',
+                                    'catWH_ru:MeasureUnitQualifierName', 'КГ'
+                             );}
+
+
+                          XmlNodeSetValues (XmlAcceptanceGoodKeepingPlace, 'do1r:KeepingPlace',
+                                    'do1r:Area',      KRD_COMM.SVHAREA,
+                                    'do1r:Square',    IF(KRD_COMM.SQUARE > 0, KRD_COMM.SQUARE, ''),
+                                    'do1r:Comments',  KRD_COMM.SVHCOMMENT,
+                                    'do1r:Angar',     KRD_COMM.SVHHANGAR,
+                                    'do1r:WHPackind', KRD_COMM.SVHRACK,
+                                    'do1r:Cell',      KRD_COMM.SVHCELL
+                          );
+                          XmlAcceptanceGoodKeepingLimit := XmlNodeAddChild (XmlAcceptanceGood, 'do1r:KeepingLimit');
+                          XmlNodeSetValues (XmlAcceptanceGoodKeepingLimit, '',
+                                    'do1r:AcceptDate', FDT ('YYYY-MM-DD', IF (KRD_COMM.ACCEPTDATE, KRD_COMM.ACCEPTDATE, KRD_MAIN.BEG_KEEP)),
+                                    'do1r:AcceptTime', FDT ('HH:MM:SS', IF (KRD_COMM.ACCEPTDATE, KRD_COMM.ACCEPTDATE, KRD_MAIN.BEG_KEEP)),
+                                    'do1r:StoringDateType', KRD_COMM.STORAGE_TYPE,
+                                    'do1r:DeadLineDate', FDT ('YYYY-MM-DD', IF (KRD_COMM.STORAGE_DATE, KRD_COMM.STORAGE_DATE,
+                                                              IF (KRD_COMM.STORE_PERIOD, KRD_MAIN.BEG_KEEP + KRD_COMM.STORE_PERIOD)))
+                          );
+                        ),
+                        Block( // документальные
+                          XmlNodeSetValues (XmlAcceptanceGood, '',
+                                    'catWH_ru:GoodsNumber',      KRD_COMM.G32,
+                                    'catWH_ru:GoodsTNVEDCode',   KRD_COMM.G33
+                          );
+                          XmlNodeSetValues (XmlAcceptanceGood, '',
+                                    'catWH_ru:InvoiceCost',      KRD_COMM.G42,
+                                    'catWH_ru:CurrencyCode',     sValCode
+                          );
+                          IF(vMPOSign = 0,
+                  			    Block( //Описание товара
+                              // разбиваем описание на много строк по 150 символов
+                              VAR ('sGoodsDescr', Memo, KRD_COMM.G312);
+                              VAR ('sGoodsDescr', Memo, KRD_COMM.G312);
+                              IF (LENGTH (sGoodsDescr) > 250,
+                                Block(
+                              XmlNodeSetValues (XmlAcceptanceGood, '',
+                                        'catWH_ru:GoodsDescription', IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150));
+                              );
+                              While( Length(sGoodsDescr) > 0,
+                                Block(
+                                  sGoodsDescr := DELETE (sGoodsDescr, 1, 150);
+                                  IF (LENGTH (sGoodsDescr) > 0,
+                                    XmlNodeSetValue (XMLNODEADDCHILD (XmlAcceptanceGood, 'catWH_ru:GoodsDescription'),  IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150)))
+                                      ); // IF - //
+                        		        )
+                      			      ); // WHILE - //
+                                ),
+                                Block(
+                                  XmlNodeSetValues (XmlAcceptanceGood, '', 'catWH_ru:GoodsDescription', sGoodsDescr);
+                    		        )
+                              ); // IF - //
+                  			    ),
+                  			    If(vMPOSign = 1,
+                              BLOCK(
+                                                //Номер МПО
+                                XmlNodeSetValues (XmlAcceptanceGood, 'catWH_ru:MPONumber',
+                                            'catWH_ru:ServiceIndicator',  KRD_COMM.ServiceIndicator,
+                                            'catWH_ru:SerialNumber',      KRD_COMM.SerialNumber,
+                                            'catWH_ru:CountryCode',       if(FIELDISNULL('KRD_COMM','G34')=0, REFERENCE('OKSMT', 'KOD', KRD_COMM.G34, 'ABC2'), '00')
+                                );
+                                      //Номер емкости, в которой находится МПО
+                                XmlNodeSetValues (XmlAcceptanceGood, '',
+                                          'catWH_ru:MPOCaseNum', KRD_COMM.MPOCaseNum
+                                );
+                              )
+                            )
+                          );
+                          
+                          
+                          XmlAcceptanceGoodCargoPlace := XMLNodeAddChild (XmlAcceptanceGood, 'catWH_ru:CargoPlace');
+                          XmlNodeSetValues (XmlAcceptanceGoodCargoPlace, '',
+                                    'catWH_ru:PlaceNumber',      KRD_COMM.G311,
+                                    'catWH_ru:PlaceDescription', KRD_COMM.G313
+                          );
+                          XmlAcceptanceGoodBruttoVolQuant := XMLNodeAddChild (XmlAcceptanceGood, 'catWH_ru:BruttoVolQuant');
+                          XmlNodeSetValues (XmlAcceptanceGoodBruttoVolQuant, '',
+                                    'catWH_ru:GoodsQuantity',            KRD_COMM.G35,
+                                    'catWH_ru:MeasureUnitQualifierName', 'КГ',
+                                    'catWH_ru:MeasureUnitQualifierCode', '166'
+                          );
+
+
+
+                          IF ((KRD_COMM.G315A > 0)|(KRD_COMM.G315C > 0), XmlAcceptanceGoodMeasureQuantity := XmlNodeAddChild (XmlAcceptanceGood, 'catWH_ru:MeasureQuantity'));
+                 	        IF (KRD_COMM.G315A > 0,
+                    	      XmlNodeSetValues(XmlAcceptanceGoodMeasureQuantity, '',
+                                    'catWH_ru:GoodsQuantity',            KRD_COMM.G315A,
+                                    'catWH_ru:MeasureUnitQualifierName', IF (KRD_COMM.G41A <> '', REFERENCE ('UNITS', 'UNITCODE', KRD_COMM.G41A, 'UNITNAME'), ''),									
+                                    'catWH_ru:MeasureUnitQualifierCode', KRD_COMM.G41A,
+                    	      )
+                          );
+                          IF (KRD_COMM.G315C > 0,
+                            XmlNodeSetValues (XmlAcceptanceGoodMeasureQuantity, '',
+                                      'catWH_ru:GoodsQuantity',            KRD_COMM.G315C,
+                                      'catWH_ru:MeasureUnitQualifierName', IF (KRD_COMM.G31_82 <> '', REFERENCE ('UNITS', 'UNITCODE', KRD_COMM.G31_82, 'UNITNAME'), ''),									  
+                                      'catWH_ru:MeasureUnitQualifierCode', KRD_COMM.G31_82,
+                		        )
+                		      ); {IF - KRD_COMM.G315C > 0 }
+
+			                    // складской номер
+                          XmlNodeSetValues (XmlAcceptanceGood, '',
+				                            'do1r:GoodsWHNumber',        KRD_COMM.BOXNO
+                          );
+                          XmlNodeSetValues (XmlAcceptanceGood, '', 'do1r:Comments', sREMARK);
+
+
+                          // Вес брутто МПО по сопроводительным документам (при несоответствии)
+                          {IF(MPO несоответствие
+ 			                    XmlNodeSetValues (XmlAcceptanceMPOBillBruttoVolQuant, '',
+                                    'catWH_ru:GoodsQuantity',            IF (KRD_COMM.FACT_G35>0, KRD_COMM.FACT_G35,KRD_COMM.G35),
+                                    'catWH_ru:MeasureUnitQualifierName', 'КГ'									
+                                    'catWH_ru:MeasureUnitQualifierCode', '166',
+                             );}
+
+			                   XmlNodeSetValues (XmlAcceptanceGood, 'do1r:KeepingPlace',
+                                    'do1r:Area',      KRD_COMM.SVHAREA,
+                                    'do1r:Square',    IF(KRD_COMM.SQUARE > 0, KRD_COMM.SQUARE, ''),
+                                    'do1r:Comments',  KRD_COMM.SVHCOMMENT,
+                                    'do1r:Angar',     KRD_COMM.SVHHANGAR,
+                                    'do1r:WHPackind', KRD_COMM.SVHRACK,
+                                    'do1r:Cell',      KRD_COMM.SVHCELL
+                          );
+                          XmlAcceptanceGoodKeepingLimit := XmlNodeAddChild (XmlAcceptanceGood, 'do1r:KeepingLimit');
+                          XmlNodeSetValues (XmlAcceptanceGoodKeepingLimit, '',
+                                    'do1r:AcceptDate',      FDT ('YYYY-MM-DD', IF (KRD_COMM.ACCEPTDATE, KRD_COMM.ACCEPTDATE, KRD_MAIN.BEG_KEEP)),
+                                    'do1r:AcceptTime',      FDT ('HH:MM:SS', IF (KRD_COMM.ACCEPTDATE, KRD_COMM.ACCEPTDATE, KRD_MAIN.BEG_KEEP)),
+                                    'do1r:StoringDateType', KRD_COMM.STORAGE_TYPE,
+                                    'do1r:DeadLineDate',    FDT ('YYYY-MM-DD', IF (KRD_COMM.STORAGE_DATE, KRD_COMM.STORAGE_DATE,
+                                                                 IF (KRD_COMM.STORE_PERIOD, KRD_MAIN.BEG_KEEP + KRD_COMM.STORE_PERIOD)))
+                          );
+                        )
+                      ); {IF - INIFILE ('XMLKPS', 'WriteFactInfo', '0')= '1' }
+{
+                      //Запись информации о продлении срока хранения (ЗПСХ)
+                      OPENQUERY ('qryKRPaper', 'STS_DB', 'SELECT * FROM KR_PAPER WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND PAPERNAME='+CHAR(39)+'ЗПСХ'+CHAR(39)+' ORDER BY PAPERDATE');
+                      IF (RECORDCOUNT ('qryKRPaper') > 0,
+                        Block(
+                          WHILE (EOF ('qryKRPaper')=0,
+                            Block(
+                              OPENQUERY ('qryKRCP', 'STS_DB', 'SELECT * FROM KR_C_P WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND G32='+KRD_COMM.G32+' AND DOC_COUNTER='+FIELDVALUE('qryKRPaper', 'COUNTER')+' AND DOC_TYPE='+CHAR(39)+'13'+CHAR(39));
+                              IF (RECORDCOUNT ('qryKRCP') > 0,
+                                Block(
+                                  XmlCustomsControls := XmlNodeAddChild (XmlAcceptanceGood, 'do1r:CustomsControls');
+                                  XmlNodeSetValues (XmlCustomsControls, '',
+                                            'do1r:Kind',         'cc_GoodKeepingLimit',
+                                            'do1r:Date',         FORMATDATETIME ('YYYY-MM-DD', FIELDVALUE ('qryKRPaper', 'PAPERDATE')),
+                                            'do1r:Reason',       FIELDVALUE ('qryKRPaper', 'PAPERNO'),
+                                            'do1r:KeepingLimit', FORMATDATETIME ('YYYY-MM-DD', FIELDVALUE ('qryKRPaper', 'PAPERDEND'))
+                                  );
+                                ),
+                                Block(
+                                  OPENQUERY ('qryKRCP2', 'STS_DB', 'SELECT * FROM KR_C_P WHERE PLACEID='+vPlaceID+' AND ID='+vID+' AND DOC_COUNTER='+FIELDVALUE('qryKRPaper', 'COUNTER')+' AND DOC_TYPE='+CHAR(39)+'13'+CHAR(39));
+                                  IF (RECORDCOUNT ('qryKRCP2')=0,
+                                    Block(
+                                      XmlCustomsControls := XmlNodeAddChild (XmlAcceptanceGood, 'CustomsControls');
+                                      XmlNodeSetValues( XmlCustomsControls, '',
+                                                'do1r:Kind',         'cc_GoodKeepingLimit',
+                                                'do1r:Date',         FORMATDATETIME ('YYYY-MM-DD', FIELDVALUE ('qryKRPaper', 'PAPERDATE')),
+                                                'do1r:Reason',       FIELDVALUE ('qryKRPaper', 'PAPERNO'),
+                                                'do1r:KeepingLimit', FORMATDATETIME ('YYYY-MM-DD', FIELDVALUE ('qryKRPaper', 'PAPERDEND'))
+                                      );
+                                    )
+                                  ); // IF - RECORDCOUNT ('qryKRCP')>0 //
+                                  CLOSEDATASET ('qryKRCP2')
+                                )
+                              ); // IF - RECORDCOUNT ('qryKRCP') > 0 //
+                              CLOSEDATASET ('qryKRCP');
+                              NEXT ('qryKRPaper');
+                            )
+                          ); // WHILE - EOF ('qryKRPaper')=0 //
+                        )
+                      ); // IF - RECORDCOUNT ('qryKRPaper') > 0 //			
+                      CLOSEDATASET ('qryKRPaper');
+}					  
+                      XmlNodeSetValues (XmlAcceptanceGood, '', 'do1r:Comments', sREMARK);
+          	          
+                    )
+                  );
+
+                  OPENQUERY ('qryCSDM', 'STS_DB', 'SELECT * FROM KRD_CSDM WHERE PLACEID='+KRD_COMM.PLACEID+' AND ID='+KRD_COMM.ID+' AND G32='+KRD_COMM.G32+' ORDER BY COUNTER DESC');
+                  IF (RECORDCOUNT ('qryCSDM') > 0, WriteShippingDocsMismatch ()); // IF - RECORDCOUNT ('qryCSDM') //
+
+  		            
+                  NEXT('KRD_COMM');
+                )
+  	          ); {WHILE - EOF('KRD_COMM') = 0 }
+
+
+              //  контейнера
+              FIRST ('KRD_CONT');
+              WHILE (EOF ('KRD_CONT') = 0,
+                BLOCK (
+                  IF ((KRD_CONT.N_TTN = KRD_PAPERS.COUNTER) | ((KRD_CONT.N_TTN = 0) & BOF ('KRD_CONT'))|(RECORDCOUNT ('KRD_CONT')=1),
+                    Block(
+    		              SETFILTER ('KRD_COMM_PAPERS', 'DOC_COUNTER = ' + KRD_CONT.COUNTER + ' AND DOC_TYPE = 11');
+    		              IF (RECORDCOUNT ('KRD_COMM_PAPERS') = 0,
+    		                iMultiGoods := (RECORDCOUNT ('KRD_CONT')=1) & (RECORDCOUNT ('KRD_COMM')>1),
+      		              iMultiGoods := (RECORDCOUNT ('KRD_COMM_PAPERS') > 1);
+                      ); {IF - RECORDCOUNT ('KRD_COMM_PAPERS') = 0 }
+    		              SETFILTER ('KRD_COMM_PAPERS', '');
+
+                      XMLTransportDocsConatiners := XMLNodeAddChild (XmlTransportDocs, 'do1r:Conatiners');
+
+                      XmlNodeSetValues (XMLTransportDocsConatiners, '',
+                                'catWH_ru:ContainerNumber',     KRD_CONT.CONTNO,
+                                'catWH_ru:GrossWeightQuantity', KRD_CONT.G35
+                      );
+{
+    		              XMLTransportDocsConatinersKeepingPlace := XMLNodeAddChild (XmlTransportDocsConatiners, 'do1r:KeepingPlace');
+                      XmlNodeSetValues(XMLTransportDocsConatinersKeepingPlace, '',
+                                'do1r:Comments', KRD_CONT.SVHCOMMENT,
+                                'do1r:Area',     KRD_CONT.SVHAREA,
+                                'do1r:Angar',    KRD_CONT.SVHHANGAR,
+                                'do1r:Parking',  KRD_CONT.SVHPARKING,
+                                'do1r:Square',   IF (KRD_CONT.SVHSQR > 0, KRD_CONT.SVHSQR, '')
+                      )
+}
+                    ),
+                  );
+
+  		            //Если это не первый контейнер и он не привязан к ТСД
+  		            IF((KRD_CONT.N_TTN = 0) & (BOF ('KRD_CONT') <> 1) & BOF ('KRD_PAPERS'),
+                    Block(
+                      XMLTransportDocsConatiners := XMLNodeAddChild (XmlTransportDocs, 'do1r:Conatiners');
+    		              XMLTransportDocsConatinersKeepingPlace := XMLNodeAddChild (XmlTransportDocsConatiners, 'do1r:KeepingPlace');
+                      XmlNodeSetValues(XMLTransportDocsConatiners, '',
+                                'catWH_ru:ContainerNumber',     KRD_CONT.CONTNO,
+                                'catWH_ru:GrossWeightQuantity', KRD_CONT.G35
+                      );
+                      XmlNodeSetValues(XMLTransportDocsConatinersKeepingPlace, '',
+                                'do1r:Comments', KRD_CONT.SVHCOMMENT,
+                                'do1r:Area',     KRD_CONT.SVHAREA,
+                                'do1r:Angar',    KRD_CONT.SVHHANGAR,
+                                'do1r:Parking',  KRD_CONT.SVHPARKING,
+                                'do1r:Square',   IF (KRD_CONT.SVHSQR > 0, KRD_CONT.SVHSQR, '')
+                      );
+                    )
+                  ); {IF - (KRD_CONT.N_TTN = 0) & (BOF ('KRD_CONT') <> 1) & BOF ('KRD_PAPERS') }
+                  NEXT ('KRD_CONT')
+                )
+              ); {WHILE - EOF ('KRD_CONT') = 0 }
+              // конец контейнеров
+              // связи товаров с контейнерами
+              WriteGoodContLinks();
+              
+  	           // end создания transportdocs
+          )   //end waybill
+        );
+        iFirstPaper := 0;
+        NEXT('KRD_PAPERS');
+      )
+    ) {WHILE - (EOF ('KRD_PAPERS') = 0) | iFirstPaper }
+  
+  )
+),
+
+//Связи товаров с контейнерами
+Func('WriteGoodContLinks', ,
+  Block(
+    FIRST ('KRD_COMM');
+    WHILE (EOF ('KRD_COMM') = 0,
+      Block(
+        vPlaceID := KRD_COMM.PLACEID;
+        vID := KRD_COMM.ID;
+       //Связи товаров с контейнерами
+        SETFILTER ('KRD_CONT', 'PLACEID='+vPlaceID+' AND ID='+vID+' AND N_TTN='+KRD_PAPERS.COUNTER);
+        FIRST('KRD_CONT');
+        WHILE (EOF ('KRD_CONT') = 0,
+          Block(
+            IF (LOCATE ('KRD_COMM_PAPERS', ['PLACEID;ID;G32;DOC_TYPE;DOC_COUNTER'], [vPlaceID, vID, KRD_COMM.G32, '11', KRD_CONT.COUNTER]) = 1, Block(
+              XmlNodeSetValues(XmlNodeAddChild(XmlTransportDocs, 'do1r:GoodContLinks'), '',
+						'do1r:GoodNumber',      KRD_COMM.N_TTN_G32,
+                'do1r:ContainerNumber', KRD_CONT.N_CONT,
+              );
+              ),
+              IF (LOCATE ('KRD_COMM_PAPERS', ['PLACEID;ID;DOC_TYPE;DOC_COUNTER'], [vPlaceID, vID, '11', KRD_CONT.COUNTER]) = 0,
+                Block(
+                  XmlNodeSetValues (XmlNodeAddChild (XmlTransportDocs, 'do1r:GoodContLinks'), '',
+                            'do1r:GoodNumber',      KRD_COMM.N_TTN_G32,
+                            'do1r:ContainerNumber', KRD_CONT.N_CONT,
+                  );
+                )
+              ); {IF - LOCATE ('KRD_COMM_PAPERS', ['PLACEID;ID;DOC_TYPE;DOC_COUNTER'], [vPlaceID, vID, '11', KRD_CONT.COUNTER]) = 0 }
+            );
+            NEXT('KRD_CONT');
+          )
+        ); {WHILE - EOF ('KRD_CONT') = 0 }
+        SETFILTER ('KRD_CONT', '');
+
+        NEXT('KRD_COMM');
+      )
+    ); {WHILE - EOF('KRD_COMM') = 0 }
+  
+  )
+),
+// запись таможенных документов
+FUNC ('WriteCustomsDocs', '',
+  Block(
+    // запись CustomDocs
+    FIRST('KRD_DCD');
+    WHILE(EOF('KRD_DCD') = 0,
+      Block(
+        sPaperCode := KRD_DCD.PAPERCODE;
+	      //IF (Length(sPaperCode) = 4, sPaperCode := '0'+sPaperCode);  // времянка, использовали при отсутствии справочника 5-значных кодов
+	      IF ((KRD_DCD.PAPERCODE <> '') * (KRD_DCD.PAPERNO <> ''),
+          Block(
+            IF (STRPOS (KRD_DCD.PAPERCODE + KRD_DCD.PAPERNO, wCustomDoc) = 0,
+              XmlNodeSetValues (XmlNodeAddChild (XmlGoodsShipment, 'do1r:CustomsDocs'), '',
+                        'cat_ru:PrDocumentName',   KRD_DCD.PAPERNAME,
+                        'cat_ru:PrDocumentNumber', KRD_DCD.PAPERNO,
+                        'cat_ru:PrDocumentDate',   FDT ('YYYY-MM-DD', KRD_DCD.PAPERCLOSE),
+                        'catWH_ru:DocumentCode',   KRD_DCD.PAPERCODE,
+                        'catWH_ru:VttCustomsCode', KRD_DCD.CUSTOMS_CODE
+              );
+            ); // IF - STRPOS(KRD_DCD.PAPERCODE + KRD_DCD.PAPERNO, wCustomDoc) = 0 //
+          )
+        ); // IF - //
+        IF (wCustomDoc <> '', wCustomDoc := wCustomDoc + '|'); // IF - wCustomDoc <> '' //
+        wCustomDoc := wCustomDoc + KRD_DCD.PAPERCODE + KRD_DCD.PAPERNO;
+        NEXT('KRD_DCD');
+      )
+    ); // WHILE - EOF('KRD_DCD') = 0 //
+    
+  )
+),
+
+
+// запись коммерческих документов
+FUNC ('WriteCommerceDocs', '',
+  Block(
+    FIRST ('KRD_PAPERS');
+    WHILE ((EOF ('KRD_PAPERS') = 0) | iFirstPaper,
+      Block(
+        sPaperCode := KRD_PAPERS.PAPERCODE;
+        //IF (Length(sPaperCode) = 4, sPaperCode := '0'+sPaperCode); // времянка, использовали при отсутствии справочника 5-значных кодов
+        IF ((REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPER_IS_WAYBILL') = 1)*
+                            (LOCATE ('KRD_COMM', 'N_TTN', [KRD_PAPERS.COUNTER]) | iFirstPaper),
+
+          Block(
+          ),
+          // Коммерческие документы и Complette List
+          IF (REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPER_IS_WAYBILL') = 1,
+            Block(
+              cmplxG32 := 0;
+              SETFILTER('KRD_COMM_PAPERS', 'DOC_COUNTER = ' + KRD_PAPERS.COUNTER + ' AND DOC_TYPE = 13');
+              IF (RECORDCOUNT ('KRD_COMM_PAPERS') = 0,
+                Block(
+                  cmplxG32 := 0;
+                  IF (KRD_PAPERS.PAPERNAME <> 'ЗПСХ',
+                    XmlNodeSetValues (XmlNodeAddChild (XmlGoodsShipment, 'do1r:CommerceDocs'), '',
+                          'cat_ru:PrDocumentName',              REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPERFULLNAME'),
+                          'cat_ru:PrDocumentNumber',            KRD_PAPERS.PAPERNO,
+                          'cat_ru:PrDocumentDate',              FDT ('YYYY-MM-DD', KRD_PAPERS.PAPERDATE),
+                          'catWH_ru:PresentedDocumentModeCode', sPaperCode,
+                    );
+                  ); {IF - KRD_PAPERS.PAPERNAME <> 'ЗПСХ'}
+                )
+              ); {IF - RECORDCOUNT('KRD_COMM_PAPERS') = 0 }
+              SETFILTER ('KRD_COMM_PAPERS', '');
+            ),
+            Block(
+              IF (KRD_PAPERS.PAPERNAME <> 'ЗПСХ',
+                XmlNodeSetValues (XmlNodeAddChild (XmlGoodsShipment, 'do1r:CommerceDocs'), '',
+                          'cat_ru:PrDocumentName',              REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPERFULLNAME'),
+                          'cat_ru:PrDocumentNumber',            KRD_PAPERS.PAPERNO,
+                          'cat_ru:PrDocumentDate',              FDT ('YYYY-MM-DD', KRD_PAPERS.PAPERDATE),
+                          'catWH_ru:PresentedDocumentModeCode', sPaperCode,
+                );
+              ); {IF - KRD_PAPERS.PAPERNAME <> 'ЗПСХ'}
+            )
+          )
+        );
+        iFirstPaper := 0;
+        NEXT('KRD_PAPERS');
+      )
+    ) {WHILE - (EOF ('KRD_PAPERS') = 0) | iFirstPaper }
+         
+  )
+),
+
+// запись представленных документоы
+FUNC ('WritePresentedDocs', '',
+  Block(
+    // нету их пока
+  )
+),
+
+FUNC ('WriteBills', '',
+  BLOCK (
+    VAR ('XmlTransportDocs', Integer);
+    VAR ('XMLTransportDocsCustomNumber', Integer);
+    VAR ('XMLTransportDocsConsignor', Integer);
+    VAR ('XMLTransportDocsConsignorAddress', Integer);
+    // Поклажедатель
+    VAR ('XMLTransportDocsBailor', Integer);
+    VAR ('XMLTransportDocsBailorAddress', Integer);
+    VAR ('bLoadBailor', Boolean, INIFILE ('XMLKPS', 'LoadBailor', '0'));
+
+    VAR ('XMLTransportDocsConsignee', Integer);
+    VAR ('XMLTransportDocsConsigneeAddress', Integer);
+    VAR ('XMLTransportDocsConsigneeIdentityCard', Integer);
+    VAR ('XMLTransportDocsConatiners', Integer);
+    VAR ('XMLTransportDocsConatinersKeepingPlace', Integer);
+    VAR ('XmlAcceptanceGood', Integer);
+    VAR ('XmlAcceptanceGoodCargoPlace', Integer);
+    VAR ('XmlAcceptanceGoodBruttoVolQuant', Integer);
+    VAR ('XmlAcceptanceGoodKeepingPlace', Integer);
+    VAR ('XmlAcceptanceGoodKeepingLimit', Integer);
+    VAR ('XmlAcceptanceGoodMeasureQuantity', Integer);
+    VAR ('XmlCustomsControls', Integer);
+    VAR ('iFirstPaper', Integer, 1);    
+    VAR ('iContCounter', Integer, 0);
+    VAR ('sAddUnitsCode', String, '');
+    VAR ('sAddUnitsName', String, '');
+    VAR ('dAddUnitsAmount', Float, 0);
+    VAR ('iMultiGoods', Integer, 0);
+    VAR ('sRemark', String, '');
+    VAR ('isNoAddedComm', Integer, 0); // признак добавлен ли уже такой товар в XML
+    VAR ('cmplxG32', Integer, 0); // номер комплектного товара
+    VAR ('sPaperCode', String, '');
+    VAR ('sValCode', String, '');
+    
+    // запись Транспортных документов
+    WriteTransportDocs();
+    // запись таможенных документов
+    WriteCustomsDocs();
+    // Запись CommerceDocs
+    WriteCommerceDocs();
+    // Запись PresentedDocs
+    //WritePresentedDocs();
+    
+)), {FUNC - WriteBills() }
+
+FUNC ('WriteShippingDocsMismatch', '',
+  Block(
+    XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch',
+                                         'do1r:Kind', CASE (qryCSDM.SDM_KIND,
+													                            ['0', 'mism_ResortGood',
+													                             '1', 'mism_MissedGood',
+														                           '2', 'mism_ExtraGood'
+														                          ]
+												                         ),
+                                         'do1r:Stage', CASE (qryCSDM.SDM_STAGE,
+													                             ['0', 'mist_AtAcceptance',
+														                            '1', 'mist_AtKeeping'
+														                           ]
+												                          ),
+                                         'do1r:Date', FDT ('YYYY-MM-DD', qryCSDM.SDM_DATETIME),
+                                         'do1r:Time', FDT ('HH:NN:SS', qryCSDM.SDM_DATETIME),
+                                         'do1r:Reasons', qryCSDM.SDM_REASONS
+    ); // XMLNodeSetValues (XmlAcceptanceGood, 'ShippingDocsMismatch', ...) //
+    XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch', 'do1r:GoodsTNVEDCode', qryCSDM.DOC_G33);
+
+    // разбиваем описание на много строк по 150 символов
+    VAR ('sGoodsDescr', Memo, qryCSDM.DOC_G312);
+    VAR ('XmlSDM', Integer, XMLNODEFIND (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch'));
+
+    IF (LENGTH (sGoodsDescr) > 0, //пустое описание не выгружаем совсем
+    IF (LENGTH (sGoodsDescr) > 250,
+      Block(
+        XmlNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch',
+                  'do1r:GoodsDescription', IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150));
+        );
+        While( Length(sGoodsDescr) > 0,
+          Block(
+            sGoodsDescr := DELETE (sGoodsDescr, 1, 150);
+            IF (LENGTH (sGoodsDescr) > 0,
+              XmlNodeSetValue (XMLNODEADDCHILD (XmlSDM, 'do1r:GoodsDescription'),  IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150)))
+            );
+          )
+        );
+      ),
+      Block(
+        XmlNodeSetValue (XMLNODEADDCHILD (XmlSDM, 'do1r:GoodsDescription'),  sGoodsDescr);
+      )
+    ); // IF - //
+    );
+
+    XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch', 'do1r:InvoiceCost', qryCSDM.DOC_G42);
+    XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch', 'do1r:PlaceNumber', qryCSDM.DOC_G311);
+    IF (FIELDISNULL ('qryCSDM', 'DOC_G315A')=0, XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch', 'do1r:GoodsQuantity', qryCSDM.DOC_G315A));
+    IF (FIELDISNULL ('qryCSDM', 'DOC_G315C')=0, XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch', 'do1r:GoodsQuantity', qryCSDM.DOC_G315C));
+    XMLNodeSetValues (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch\do1r:BruttoVolQuant',
+                                         'catWH_ru:GoodsQuantity', qryCSDM.DOC_G35,
+                                         'catWH_ru:MeasureUnitQualifierName', 'КГ',
+                                         'catWH_ru:MeasureUnitQualifierCode', '166'
+    );
+
+
+    // Сведения о коммерсческом акте/акте общей формы, описывающем
+    // причины и характер выявленных несоответствий
+    VAR ('slCommerceAct', Integer, STRINGLISTCREATE());
+    VAR ('sAct', String, '');
+    STRINGLISTSETTEXT (slCommerceAct, qryCSDM.COMMERCEACT);
+    VAR ('iRowCount', Integer, STRINGLISTGETCOUNT(slCommerceAct));
+    VAR ('i', Integer, 1);
+    VAR ('XMLCommerceAct', Integer);
+    
+    WHILE (i <= iRowCount,
+      Block(
+        sAct := STRINGLISTGETITEM (slCommerceAct, (i-1));
+        XMLCommerceAct := XMLNodeAddChild (XmlAcceptanceGood, 'do1r:ShippingDocsMismatch\do1r:CommerceAct');
+        XMLNodeSetValues (XMLCommerceAct, '', 'cat_ru:PrDocumentName', EXTRACTSTR (sAct, 1, ','));
+        XMLNodeSetValues (XMLCommerceAct, '', 'cat_ru:PrDocumentNumber', EXTRACTSTR (sAct, 2, ','));
+        XMLNodeSetValues (XMLCommerceAct, '', 'cat_ru:PrDocumentDate', FDT ('YYYY-MM-DD', EXTRACTSTR (sAct, 3, ',')));
+        i := i + 1;
+      )
+    ); // WHILE -  //
+
+  )
+),  // FUNC - WriteMismatch() //
+
+
+
+IF ((KRD_MAIN.PART_MODE = 1) {& (KRD_MAIN.A_MODE = 7)},
+  Block(
+    //Обработка партий ДО1мв
+    SETRANGE ('KRD_MAIN_2', [KRD_MAIN.PLACEID, KRD_MAIN.ID]);
+    FIRST ('KRD_MAIN_2');
+    WHILE (EOF ('KRD_MAIN_2') = 0,
+      Block(
+        //IF (FINDKEY ('KRD_MAIN', [KRD_MAIN_2.PLACEID, KRD_MAIN_2.ID]),
+	IF (LOCATE ('KRD_MAIN', 'PLACEID;ID', [KRD_MAIN_2.PLACEID, KRD_MAIN_2.ID]),
+          Block(
+            WriteBills();
+            //dCargoPlacesCount := dCargoPlacesCount + KRD_MAIN.G06; вынесено в функцию
+	        )
+        );
+        NEXT ('KRD_MAIN_2')
+      )  
+    ); {WHILE - (KRD_MAIN.PART_MODE = 1) & (KRD_MAIN.A_MODE = 7)}
+    CANCELRANGE ('KRD_MAIN_2')
+  ),
+  Block(
+    WriteBills();
+    //dCargoPlacesCount := KRD_MAIN.G06; вынесено в функцию
+  )
+); {IF - (KRD_MAIN.PART_MODE = 1) & (KRD_MAIN.A_MODE = 7) }
+
+
+// запись коммерческого акта
+  If(vPlaceId = '', vPlaceid := KRD_MAIN.PLACEID);
+  If(vId = '', vId := KRD_MAIN.ID);
+  OPENQUERY ('qryDOP', 'STS_DB', 'SELECT * FROM KRD_DOP WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+  IF (RECORDCOUNT ('qryDOP') > 0,
+    Block(
+      LAST ('qryDOP');
+      OPENQUERY ('qryCSDM', 'STS_DB', 'SELECT COMMERCEACT FROM KRD_CSDM WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' + qryDOP.COUNTER);
+      IF (qryCSDM.COMMERCEACT <> '', WriteFreeDoc ());
+    )
+  ); // IF - //
+

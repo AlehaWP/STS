@@ -1,0 +1,164 @@
+// *****************************************************************************
+// Название: WHCancelDOReport (ДО-3)
+// Описание:
+// Кнопка вызова: 1
+// Подпись кнопки: WHCancelDOReport (ДО-3)
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sSQL', String, '');
+VAR ('sLastName', String, '');
+VAR ('sFirstName', String, '');
+VAR ('sMiddleName', String, '');
+
+TRYEXCEPT (
+  Block(
+    VAR ('xmlDoc', Integer, XMLDOCUMENTCREATE ());
+    VAR ('xmlDocRoot', Integer, XMLDOCUMENTROOT (xmlDoc));
+    VAR ('xmlWHCancelDOReportRequest', Integer, XMLNODEADDCHILD (xmlDocRoot, 'cdor:WHCancelDOReportRequest'));
+
+    XMLNODESETATTRIBUTE (xmlWHCancelDOReportRequest, 'DocumentModeID', '1008037E');
+    XMLNODESETATTRIBUTE (xmlWHCancelDOReportRequest, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XMLNODESETATTRIBUTE (xmlWHCancelDOReportRequest, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.14.3');
+    XMLNODESETATTRIBUTE (xmlWHCancelDOReportRequest, 'xmlns:cdor', 'urn:customs.ru:Information:WarehouseDocuments:WHCancelDOReportRequest:5.14.3');
+
+    XMLNODESETVALUES (xmlWHCancelDOReportRequest, '',
+      'cat_ru:DocumentID', GENERATEUUID (1)
+    ); // XMLNODESETVALUES
+
+    XMLNODESETVALUES (xmlWHCancelDOReportRequest, 'cdor:DOReportLinkData',
+      'catWH_ru:ReportDate',   FDT ('YYYY-MM-DD', ReportDate),
+      'catWH_ru:ReportNumber', ReportNumber,
+    ); // XMLNODESETVALUES
+
+
+    VAR ('xmlRequestDetails', Integer, XMLNODEADDCHILD (xmlWHCancelDOReportRequest, 'cdor:RequestDetails'));
+    XMLNODESETVALUES (xmlRequestDetails, '',
+      'cdor:CancelationSign', sCancelationSing,
+    ); // XMLNODESETVALUES
+
+    VAR ('xmlCancelationReasons', Integer);
+    mCancelationReasons := REPLACECR (mCancelationReasons);
+    WHILE (LENGTH (mCancelationReasons) > 250,
+      Block(
+        XMLNODESETVALUE (XMLNODEADDCHILD (xmlRequestDetails, 'cdor:CancelationReasons'), COPY (mCancelationReasons, 1, 250));
+        mCancelationReasons := DELETE (mCancelationReasons, 1, 250);
+      )
+    ); // WHILE
+    IF (LENGTH (mCancelationReasons) > 0,
+      Block(
+        XMLNODESETVALUE (XMLNODEADDCHILD (xmlRequestDetails, 'cdor:CancelationReasons'), mCancelationReasons);
+      )
+    ); // IF
+
+    // данные о владельце склада
+    sSQL := 'SELECT * FROM STORES WHERE PLACEID=' + iPlaceId;
+    OPENQUERY ('qStore', 'STS_DB', sSQL, 1);
+
+    VAR ('xmlWarehouseOwner', Integer, XMLNODEADDCHILD (xmlWHCancelDOReportRequest, 'cdor:WarehouseOwner'));
+
+    XMLNODESETVALUES (xmlWarehouseOwner, '',
+      'cat_ru:OrganizationName',                   qStore.NAME,
+      'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', qStore.G140,
+      'cat_ru:RFOrganizationFeatures\cat_ru:INN',  qStore.G144C,
+      'cat_ru:RFOrganizationFeatures\cat_ru:KPP',  qStore.KPP,
+    ); // XMLNODESETVALUES
+
+    XMLNODESETVALUES (XMLNODEADDCHILD (xmlWarehouseOwner, 'catWH_ru:Address'), '',
+      'catWH_ru:AddressLine', qStore.ADDRESS,
+    ); // XMLNODESETVALUES
+
+    XMLNODESETVALUES (XMLNODEADDCHILD (xmlWarehouseOwner, 'catWH_ru:WarehouseLicense'), '',
+      'catWH_ru:CertificateKind',   CASE (qStore.LICENCETYPE, ['1', 'lic_Certificate', '2', 'lic_Licence', '3', 'lic_Permition', '4', 'lic_PermZtk', '5', 'lic_TempZtk'], 'lic_Certificate'),
+      'catWH_ru:CertificateNumber', qStore.LICENCENO,
+      'catWH_ru:CertificateDate',   FDT ('YYYY-MM-DD', qStore.LICENCEDATE),
+    ); // XMLNODESETVALUES
+
+    REGEXMATCH (sPersonFIO, '([А-Яа-я]+)[ |\.]+([А-Яа-я]+)[ |\.]+([А-Яа-я]+)', 34, 'sLastName', 'sFirstName', 'sMiddleName');
+    XMLNODESETVALUES (xmlWarehouseOwner, '',
+      'catWH_ru:WarehousePerson\cat_ru:PersonSurname', sLastName,
+      'catWH_ru:WarehousePerson\cat_ru:PersonName', sFirstName,
+      'catWH_ru:WarehousePerson\cat_ru:PersonMiddleName', sMiddleName,
+      'catWH_ru:WarehousePerson\cat_ru:PersonPost', IF (TRIM (sPersonPost) <> '', sPersonPost, ''),
+    ); // XMLNODESETVALUES
+
+    VAR ('sIinDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+    IF (LENGTH (USERINFO ('', 'USERUUID')) > 0, sIinDir := sIinDir + USERINFO ('', 'USERUUID') + '\');
+    VAR ('sFileName', String, 'canceldo_0_' + sDocumentId + '_0');
+
+    IF (LENGTH (TRIM (qStore.CUSTOMS_CODE)) > 0,
+      Block(
+        sFileName := sFileName + '_' + qStore.CUSTOMS_CODE;
+        IF (LENGTH (TRIM (qStore.EPS_ID)) > 0, sFileName := sFileName + '_' + qStore.EPS_ID);
+      )
+    );
+    sFileName := sFileName + '.xml';
+
+    CLOSEDATASET ('qStore');
+
+    VAR ('sTemporaryValidateDirectory', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS\validate');
+    FORCEDIRECTORIES (sTemporaryValidateDirectory);
+    sTemporaryValidateDirectory := INCLUDETRAILINGBACKSLASH (sTemporaryValidateDirectory);
+    XMLDOCUMENTSAVE (xmlDoc,  sTemporaryValidateDirectory + sFileName, 1);
+
+    VAR ('v', Variant, CREATEOLEOBJECT ('SchemaValidator.Validator'));
+    VAR ('sAlbumVersion', String, INIFILE ('XmlFormat', 'Version', '5.14.3'));
+    v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + sAlbumVersion + '\';
+    
+    IF (v.ValidateFile (sTemporaryValidateDirectory + sFileName) = 'True',
+      Block(
+        XMLDOCUMENTSAVE (xmlDoc, sIinDir + sFileName, 1);
+
+        VAR ('sScriptWriteEpsLog', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'Procdocs\write_eps_log.prd');
+        IF (FILEEXISTS (sScriptWriteEpsLog),
+          Block(
+            EXECUTESCRIPT (sScriptWriteEpsLog);
+            VAR ('sSubstatusText', String, '');
+            CASE (sCancelationSing,
+              [
+                'cancel_StockOperation', sSubstatusText := 'Ошибочная подача отчета. Указанная в отчете операция (принятия или выдачи) не имела места',
+                'cancel_ReportDuplication', sSubstatusText := 'Ошибочная подача дубликата отчета. Отчет по указанной в отчете операции (принятия или выдачи) уже подавался ранее',
+                'cancel_ReportErrors', sSubstatusText := 'Отчет содержит ошибки, самостоятельно выявленные составителем. Указанная в отчете операция (принятия или выдачи) имела место, после исправления ошибок ожидается подача нового отчета с исправленными сведениями',
+                'cancel_OtherReasons', sSubstatusText := 'Иные причины для отмены подачи отчетности',
+              ], sSubstatusText := ''
+            ); // CASE
+
+            sSQL := 'UPDATE JRDO3' +
+                    ' SET CUSTOMSTATE=' +char(39)+ 'Отмена подачи ДО-3 подготовлена к отправке' +char(39)+
+                    ' WHERE' +
+                    ' REFDOCUMENTID=' +char(39)+ sDocumentId +char(39);
+            EXECUTESQL ('dbJournals', sSQL);
+
+            WriteEpsLog (
+              0,
+              0,
+              0,
+              sDocumentId,
+              'ДО-3',
+              sReportNumber,
+              sReportDate,
+              'Отмена подачи ДО-3 подготовлена к отправке',
+              Date() + Time(1),
+              '',
+              sSubstatusText,
+              ExtractFileName (sFileName),
+              '0',
+              Date() + Time(1),
+              2
+            ); // WriteEpsLog
+          )
+        ); // IF
+      ),
+      Block(
+        v.ShowResult();
+      )
+    ); // IF
+
+  ),
+  Block(
+    SHOWMESSAGE (EXCEPTIONMESSAGE (), 2, 'Отмена подачи ДО-3');
+  )
+); // TRYEXCEPT

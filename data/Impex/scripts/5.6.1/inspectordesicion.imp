@@ -1,0 +1,167 @@
+// *****************************************************************************
+// Название: Загрузка решения должностного лица
+// Описание: Загрузка решения должностного лица
+// Кнопка вызова: 1
+// Подпись кнопки: Загрузка решения должностного лица
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC('GetDate',
+     BLOCK(
+       PARAM ('iParrentElement', integer, 0),
+       PARAM ('sElementName', string, 1),
+     ),
+     BLOCK(
+       VAR('dDate', datetime);
+       //showmessage(iParrentElement);
+       dDate:=STRTODATE(XMLNODEVALUE(XMLNODEFIND(iParrentElement,sElementName)),'YYYY-MM-DD', '-');
+       dDate;
+     );
+),
+
+
+{
+  VAR ('sPath', String, '');
+  IF (SELECTFILE ('sPath', 'Выбор уведомления о выпуске', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+  VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+  XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+  VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+}
+
+//OPENTABLE ('OPERATE', 'JRREQOPER', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+
+
+VAR ('XMLInspDecision', Integer, XMLNODECHILD (XmlRoot, 0));
+      VAR ('sDocumentID', string, XMLNODEVALUE (XMLNODEFIND (XMLInspDecision, 'cat_ru:DocumentID')));
+      VAR ('sRefID', string, XMLNODEVALUE (XMLNODEFIND (XMLInspDecision, 'cat_ru:RefDocumentID')));
+OPENQUERY('FindReqOper', 'Select JOURNAL_MASTER_ID FROM JRREQOPER WHERE DOCUMENTID='+char(39)+sRefID+char(39), 'dbJournals');
+//OPENQUERY('FindReqOper', 'Select JOURNAL_MASTER_ID FROM JRREQOPER WHERE DOCUMENTID='+char(39)+'a'+char(39), 'dbJournals');
+
+IF(RECORDCOUNT('FindReqOper')<>0,
+   BLOCK(
+      VAR('iChildCount', integer, XMLNODECHILDCOUNT(XMLInspDecision));
+      VAR('iCounter', integer,2);
+      While(iCounter<iChildCount,
+            BLOCK(
+                  IF(XMLNODENAME(XMLNODECHILD(XMLInspDecision, iCounter))='ispd:DecisionDescription',
+                     BLOCK(
+                          OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID  FROM inspDecision WHERE JOURNAL_MASTER_ID='+FindReqOper.JOURNAL_MASTER_ID, 'dbJournals');
+                          VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+                          
+                          VAR('iDecision', integer, XMLNODECHILD(XMLInspDecision, iCounter));
+                          VAR('dDecisionDate', string, FormatDateTime('DD.MM.YYYY', GetDate(iDecision,'ispd:DecisionDate')) + ' ' +EXTRACTSTR (XMLNODEVALUE(XMLNODEFIND(iDecision,'ispd:DecisionTime')), 1, '.'));
+                          VAR('sDecisionText', string,'');
+
+                          VAR('sDocName', string, '');
+                          VAR('sDocNum', string, '');
+                          VAR('dDocDate', string, '');
+                          VAR('sDocModeCode', string, '');
+                          VAR('sPersonName', string, '');
+                          VAR('sLNP', string, '');
+                          VAR('sCode', string, '');
+                          VAR('sOfficeName', string, '');
+                          VAR('sGCode', string, '');
+                          VAR('sGOfficeName', string, '');
+
+                          VAR('iDecisionChildCount', integer, XMLNODECHILDCOUNT(iDecision));
+                          VAR('iDecisionCounter', integer, 0);
+                          WHILE(iDecisionCounter< iDecisionChildCount,
+                                BLOCK(
+                                  CASE( XMLNODENAME(XMLNODECHILD(iDecision, iDecisionCounter)),
+                                        [
+                                          'ispd:DecisionText',
+                                            sDecisionText:=sDecisionText + XMLNODEVALUE(XMLNODECHILD(iDecision, iDecisionCounter)) ,
+                                          'ispd:DocumentInfo',
+                                            BLOCK(
+                                              sDocName:=XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:PrDocumentName'));
+                                              sDocNum:=XMLNODEVALUE(XMLNODEFIND( XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:PrDocumentNumber'));
+                                              dDocDate:=FormatDateTime('DD.MM.YYYY', GetDate(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:PrDocumentDate'));
+                                              sDocModeCode:=XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'ispd:DocumentModeCode'));
+                                            ),
+                                          'ispd:CustomsPerson',
+                                            BLOCK(
+                                              sPersonName:= XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:PersonName'));
+                                              sLNP:=XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:LNP'));
+                                            ),
+                                          'ispd:Customs',
+                                            BLOCK(
+                                              sCode:= XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:Code'));
+                                              sOfficeName:= XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:OfficeName'));
+                                            ),
+                                          'ispd:GoodsCustoms',
+                                            BLOCK(
+                                              sGCode:=XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:Code'));
+                                              sGOfficeName:=XMLNODEVALUE(XMLNODEFIND(XMLNODECHILD(iDecision, iDecisionCounter),'cat_ru:OfficeName'));
+                                            )
+                                        ],,
+                                   );
+
+                                   iDecisionCounter := iDecisionCounter + 1;
+                                )
+                          );
+                          //showmessage(dDecisionDate);
+                          EXECUTESQL('dbJournals',  ' INSERT INTO inspDecision '+
+                                                    ' VALUES '+
+                                                    ' ('+
+                                                    FindReqOper.JOURNAL_MASTER_ID +', '+
+                                                    iJMID+', '+
+                                                    char(39)+GENERATEUUID ()+char(39)+', '+
+                                                    char(39)+dDecisionDate+char(39)+', '+
+                                                    char(39)+sDecisionText+char(39)+', '+
+                                                    char(39)+sDocName+char(39)+', '+
+                                                    char(39)+sDocNum+char(39)+', '+
+                                                    char(39)+dDocDate+char(39)+', '+
+                                                    char(39)+sDocModeCode+char(39)+', '+
+                                                    char(39)+sPersonName+char(39)+', '+
+                                                    char(39)+sLNP+char(39)+', '+
+                                                    char(39)+sCode+char(39)+', '+
+                                                    char(39)+sOfficeName+char(39)+', '+
+                                                    char(39)+sGCode+char(39)+', '+
+                                                    char(39)+sGOfficeName+char(39)+
+                                                    ' )'
+                          );
+                          iCounter := iCounter + 1;
+                          
+                     );
+                  );
+            )
+      );
+
+   )
+);
+
+
+
+VAR ('vPlaceId',  String,  XMLNODEATTRIBUTE (XMLInspDecision, 'whid'));
+VAR ('vDO1Id',  String, XMLNODEATTRIBUTE (XMLInspDecision, 'do1id'));
+VAR ('sSQL', String, '');
+
+VAR ('strStatus', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime);
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 1);
+
+sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+//showmessage (sSQL);
+OPENQUERY ('qFindID', 'STS_DB', sSQL);
+VAR ('vID', String, qFindID.ID);
+
+
+EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'Получено требование о проведении операций с товарами' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+OPENQUERY ('qGetDONo', 'STS_DB', 'SELECT NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID);
+
+strStatus := 'Получено решение должностного лица';
+iReaded   := 0;
+vPlaceID  := vPlaceID;
+DocId     := vDO1Id;
+DoType   := 'ДО-1';
+DoNo     := qGetDONo.NBD;
+DoDate   := qGetDONo.BD_DATE;
+dRegDate  := Date () + Time(1);
+

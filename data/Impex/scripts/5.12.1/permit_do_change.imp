@@ -1,0 +1,99 @@
+// *****************************************************************************
+// Название: Принятие "Добавочных листов\Комм. актов\Писем об ошибках"  к отчетности СВХ (5.4.0)
+// Описание: Принятие "Добавочных листов\Комм. актов\Писем об ошибках"  к отчетности СВХ (5.4.0)
+// Кнопка вызова: 0
+// Подпись кнопки: PermitDOChange
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sSQL', String, '');
+VAR ('XmlPermitDOChange', Integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('XmlCustoms',        Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:Customs'));
+VAR ('XmlCustomsPerson',  Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:CustomsPerson'));
+VAR ('XmlRegisterNumber', Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:RegisterNumber'));
+
+VAR ('vDO1ID', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'do1id'));
+VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'whid'));
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'dodt'));
+VAR ('DopDocType', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'ml')); // 0 - комм. акт; 1 - письмо владельца СВХ об ошибках
+
+VAR ('vCounter', String, '0');
+VAR ('strStatus', String, '');
+
+sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + IF (LENGTH (vDO1ID) > 30, ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39), ' AND ID=' + vDO1ID);
+//showmessage (sSQL);
+OPENQUERY ('qFindID', 'STS_DB', sSQL);
+VAR ('vID', String, qFindID.ID);
+
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DocId', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime, (Date() + Time(1)));
+
+
+IF(XMLNODEFIND (XmlPermitDOChange, 'prch:DORegisterNumber'),
+  Block(
+    VAR ('XmlRegisterNumber', Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:DORegisterNumber')),
+    VAR ('sRegNum', String, XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:CustomsCode')) +'\'+ FDT('DDMMYY', XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:RegistrationDate'))) +'\'+ XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:GTDNumber')));
+    VAR ('dRegDate2', DateTime, XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:RegistrationDate')));
+  ),
+  Block(
+    VAR ('XmlRegisterNumber', Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:DocumentRegNumber')),    
+    VAR ('sRegNum', String, XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:PrDocumentName')) +' '+ XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:PrDocumentNumber')));
+    VAR ('dRegDate2', DateTime, XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:PrDocumentDate')));
+  )
+);
+
+IF (DopDocType = '1',  // письмо
+  Block(
+    strStatus := 'Письмо об ошибках зарегистрировано';
+    OPENQUERY ('qryMaxDOP', 'STS_DB', 'SELECT MIN(COUNTER) AS MC FROM KRD_LETTER WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND (LETTER_REG_STATUS <> '+char(39)+'3'+char(39)+' OR LETTER_REG_STATUS IS NULL)');
+    sSQL := 'UPDATE KRD_LETTER SET LETTER_REG_STATUS=' +char(39)+ '3' +char(39)+
+          ', LETTER_REG_NO=' +char(39)+ sRegNum +char(39)+ 
+          ', LETTER_REG_DATETIME=' +char(39)+ FDT ('DD.MM.YYYY', dRegDate2) +char(39)+
+          ', LETTER_INSPECTOR_FIO=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonName')) +char(39)+
+          ', LETTER_INSPECTOR_LNP=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:LNP')) +char(39)+
+          ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' +qryMaxDOP.MC+ ' AND LETTER_REG_STATUS = ' +char(39)+ 'И' +char(39);
+
+  ),
+  Block(  // комм.акт
+    strStatus := 'Комм. акт к ДО-1 зарегистрирован ';
+    OPENQUERY ('qryMaxDOP', 'STS_DB', 'SELECT MIN(COUNTER) AS MC FROM KRD_DOP WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND (DOC_REG_STATUS <> '+char(39)+'3'+char(39)+' OR DOC_REG_STATUS IS NULL)');
+    sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '3' +char(39)+
+          ', DOC_REG_NO=' +char(39)+ sRegNum +char(39)+ 
+          ', DOC_REG_DATETIME=' +char(39)+ FDT ('DD.MM.YYYY', dRegDate2) +char(39)+
+          ', DOC_INSPECTOR_FIO=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonName')) +char(39)+
+          ', DOC_INSPECTOR_LNP=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:LNP')) +char(39)+
+          ' WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID + ' AND COUNTER=' +qryMaxDOP.MC+ ' AND DOC_REG_STATUS = ' +char(39)+ 'И' +char(39);
+
+
+  )
+); // IF - //
+
+
+  //showmessage (sSQL);
+  EXECUTESQL ('STS_DB', sSQL);
+
+
+  VAR ('strSubStatus', String, sRegNum);
+
+  sSQL := 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+ '3' +char(39)+ ', STATUS_EPS=' +char(39)+ strStatus +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID;
+  EXECUTESQL ('STS_DB', sSQL);
+
+  REFRESH ('KRD_MAIN');
+
+  OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN');
+  IF (LOCATE ('KRD_MAIN_3', 'PLACEID;ID', [vPlaceID, vID]) = 1,
+    Block(
+      DoNo := KRD_MAIN_3.NBD;
+      DoDate := KRD_MAIN_3.BD_DATE;
+      DocId := KRD_MAIN_3.DOCUMENTID;
+      DoType := 'ДО-1';
+      dRegDate := Date() + Time(1);
+      OPENQUERY ('qryNUM', 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+      sJourGuid := qryNUM.JOURGUID;
+    )
+  ); // IF - //
+  CLOSEDATASET ('KRD_MAIN_3');

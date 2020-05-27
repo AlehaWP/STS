@@ -1,0 +1,886 @@
+// *****************************************************************************
+// Название: ДО2.Альбом(ЭК) 5.12.0
+// Описание: ДО2.Альбом(ЭК) 5.12.0
+// Кнопка вызова: 0
+// Подпись кнопки: ДО2.Альбом(ЭК)
+// Язык: FuncScript
+// Вызов по событию:
+// *****************************************************************************
+//
+{
+//
+// DEBUG /*
+VAR ('dbg', String, 'Debug.log');
+VAR ('timerStart', DateTime, Date() + Time(1));
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\writelog.prd');
+writelog (dbg, '=== ' + REL_MAIN.RELEASE_NO + ' ' + CHARSTR ('=', 60));
+writelog (dbg, 'do2_album.exp (start)');
+// DEBUG */
+//
+}
+
+// == переменные /*
+VAR ('sSQL',             String, '');
+VAR ('sRelName',         String, IF (INIFILE ('Database', 'DbmsType', 'PARADOX') = 'INTRBASE', 'RELEASE_', 'RELEASE'));
+VAR ('sDatabaseType',    String, GetDatabaseType ('STS_DB'));
+VAR ('vPlaceId',         Integer, REL_MAIN_3.PLACEID);
+VAR ('vMainId',          Integer, REL_MAIN_3.MAIN_ID);
+VAR ('vMainCounter',     Integer, REL_MAIN_3.MAIN_COUNTER);
+VAR ('iPrevId',          Integer, 0);
+VAR ('XmlRoot',          Integer, GetXMLDocument());
+VAR ('XmlDO2Report',     Integer);
+VAR ('sBoxNo',           String, '');
+VAR ('sAllConts',        String, '');
+VAR ('bQContsOpened',    Integer, 0);
+VAR ('XmlDOTransports',  Integer);
+VAR ('sTranspAll',       Memo, '');
+VAR ('XmlGoodsShipment', Integer);
+VAR ('iG312MaxLength',   Integer, 150);
+VAR ('sTmp', String, '');
+// == переменные */
+
+
+FUNC ('GENERATEUUID_2', '',
+  Block(
+    VAR ('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+  )
+), // FUNC - GETERATEUUID_2
+
+
+FUNC ('WriteDO2',
+  Block(
+    PARAM ('pAddEDContainer', Integer, 0);
+  ),
+  Block(
+    // при отправке через ЭПС ДО-2 формируется без ED_Container
+    IF (pAddEDContainer,
+      Block(
+        VAR ('XmlEDContainer', Integer, XMLNODEADDCHILD (XmlRoot, 'edc:ED_Container'));
+        XMLNODESETATTRIBUTE (XmlEDContainer, 'xmlns:cat_ru',   'urn:customs.ru:CommonAggregateTypes:5.10.0');
+        XMLNODESETATTRIBUTE (XmlEDContainer, 'xmlns:edc',      'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.12.0');
+        XMLNODESETATTRIBUTE (XmlEDContainer, 'DocumentModeID', '1006058E');
+
+        XMLNODESETVALUES (XmlEDContainer, '', 'cat_ru:DocumentID', GENERATEUUID_2());
+        XmlEDContainer := XMLNODEADDCHILD (XmlEDContainer, 'edc:ContainerDoc');
+        XMLNODESETATTRIBUTE (XmlEDContainer, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.12.0');
+        XmlEDContainer := XMLNODEADDCHILD (XmlEDContainer, 'edc:DocBody');
+        XMLNODESETATTRIBUTE (XmlEDContainer, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.12.0');
+        XmlDO2Report := XMLNODEADDCHILD (XmlEDContainer, 'do2r:DO2Report');
+      ),
+      Block(
+        XmlDO2Report := XMLNODEADDCHILD (XmlRoot, 'do2r:DO2Report');
+        XMLNODESETATTRIBUTE (XmlDO2Report, 'xmlns:cat_ru',   'urn:customs.ru:CommonAggregateTypes:5.10.0');
+      )
+    ); // IF
+
+    XMLNODESETATTRIBUTE (XmlDO2Report, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.10.0');
+    XMLNODESETATTRIBUTE (XmlDO2Report, 'xmlns:do2r',     'urn:customs.ru:Information:WarehouseDocuments:DO2Report:5.10.0');
+    XMLNODESETATTRIBUTE (XmlDO2Report, 'DocumentModeID', '1008009E');
+
+    XMLNODESETVALUES (XmlDO2Report, '',
+        'cat_ru:DocumentID', GENERATEUUID_2(),
+        'catWH_ru:MainTransportModeCode', qMain.TRANSPTYPE,
+        'catWH_ru:ReportNumber',          CUSTOMSNOPART (qMain.RELEASE_NO, 3, RIGHT (qMain.RELEASE_NO, 7)),
+        'catWH_ru:ReportDate',            FDT ('YYYY-MM-DD', qMain.OUT_DATE),
+        'catWH_ru:ReportTime',            FDT ('HH:MM:SS', qMain.OUT_DATE)
+    ); // XMLNODESETVALUES
+  )
+), // FUNC - WriteDO2
+
+
+FUNC ('WriteCustomRegistration', '',
+  Block(
+    VAR ('XmlCustomRegistration', Integer, XMLNODEADDCHILD (XmlDO2Report, 'catWH_ru:CustomRegistration'));
+    XMLNODESETVALUES (XmlCustomRegistration, '',
+      'catWH_ru:CustomState', CASE (qMain.MC_STATUS,
+                                   ['1', 'ds_Rebuilding',
+                                    'И', 'ds_OnInspect',
+                                    '3', 'ds_Registered'
+                                   ], 'ds_Editing'),
+      'catWH_ru:RegisterTime', FDT ('HH:MM:SS', qMain.REG_TIME)
+    ); // XMLNODESETVALUES
+
+    IF (qMain.FIO_INSPECTOR <> '',
+      Block(
+        XMLNODESETVALUES (XmlCustomRegistration, 'catWH_ru:Inspector',
+            'cat_ru:PersonSurname',    EXTRACTSTR (qMain.FIO_INSPECTOR, 1, ' '),
+            'cat_ru:PersonName',       EXTRACTSTR (qMain.FIO_INSPECTOR, 2, ' '),
+            'cat_ru:PersonMiddleName', EXTRACTSTR (qMain.FIO_INSPECTOR, 3, ' '),
+            'cat_ru:PersonPost',       qMain.POST_INSPECTOR,
+            'catWH_ru:LNP',            qMain.GD2
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    IF (TRIM (qMain.REG_RELEASE_NO) <> '',
+      Block(
+//-        VAR ('sRegDate', String, FDT ('YYYY-MM-DD', qMain.REG_TIME));
+//-        IF (sRegDate = '', sRegDate := FDT ('YYYY-MM-DD', EXCLUDEDATE (qMain.REG_RELEASE_NO)));
+        VAR ('iPartsCount', Integer, SPLITSTR (qMain.REG_RELEASE_NO, '/', sTmp, sTmp));
+        CASE (iPartsCount, [3, Block(
+                                 XMLNODESETVALUES (XmlCustomRegistration, 'catWH_ru:RegisterNumber',
+                                   'cat_ru:CustomsCode',        CUSTOMSNOPART (qMain.REG_RELEASE_NO, 1, ''),
+                                   'cat_ru:RegistrationDate',   FDT ('YYYY-MM-DD', EXCLUDEDATE (qMain.REG_RELEASE_NO)),
+                                   'cat_ru:GTDNumber',          CUSTOMSNOPART (qMain.REG_RELEASE_NO, 3, ''),
+                                   'catWH_ru:CertificateNumber', IF (qMain.G144 <> '', qMain.G144, qStore.LICENCENO)
+                                 );
+                               ),
+                            4, Block(
+                                 IF (LENGTH (EXTRACTSTR (qMain.REG_RELEASE_NO, 4, '/')) = 1,
+                                   Block(
+                                     XMLNODESETVALUES (XmlCustomRegistration, 'catWH_ru:RegisterNumber',
+                                        'cat_ru:CustomsCode',        CUSTOMSNOPART (qMain.REG_RELEASE_NO, 1, ''),
+                                        'cat_ru:RegistrationDate',   FDT('YYYY-MM-DD', EXCLUDEDATE (qMain.REG_RELEASE_NO)),
+                                        'cat_ru:GTDNumber',          CUSTOMSNOPART (qMain.REG_RELEASE_NO, 3, ''),
+                                        'catWH_ru:OtherWHPlaceKind', EXTRACTSTR(qMain.REG_RELEASE_NO, 4, '/')
+                                     ); // XMLNODESETVALUES
+                                   ),
+                                   Block(
+                                     XMLNODESETVALUES (XMLCustomRegistration, 'catWH_ru:RegisterNumber',
+                                        'cat_ru:CustomsCode',         CUSTOMSNOPART (qMain.REG_RELEASE_NO, 1, ''),
+                                        'cat_ru:RegistrationDate',    FDT ('YYYY-MM-DD', EXCLUDEDATE (qMain.REG_RELEASE_NO)),
+                                        'cat_ru:GTDNumber',           CUSTOMSNOPART (qMain.REG_RELEASE_NO, 3, ''),
+                                        'catWH_ru:CertificateNumber', IF (qMain.G144 <> '',  qMain.G144, qStore.LICENCENO)
+                                     ); // XMLNODESETVALUES
+                                   )
+                                 ); // IF
+                               ),
+                            5, Block(
+                                 XMLNODESETVALUES (XMLCustomRegistration, 'catWH_ru:RegisterNumber',
+                                      'cat_ru:CustomsCode',         CUSTOMSNOPART (qMain.REG_RELEASE_NO, 1, ''),
+                                      'cat_ru:RegistrationDate',    FDT ('YYYY-MM-DD', EXCLUDEDATE (qMain.REG_RELEASE_NO)),
+                                      'cat_ru:GTDNumber',           CUSTOMSNOPART (qMain.REG_RELEASE_NO, 3, ''),
+                                      'catWH_ru:CertificateNumber', IF (qMain.G144 <> '',  qMain.G144, qStore.LICENCENO)
+                                 ); // XMLNODESETVALUES
+                               ),
+                            ],
+        ); // CASE
+
+      )
+    ); // IF -
+  )
+), // FUNC - WriteCustomRegistration
+
+
+FUNC ('WriteWarehouseOwner', '',
+  Block(
+    VAR ('XmlWarehouseOwner', Integer, XMLNODEADDCHILD (XmlDO2Report, 'catWH_ru:WarehouseOwner'));
+    XMLNODESETVALUES (XmlWarehouseOwner, '',
+        'cat_ru:OrganizationName', qStore.NAME
+    ); // XMLNODESETVALUES
+    XMLNODESETVALUES (XmlWarehouseOwner, 'cat_ru:RFOrganizationFeatures',
+        'cat_ru:OGRN', qStore.G140,
+        'cat_ru:INN',  qStore.G144C,
+        'cat_ru:KPP',  qStore.KPP
+    ); // XMLNODESETVALUES
+    XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:Address',
+        'cat_ru:City',          qStore.TOWN,
+        'catWH_ru:AddressLine', qStore.ADDRESS
+    ); // XMLNODESETVALUES
+    XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:WarehouseLicense',
+        'catWH_ru:CertificateKind',   CASE (KRD_MAIN.G1440, ['1', 'lic_Certificate',
+                                                             '2', 'lic_Licence',
+                                                             '3', 'lic_Permition',
+                                                             '4', 'lic_PermZtk',
+                                                             '5', 'lic_TempZtk'
+                                                            ],    'lic_Certificate'),
+        'catWH_ru:CertificateNumber', qStore.LICENCENO,
+        'catWH_ru:CertificateDate',   FDT ('YYYY-MM-DD', qStore.LICENCEDATE)
+    ); // XMLNODESETVALUES
+    VAR ('sLicenceNo', String, qMain.G144);
+    VAR ('sLicenceDate', String, qMain.G145);
+    IF (sLicenceNo = '', sLicenceNo := qStore.LICENCENO);
+    IF (sLicenceDate = '', sLicenceDate := qStore.LICENCEDATE);
+
+    IF ((sLicenceNo <> qMain.RELEASE_G144) | (sLicenceDate <> qMain.RELEASE_G145),
+      Block(
+        XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:ActualWarehouseLicense',
+            'catWH_ru:CertificateKind', CASE (qMain.RELEASE_G1440, ['1','lic_Certificate',
+                                                                    '2', 'lic_Licence',
+                                                                    '3', 'lic_Permition',
+                                                                    '4', 'lic_PermZtk',
+                                                                    '5', 'lic_TempZtk'
+                                                                   ],    'lic_Certificate'),
+            'catWH_ru:CertificateNumber', qMain.RELEASE_G144,
+            'catWH_ru:CertificateDate',   FDT ('YYYY-MM-DD', qMain.RELEASE_G145)
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    IF (TRIM (qMain.RELEASE_GIVE) <> '',
+      Block(
+        XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:WarehousePerson',
+            'cat_ru:PersonSurname',    EXTRACTSTR (qMain.RELEASE_GIVE, 1, ' '),
+            'cat_ru:PersonName',       EXTRACTSTR (qMain.RELEASE_GIVE, 2, ' '),
+            'cat_ru:PersonMiddleName', IF (TRIM (EXTRACTSTR (qMain.RELEASE_GIVE, 3, ' ')) <> '', EXTRACTSTR (qMain.RELEASE_GIVE, 3, ' '))
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    IF (TRIM (qMain.RELEASE_GIVE_POST) <> '',
+      Block(
+        XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:WarehousePerson',
+            'cat_ru:PersonPost', IF (TRIM (qMain.RELEASE_GIVE_POST) <> '', qMain.RELEASE_GIVE_POST)
+        ); // XMLNOESETVALUES
+      )
+    ); // IF
+  )
+), // FUNC - WriteWarehouseOwner
+
+
+FUNC ('WriteCarrier', '',
+  Block(
+    // "Перевозчик" - не обязательное поле, поэтому
+    // выгружаем ветку "Carrier" только когда заполнено хоть одно поле перевозчика
+    IF (((FIELDISNULL ('qMain', 'G04_COUNTRY') = 0) * (LENGTH (qMain.G04_COUNTRY) > 0)) |
+        ((FIELDISNULL ('qMain.RELEASE_G042') = 0) * (LENGTH (qMain.RELEASE_G042) > 0)) |
+        ((FIELDISNULL ('qMain', 'G043') = 0) * (LENGTH (qMain.G043) > 0)) |
+        ((FIELDISNULL ('qMain', 'G040') = 0) * (LENGTH (qMain.G040) > 0)),
+      Block(
+        VAR ('XmlCarrier', Integer, XMLNODEADDCHILD (XmlDO2Report, 'do2r:Carrier'));
+        XMLNODESETVALUES (XmlCarrier, '',
+            'cat_ru:OrganizationName', IF (qMain.RELEASE_G042 <> '', qMain.RELEASE_G042)
+        ); // XMLNODESETVALUES
+
+        IF ((qMain.G04_COUNTRY <> '') * (qMain.G04_COUNTRY = '643'),
+          Block(
+            XMLNODESETVALUES (XmlCarrier, 'cat_ru:RFOrganizationFeatures',
+                'cat_ru:OGRN', IF (qMain.G04_OGRN <> '', qMain.G04_OGRN),
+                'cat_ru:INN',  IF (qMain.G044C    <> '', qMain.G044C),
+                'cat_ru:KPP',  IF (qMain.G04_KPP  <> '', qMain.G04_KPP)
+            ); // XMLNODESETVALUSE
+          )
+        ); // IF
+
+        XMLNODESETVALUES (XmlCarrier, '',
+            'catWH_ru:CountryCode', IF (TRIM (qMain.G04_COUNTRY) <> '', qMain.G04_COUNTRY)
+        ); // XMLNODESETVALUES
+
+        XMLNODESETVALUES (XmlCarrier, 'catWH_ru:Address',
+            'catWH_ru:AddressLine', IF (qMain.G043 <> '', qMain.G043)
+        ); // XMLNODESETVALUES
+
+        IF (SPLITSTR (qMain.G040, ' ', sTmp) > 0,
+          Block(
+        XMLNODESETVALUES (XmlCarrier, 'catWH_ru:CarrierPerson',
+                'cat_ru:PersonSurname',    TRIM (EXTRACTSTR (qMain.G040, 1, ' ')),
+                'cat_ru:PersonName',       IF (TRIM (EXTRACTSTR (qMain.G040, 2, ' '))='', '-',TRIM (EXTRACTSTR (qMain.G040, 2, ' '))),
+                'cat_ru:PersonMiddleName', IF (TRIM (EXTRACTSTR (qMain.G040, 3, ' '))='', '-',TRIM (EXTRACTSTR (qMain.G040, 3, ' '))),
+                'cat_ru:PersonPost',       TRIM (qMain.G040P)
+        ); // XMLNOESETVALUES
+      )
+    ); // IF
+  )
+    ); // IF
+  )
+), // FUNC - WriteCarrier
+
+
+FUNC ('DOTransports',
+  Block(
+    PARAM ('pTransportModeCode', String, 0);
+    PARAM ('pTransportIdentifier', String, 1);
+  ),
+  Block(
+    // определяем наш транспорт содержит прицеп\станцию\номер рейса\номер прихода-ухода
+    VAR ('iSeparatorPos', Integer, 0);
+    VAR ('sTransportIdentifier', String, pTransportIdentifier);
+    VAR ('sTransportInfo', String, '');
+
+    // проверяем на наличие запятой
+    iSeparatorPos := STRPOS (',', pTransportIdentifier);
+    IF (iSeparatorPos > 0,
+      Block(
+        sTransportIdentifier := TRIM (COPY (pTransportIdentifier, 1, iSeparatorPos-1));
+        sTransportInfo := TRIM (DELETE (PTransportIdentifier, 1, iSeparatorPos));
+      )
+    ); // IF
+
+    // проверяем на наличие слэш
+    iSeparatorPos := STRPOS ('\', pTransportIdentifier);
+    IF ((iSeparatorPos > 0) * (STRPOS ('Т\Х', UPPERSTR (pTransportIdentifier)) = 0),
+      Block(
+        sTransportIdentifier := TRIM (COPY (pTransportIdentifier, 1, iSeparatorPos-1));
+        sTransportInfo := TRIM (DELETE (PTransportIdentifier, 1, iSeparatorPos));
+      )
+    ); // IF
+
+    // проверяем на наличие бэкслэш
+    iSeparatorPos := STRPOS ('/', pTransportIdentifier);
+    IF ((iSeparatorPos > 0) * (STRPOS ('Т/Х', UPPERSTR (pTransportIdentifier)) = 0),
+      Block(
+        sTransportIdentifier := TRIM (COPY (pTransportIdentifier, 1, iSeparatorPos-1));
+        sTransportInfo := TRIM (DELETE (pTransportIdentifier, 1, iSeparatorPos));
+      )
+    ); // IF
+
+    IF (STRPOS (pTransportModeCode, '12|20') <> 0,
+      IF (sTransportInfo <> '', sTransportIdentifier := sTransportIdentifier + ', '+ sTransportInfo)
+    ); // IF
+
+    XmlDOTransports := XMLNODEADDCHILD (XmlDO2Report, 'do2r:DOTransports');
+    XMLNODESETVALUES (XmlDOTransports, '',
+        'catWH_ru:TransportModeCode',   pTransportModeCode,
+        'catWH_ru:TransportIdentifier', sTransportIdentifier
+    ); // XMLNODESETVALUES
+
+    IF (STRPOS (pTransportModeCode, '40') <> 0,
+      Block(
+        XMLNODESETVALUES (XmlDOTransports, 'catWH_ru:Avia',
+            'catWH_ru:FlightNumber', sTransportInfo
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    IF (sTransportInfo <> '',
+      Block(
+        // АВТО
+        IF (STRPOS (pTransportModeCode, '16|23|30|31|32|39|43|55') <> 0,
+          Block(
+            XMLNODESETVALUES (XmlDOTransports, 'catWH_ru:Avto',
+                'catWH_ru:TrailerIdentifier', sTransportInfo
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+
+        // МОРЕ
+        IF (STRPOS (pTransportModeCode, '10|80|18') <> 0,
+          Block(
+            XMLNODESETVALUES (XmlDOTransports, 'catWH_ru:Sea',
+                'catWH_ru:EntryNumber',                  sTransportInfo,
+                'catWH_ru:CountryCode',                  qMain.TRANSPCOUNTRY,
+                'catWH_ru:Captain\cat_ru:PersonSurname', EXTRACTSTR (qMain.G040, 1, ' '),
+                'catWH_ru:Captain\cat_ru:PersonName',    EXTRACTSTR (qMain.G040, 2, ' '),
+            );
+          )
+        ); // IF
+      )
+    ); // IF
+
+  )
+), // FUNC - DOTransports
+
+
+FUNC ('WriteDOTransports',
+  Block(
+    PARAM ('pTranspNo',   String, 0);
+    PARAM ('pTranspType', String, 1);
+  ),
+  Block(
+    VAR ('sTransport', String, pTranspNo);
+    VAR ('sSingleTransport', String, '');
+    VAR ('bNewTransport', Integer, 0);
+    VAR ('iPosition', Integer, 0);
+
+    IF (STRPOS (sTransport, sTranspAll) = 0,
+      Block(
+        IF (LENGTH (sTranspAll) = 0,
+          Block(
+            sTranspAll := sTransport;
+          ),
+          Block(
+            sTranspAll := sTranspAll + '|' + sTransport;
+          )
+        ); // IF
+        bNewTransport := 1;
+      )
+    ); // IF
+
+    IF (bNewTransport,
+      Block(
+        WHILE (LENGTH (sTransport) > 0,
+          Block(
+            iPosition := STRPOS (';', sTransport);
+            IF (iPosition <> 0,
+              Block(
+                sSingleTransport := COPY (sTransport, 1, iPosition-1);
+                DOTransports (pTranspType, TRIMLEFT (sSingleTransport));
+                sTransport := DELETE (sTransport, 1, iPosition);
+              ),
+              Block(
+                // если длина строки больше 40 символов, то пытаться разбить на разные ТС по запятой
+                IF (LENGTH (sTransport) > 40,
+                  Block(
+                    VAR ('iSepPosition', Integer, STRPOS  (',', sTransport));
+                    WHILE (iSepPosition <> 0,
+                      Block(
+                        DOTransports (pTranspType, TRIMLEFT (COPY (sTransport, 1, iSepPosition-1)));
+                        sTransport := DELETE (sTransport, 1, iSepPosition);
+                        iSepPosition := STRPOS (',', sTransport);
+                      )
+                    ); // WHILE
+                  )
+                ); // IF
+                DOTransports (pTranspType, TRIMLEFT (sTransport));
+                sTransport := '';
+              )
+            ); // IF
+          )
+        ); // WHILE
+      )
+    ); // IF
+  )
+), // FUNC - WriteDOTransports
+
+
+// получаем список контейнеров привязанных к товарам
+FUNC ('OpenQConts',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+  ),
+  Block(
+    sSQL := 'SELECT KCP.G32, KC.CONTNO FROM KRD_CONT KC ' +
+            ' INNER JOIN KR_C_P KCP ON KCP.PLACEID=KC.PLACEID AND KCP.ID=KC.ID AND KCP.DOC_COUNTER=KC.COUNTER ' +
+            ' WHERE KCP.PLACEID=' + pPlaceId +
+            ' AND KCP.ID=' + pId +
+            ' AND KCP.DOC_TYPE=' +char(39)+ '11' +char(39);
+    OPENQUERY ('qConts', 'STS_DB', sSQL, 1);
+    bQContsOpened := 1;
+  )
+), // FUNC -  OpenQConts
+
+
+// вычисление складского номера
+FUNC ('WriteBoxNo', '',
+  Block(
+    VAR ('sConstStore', String);
+
+    sConstStore := '';
+    sBoxNo := '';
+
+    IF ((TRIM (qMain.BOXNO) <> '') * (FIELDISNULL ('qMain', 'BOXNO') = 0),
+      Block(
+        sBoxNo := qMain.BOXNO;
+      ),
+      Block(
+        IF ((bQContsOpened = 0) | (iPrevId <> qMain.ID),
+          Block(
+            OpenQConts(qMain.PLACEID, qMain.ID);
+          )
+        ); // IF
+
+        IF (BOF ('qConts') = 0, FIRST ('qConts'));
+        WHILE (EOF ('qConts') = 0,
+          Block(
+            IF (qConts.G32 = qMain.G32,
+              Block(
+                IF (LENGTH (sBoxNo) = 0,
+                  sBoxNo := qConts.CONTNO,
+                  sBoxNo := sBoxNo + ', ' + qConts.CONTNO
+                ); // IF
+              )
+            ); // IF
+
+            NEXT ('qConts');
+          )
+        ); // WHILE
+
+        IF (LENGTH (sBoxNo) = 0,
+          Block(
+            IF (LENGTH (sAllConts) = 0 | (iPrevId <> qMain.ID),
+              Block(
+                sSQL := 'SELECT CONTNO FROM KRD_CONT WHERE PLACEID=' + qMain.PLACEID + ' AND ID=' + qMain.ID;
+                OPENQUERY ('qAllConts', 'STS_DB', sSQL, 1);
+                sAllConts := UNIONVALUES ('qAllConts', ['CONTNO'], ',', ': ');
+                CLOSEDATASET ('qAllConts');
+              )
+            ); // IF
+            sBoxNo := sAllConts;
+          )
+        ); // IF /
+
+      )
+    ); // IF /
+
+    iPrevId := qMain.ID;
+    sBoxNo
+  )
+), // FUNC - WriteBoxNo
+
+
+  sSQL := 'SELECT * FROM STORES WHERE PLACEID=' + vPlaceId;
+  OPENQUERY ('qStore', 'STS_DB', sSQL, 1);
+
+  sSQL := 'SELECT ' +
+          'RC.PLACEID,RC.ID,RC.G32,RC.G32,RC.RELEASE_G313,RC.RELEASE_G312,RC.RELEASE_G42,' +
+          'RC.RELEASE_OUT_DATE,RC.RELEASE_G311,RC.RELEASE_G35, RC.RELEASE_G315A, RC.RELEASE_G315C, RC.RELEASE_G315,' +
+          'R.TRANSPTYPE,R.MC_STATUS,R.REG_TIME,R.REG_RELEASE_NO,R.FIO_INSPECTOR,R.POST_INSPECTOR,R.GD2,' +
+          'R.RELEASE_GIVE,R.RELEASE_GIVE_POST,R.G144 AS RELEASE_G144,R.G145 AS RELEASE_G145,R.G1440 AS RELEASE_G1440,' +
+          'R.G04_COUNTRY,R.G04_OGRN,R.G044C,R.G04_KPP,R.G043,R.G040,R.G040P,R.TRANSPCOUNTRY,' + {'R.TRANSPNO,'+}
+          'R.G08_OGRN AS RELEASE_G08_OGRN, R.G08_KPP AS RELEASE_G08_KPP, R.G084C AS RELEASE_G084C,' +
+          'R.G083 AS RELEASE_G083,R.RELEASE_RECEIVE_POST,R.RELEASE_RECEIVE,R.DOC_CODE,' +
+          'R.RELEASE_NO, R.OUT_DATE, R.DOC_TYPE, R.DOC_NO, R.RELEASE_DATE, R.MAIN_COUNTER,' +
+          'R.G042 AS RELEASE_G042,R.G082 as RELEASE_G082,R.MAIN_ID,R.COUNTER,' +
+          'KC.ACCEPTDATE,KC.G313,KC.G313_CODE,KC.N_TTN,' +
+          'KC.G312,KC.GN,KC.STORAGE_TYPE,KC.STORAGE_DATE,KC.STORE_PERIOD,' +
+          'KC.G33,KC.BOXNO,KC.G311,KC.G35, KC.G315A, KC.G315C, KC.G315,' +
+          'KC.G42,KC.G42_CURRENCY, K.G221,KC.STORAGE_DATE,' +
+          'K.G144,K.G145,K.G1440,K.G042,K.G082, K.G08_OGRN, K.G084C, K.G08_KPP,K.BEG_KEEP,' +
+          'K.NBD,K.BD_DATE,K.G083,K.G08_DOC_KIND,K.G08_DOC_SERIES,K.G08_DOC_NUMBER ' +
+          'FROM REL_COMM RC ' +
+          'INNER JOIN KRD_COMM KC ON KC.PLACEID=RC.PLACEID AND KC.ID=RC.ID AND KC.G32=RC.G32 ' +
+          'INNER JOIN ' + sRelName + ' R ON R.PLACEID=RC.PLACEID AND R.ID=RC.ID AND R.COUNTER=RC.COUNTER ' +
+          'INNER JOIN KRD_MAIN K ON K.PLACEID=RC.PLACEID AND K.ID=RC.ID ' +
+          'WHERE R.PLACEID=' + vPlaceId + ' AND R.MAIN_ID=' + vMainId + ' AND R.MAIN_COUNTER=' + vMainCounter + ' ' +
+          'ORDER BY R.COUNTER, RC.G32';
+  OPENQUERY ('qMain', 'STS_DB', sSQL, 1);
+  IF (BOF ('qMain') = 0, FIRST ('qMain'));
+
+  IF (VAREXISTS ('iAddEDContainerToDO2'),
+    Block(
+      // если переменная iAddEDContainerToDO2 значит внешний скрипт решает нужно ли
+      // добавлять контейнер к документу ДО-2
+      WriteDO2 (iAddEDContainerToDO2);
+    ),
+    Block(
+      // если переменная не существует - всегда добавляем контейнер к документу ДО-2
+      WriteDO2 (1);
+    )
+  ); // IF
+
+  WriteCustomRegistration ();
+  WriteWarehouseOwner ();
+  WriteCarrier ();
+
+  // транспортные средства из всех выпускающих документов
+  sSQL := 'SELECT DISTINCT ' +
+          CASE (sDatabaseType, ['Paradox',   'TRANSPNO',
+                                'MSSQL',     'SUBSTRING(TRANSPNO, 1, 1000)',
+                                'Interbase', 'SUBSTRING(TRANSPNO FROM 1 TO 1000)'
+                               ], 'TRANSPNO'
+          ) +
+          ' AS TRNO, TRANSPTYPE, COUNTER FROM ' + sRelName +
+          ' WHERE PLACEID=' + vPlaceId +
+          ' AND MAIN_ID=' + vMainId +
+          ' AND MAIN_COUNTER=' + vMainCounter +
+          ' ORDER BY COUNTER';
+  OPENQUERY ('qTransport', 'STS_DB', sSQL, 1);
+  IF (BOF ('qTransport') = 0, FIRST ('qTransport'));
+  WHILE (EOF ('qTransport') = 0,
+    Block(
+      WriteDOTransports (qTransport.TRNO, qTransport.TRANSPTYPE);
+      NEXT ('qTransport');
+    )
+  ); // WHILE
+  CLOSEDATASET ('qTransport');
+{
+  // TODO: попробовать заменить на открытие запроса
+  IF (BOF ('qMain') = 0, FIRST ('qMain'));
+  WHILE (EOF ('qMain') = 0,
+    Block(
+      WriteDOTransports ();
+      NEXT ('qMain');
+    )
+  ); // WHILE
+}
+  XmlGoodsShipment := XMLNODEADDCHILD (XmlDO2Report, 'do2r:GoodsShipment');
+
+  XMLNODESETVALUES (XmlGoodsShipment, '',
+                    'do2r:MPOSign', 0,
+  ); // XMLNODESETVALUES
+
+  // список выпускающих документов (do2r:CustomsDocs)
+  VAR ('sCustomDocNumber', String, '');
+  sSQL := 'SELECT DISTINCT DOC_TYPE, DOC_NO, DOC_CODE, RELEASE_DATE, COUNTER FROM ' + sRelName +
+          ' WHERE PLACEID=' + vPlaceId +
+          ' AND MAIN_ID=' + vMainId +
+          ' AND MAIN_COUNTER=' + vMainCounter +
+          ' ORDER BY COUNTER';
+  OPENQUERY ('qCustomsDocs', 'STS_DB', sSQL);
+  IF (BOF ('qCustomsDocs') = 0, FIRST ('qCustomsDocs'));
+  WHILE (EOF ('qCustomsDocs') = 0,
+    Block(
+      XMLNODESETVALUES (XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:CustomsDocs'), '',
+          'cat_ru:PrDocumentName',    qCustomsDocs.DOC_TYPE,
+          'cat_ru:PrDocumentNumber',  qCustomsDocs.DOC_NO,
+          'cat_ru:PrDocumentDate',    FDT ('YYYY-MM-DD', qCustomsDocs.RELEASE_DATE),
+          'catWH_ru:DocumentCode',    qCustomsDocs.DOC_CODE,
+      ); // XMLNODESETVALUES
+      NEXT ('qCustomsDocs');
+    )
+  );
+  CLOSEDATASET ('qCustomsDocs');
+{
+  // TODO: попробовать заменить на открытие запроса
+  IF (BOF ('qMain') = 0, FIRST ('qMain'));
+  WHILE (EOF ('qMain') = 0,
+    Block(
+      IF (qMain.DOC_NO <> sCustomDocNumber,
+        Block(
+          XMLNODESETVALUES (XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:CustomsDocs'), '',
+              'cat_ru:PrDocumentName',    qMain.DOC_TYPE,
+              'cat_ru:PrDocumentNumber',  qMain.DOC_NO,
+              'cat_ru:PrDocumentDate',    FDT ('YYYY-MM-DD', qMain.RELEASE_DATE),
+              'catWH_ru:DocumentCode',    qMain.DOC_CODE,
+          ); // XMLNODESETVALUES
+          sCustomDocNumber := qMain.DOC_NO;
+        )
+      ); // IF
+      NEXT ('qMain');
+    )
+  ); // WHILE
+}
+
+  // список связей выпускающий документ <-> товар (do2r:GoodsCustomDocsLinks)
+  VAR ('iCustomDocNumber', Integer, 1);
+  VAR ('iGoodNumber',      Integer, 1);
+
+
+  // ЦИКЛ ПО СПИСКУ ДТ (до конца его проходим один раз)
+  VAR ('sCustomDocNumber', String, '');
+  sSQL := 'SELECT DISTINCT DOC_TYPE, DOC_NO, DOC_CODE, RELEASE_DATE, COUNTER FROM ' + sRelName +
+          ' WHERE PLACEID=' + vPlaceId +
+          ' AND MAIN_ID=' + vMainId +
+          ' AND MAIN_COUNTER=' + vMainCounter +
+          ' ORDER BY COUNTER';
+  OPENQUERY ('qCustomsDocs', 'STS_DB', sSQL);
+  IF (BOF ('qCustomsDocs') = 0, FIRST ('qCustomsDocs'));
+  WHILE (EOF ('qCustomsDocs') = 0,
+    Block(
+      sCustomDocNumber := qCustomsDocs.DOC_NO;
+
+      // ВЛОЖЕННЫЙЦИКЛ ПО ВЫДАВАЕМЫМ ТОВАРАМ
+      VAR ('bLinkFound', Integer, 0);
+      iGoodNumber := 1;
+      IF (BOF ('qMain') = 0, FIRST ('qMain'));
+      WHILE (EOF ('qMain') = 0,
+        Block(
+          IF (sCustomDocNumber = qMain.DOC_NO,
+            Block(
+              XMLNODESETVALUES (XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:GoodsCustomDocsLinks'), '',
+                  'do2r:GoodNumber',      iGoodNumber,
+                  'do2r:CustomDocNumber', iCustomDocNumber,
+              ); // XMLNODESETVALUES
+              bLinkFound := 1;
+            )
+          ); // IF
+          NEXT ('qMain');
+          iGoodNumber := iGoodNumber + 1;
+        )
+      ); // WHILE
+      // ЕСЛИ НЕ НАШЛИ СВЯЗИ НИ С ОДНИМ ТОВАРОМ, ТО ПРИВЯЗЫВАЕМ ДТ КО ВСЕМ ТОВАРАМ
+      IF (bLinkFound = 0,
+        Block(
+          VAR ('idx', Integer, 1);
+          WHILE (idx < iGoodNumber,
+            Block(
+              XMLNODESETVALUES (XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:GoodsCustomDocsLinks'), '',
+                  'do2r:GoodNumber',      idx,
+                  'do2r:CustomDocNumber', iCustomDocNumber,
+              ); // XMLNODESETVALUES
+              idx := idx + 1;
+            )
+          ); // WHILE
+        )
+      );
+
+      NEXT ('qCustomsDocs');
+      iCustomDocNumber := iCustomDocNumber + 1;
+    )
+  ); // WHILE
+  CLOSEDATASET ('qCustomsDocs');
+
+{
+  WHILE (EOF ('qMain') = 0,
+    Block(
+      IF (qMain.DOC_NO <> sCustomDocNumber,
+        Block(
+          sCustomDocNumber := qMain.DOC_NO;
+          iCustomDocNumber := iCustomDocNumber + 1;
+        )
+      ); // IF
+      XMLNODESETVALUES (XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:GoodsCustomDocsLinks'), '',
+          'do2r:GoodNumber',      iGoodNumber,
+          'do2r:CustomDocNumber', iCustomDocNumber,
+      ); // XMLNODESETVALUES
+
+
+
+
+      VAR ('tmpCustomDocNumber', Integer, iCustomDocNumber);
+      sSQL := 'SELECT R.COUNTER, R.DOC_NO, R.COUNTER, RRC.G32 ' +
+              ' FROM ' + sRelName + ' R ' + 'RIGHT JOIN REL_COMM RRC ON RRC.PLACEID=R.PLACEID AND RRC.ID=R.ID' +
+              ' WHERE R.MAIN_ID=' + qMain.MAIN_ID +
+              ' AND R.MAIN_COUNTER=' + qMain.MAIN_COUNTER +
+              ' AND RRC.G32=' + iGoodNumber +
+              ' AND (SELECT COUNT (RC.G32) FROM REL_COMM RC WHERE RC.PLACEID=R.PLACEID ' +
+                    ' AND RC.ID=R.ID AND RC.COUNTER=R.COUNTER) = 0' +
+              ' ORDER BY R.COUNTER';
+      OPENQUERY ('qBezTovarov', 'STS_DB', sSQL, 1);
+      IF (BOF ('qBezTovarov') = 0, FIRST ('qBezTovarov'));
+      WHILE (EOF ('qBezTovarov') = 0,
+        Block(
+          tmpCustomDocNumber := tmpCustomDocNumber + 1;
+          XMLNODESETVALUES (XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:GoodsCustomDocsLinks'), '',
+              'do2r:GoodNumber',      iGoodNumber,
+              'do2r:CustomDocNumber', tmpCustomDocNumber,
+          ); // XMLNODESETVALUES
+          NEXT ('qBezTovarov');
+        )
+      ); // WHILE
+
+      NEXT ('qMain');
+      iGoodNumber := iGoodNumber + 1;
+
+    )
+  ); // WHILE
+}
+  VAR ('XmlGoods', Integer);
+  VAR ('iGoodsNumner', Integer, 1);
+  IF (BOF ('qMain') = 0, FIRST ('qMain'));
+  // товары
+  WHILE (EOF ('qMain') = 0,
+    Block(
+      VAR ('bHaveMeasureQuantity', Integer, IF (qMain.G315A > 0, 1, 0));
+
+      sSQL := 'SELECT SUM(RELEASE_G311) as SG311, SUM(RELEASE_G35) as SG35,' +
+              'SUM(RELEASE_G315A) as SG315A, SUM(RELEASE_G42) as SG42 ' +
+              'FROM REL_COMM WHERE PLACEID=' + vPlaceId +
+              ' AND ID=' + qMain.ID +
+              ' AND G32=' + qMain.G32 +
+              ' AND COUNTER IN (SELECT COUNTER FROM ' + sRelName + ' WHERE PLACEID=' + vPlaceId +
+              ' AND MAIN_ID=' + vMainId +
+              ' AND OUT_DATE <= ' + DBFormatDateTime (qMain.OUT_DATE, GetDatabaseType ('STS_DB'), 1,0) + ')';
+      OPENQUERY ('qRests', 'STS_DB', sSQL, 1);
+
+      XmlGoods := XMLNODEADDCHILD (XmlGoodsShipment, 'do2r:Goods');
+
+      // приход
+      XMLNODESETVALUES (XmlGoods, 'do2r:Input',
+          'catWH_ru:GoodsNumber',    iGoodsNumner,
+          'catWH_ru:GoodsTNVEDCode', qMain.G33,
+          'catWH_ru:InvoiceCost',    qMain.G42,
+          'catWH_ru:CurrencyCode',   CURRENCYABBR (qMain.G42_CURRENCY),
+      ); // XMLNODESETVALUES
+
+      // описание товара разбиваем на блоки по n-символов (iG312MaxLength = 150)
+      VAR ('sG312', String, IF (qMain.RELEASE_G312, TRIM (qMain.RELEASE_G312), TRIM (qMain.G312)));
+      XMLNODESETVALUES (XmlGoods, 'do2r:Input',
+          'catWH_ru:GoodsDescription', COPY (sG312, 1, iG312MaxLength),
+      ); // XMLNODESETVALUES
+
+      WHILE (LENGTH (sG312) > 0,
+        Block(
+          sG312 := DELETE (sG312, 1, iG312MaxLength);
+          IF (LENGTH (sG312) > 0,
+            Block(
+              XMLNODESETVALUE (XMLNODEADDCHILD (XMLNODEFIND (XmlGoods, 'do2r:Input'), 'catWH_ru:GoodsDescription'), COPY (sG312, 1, iG312MaxLength));
+            )
+          ); // IF
+        )
+      ); // WHILE
+
+      XMLNODESETVALUES (XmlGoods, 'do2r:Input',
+          'catWH_ru:CargoPlace\catWH_ru:PlaceNumber',                   IF (FIELDISNULL ('qMain', 'G311') = 0, qMain.G311),
+          'catWH_ru:CargoPlace\catWH_ru:PackageCode',                   qMain.G313_CODE,
+          'catWH_ru:CargoPlace\catWH_ru:PlaceDescription',              COPY (qMain.G313, 1, 40),
+          'catWH_ru:BruttoVolQuant\catWH_ru:GoodsQuantity',             IF (qMain.G35, qMain.G35, qMain.G315C),
+          'catWH_ru:BruttoVolQuant\catWH_ru:MeasureUnitQualifierName',  IF (qMain.G35, 'КГ', 'М3'),
+          'catWH_ru:BruttoVolQuant\catWH_ru:MeasureUnitQualifierCode',  IF (qMain.G35, '166', '113'),
+      ); // XMLNODESETVALUES
+      IF (bHaveMeasureQuantity,
+        XMLNODESETVALUES (XmlGoods, 'do2r:Input',
+            'catWH_ru:MeasureQuantity\catWH_ru:GoodsQuantity',            qMain.G315A,
+            'catWH_ru:MeasureQuantity\catWH_ru:MeasureUnitQualifierName', IF (qMain.RELEASE_G315, qMain.RELEASE_G315, 'ШТ'),
+            'catWH_ru:MeasureQuantity\catWH_ru:MeasureUnitQualifierCode', IF (REFERENCE ('UNITS', 'UNITNAME', qMain.RELEASE_G315, 'UNITCODE') <> '', REFERENCE ('UNITS', 'UNITNAME', qMain.RELEASE_G315, 'UNITCODE'), '796'),
+        ); // XMLNODESETVALUES
+      ); // IF
+      XMLNODESETVALUES (XmlGoods, 'do2r:Input',
+          'do2r:WHNumber',                          COPY (TRIM (WriteBoxNo ()), 1, 255),
+          'do2r:DO1GoodLink\do2r:DO1Date',          FDT ('YYYY-MM-DD', qMain.BD_DATE),
+          'do2r:DO1GoodLink\do2r:DO1Number',        CUSTOMSNOPART (qMain.NBD, 3, RIGHT (qMain.NBD, 7)),
+          'do2r:DO1GoodLink\do2r:DO1GoodNumber',    IF (qMain.GN, qMain.GN, qMain.G32),
+          'do2r:KeepingLimit\do2r:AcceptDate',      FDT ('YYYY-MM-DD', IF (qMain.ACCEPTDATE, qMain.ACCEPTDATE, qMain.BEG_KEEP)),
+          'do2r:KeepingLimit\do2r:AcceptTime',      FDT ('HH:NN:SS',   IF (qMain.ACCEPTDATE, qMain.ACCEPTDATE, qMain.BEG_KEEP)),
+          'do2r:KeepingLimit\do2r:StoringDateType', qMain.STORAGE_TYPE,
+          'do2r:KeepingLimit\do2r:DeadLineDate',    FDT ('YYYY-MM-DD', IF (qMain.STORAGE_DATE, qMain.STORAGE_DATE, IF (qMain.STORE_PERIOD, qMain.BEG_KEEP + qMain.STORE_PERIOD))),
+      ); // XMLNODESETVALUES
+
+      // расход
+      XMLNODESETVALUES (XmlGoods, 'do2r:Output',
+          'do2r:Cost',                                                      FLOATROUND (qMain.RELEASE_G42, 2),
+          'do2r:CurrencyCode',                                              CURRENCYABBR (qMain.G42_CURRENCY),
+          'do2r:OutputDate',                                                FDT ('YYYY-MM-DD', IF (qMain.RELEASE_OUT_DATE, qMain.RELEASE_OUT_DATE, qMain.OUT_DATE)),
+          'do2r:OutputTime',                                                FDT ('HH:NN:SS',   IF (qMain.RELEASE_OUT_DATE, qMain.RELEASE_OUT_DATE, qMain.OUT_DATE)),
+          'do2r:Consignee\cat_ru:OrganizationName',                         IF (qMain.RELEASE_G082, qMain.RELEASE_G082, qMain.G082),
+          'do2r:Consignee\cat_ru:RFOrganizationFeatures\cat_ru:OGRN',       IF (qMain.RELEASE_G082, qMain.RELEASE_G08_OGRN, qMain.G08_OGRN),
+          'do2r:Consignee\cat_ru:RFOrganizationFeatures\cat_ru:INN',        IF (qMain.RELEASE_G082, qMain.RELEASE_G084C,    qMain.G084C),
+          'do2r:Consignee\cat_ru:RFOrganizationFeatures\cat_ru:KPP',        IF (qMain.RELEASE_G082, qMain.RELEASE_G08_KPP,  qMain.G08_KPP),
+          'do2r:Consignee\catWH_ru:Address\catWH_ru:AddressLine',           IF (qMain.RELEASE_G082, qMain.RELEASE_G083, qMain.G083),
+          'do2r:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardCode',   qMain.G08_DOC_KIND,
+          'do2r:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardName',   REFERENCE ('NS_DUL', 'KOD', qMain.G08_DOC_KIND, 'NAME'),
+          'do2r:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardSeries', qMain.G08_DOC_SERIES,
+          'do2r:Consignee\catWH_ru:IdentityCard\cat_ru:IdentityCardNumber', qMain.G08_DOC_NUMBER,
+          'do2r:Consignee\do2r:ConsigneePerson\cat_ru:PersonSurname',       EXTRACTSTR (qMain.RELEASE_RECEIVE, 1, ' '),
+          'do2r:Consignee\do2r:ConsigneePerson\cat_ru:PersonName',          EXTRACTSTR (qMain.RELEASE_RECEIVE, 2, ' '),
+          'do2r:Consignee\do2r:ConsigneePerson\cat_ru:PersonMiddleName',    EXTRACTSTR (qMain.RELEASE_RECEIVE, 3, ' '),
+          'do2r:Consignee\do2r:ConsigneePerson\cat_ru:PersonPost',          qMain.RELEASE_RECEIVE_POST,
+      ); // XMLNODESETVALUES
+
+      // не выгружать MeasureQuantity, если в приходе ноль доп. единиц
+      IF (bHaveMeasureQuantity,
+        XMLNODESETVALUES (XmlGoods, 'do2r:Output',
+            'do2r:MeasureQuantity\catWH_ru:GoodsQuantity',            FLOATROUND (qMain.RELEASE_G315A, 6),
+            'do2r:MeasureQuantity\catWH_ru:MeasureUnitQualifierName', IF (qMain.RELEASE_G315, qMain.RELEASE_G315, 'ШТ'),
+            'do2r:MeasureQuantity\catWH_ru:MeasureUnitQualifierCode', IF (REFERENCE ('UNITS', 'UNITNAME', qMain.RELEASE_G315, 'UNITCODE') <> '', REFERENCE ('UNITS', 'UNITNAME', qMain.RELEASE_G315, 'UNITCODE'), '796'),
+        ); //XMLNODESETVALUES
+      ); // IF
+
+      XMLNODESETVALUES (XmlGoods, 'do2r:Output',
+          'do2r:BruttoVolQuant\catWH_ru:GoodsQuantity',            FLOATROUND (qMain.RELEASE_G35, 6),
+          'do2r:BruttoVolQuant\catWH_ru:MeasureUnitQualifierName', IF (qMain.RELEASE_G35 > 0, 'КГ'),
+          'do2r:BruttoVolQuant\catWH_ru:MeasureUnitQualifierCode', IF (qMain.RELEASE_G35 > 0, '166'),
+          'do2r:CargoPlace\catWH_ru:PlaceNumber',                  IF (FIELDISNULL ('qMain', 'RELEASE_G311') = 0, qMain.RELEASE_G311),
+          'do2r:CargoPlace\catWH_ru:PackageCode',                  qMain.G313_CODE,
+          'do2r:CargoPlace\catWH_ru:PlaceDescription',             COPY (qMain.RELEASE_G313, 1, 40),
+      ); // XMLNODESETVALUES
+
+      // остаток
+      VAR ('fRestG42',   Float,   FLOATROUND (qMain.G42 - qRests.SG42, 2));
+      VAR ('fRestG35',   Float,   FLOATROUND (qMain.G35 - qRests.SG35, 6));
+      VAR ('fRestG315A', Float,   FLOATROUND (qMain.G315A - qRests.SG315A, 6));
+      VAR ('iRestG311',  Integer, qMain.G311 - qRests.SG311);
+      XMLNODESETVALUES (XmlGoods, 'do2r:Result',
+          'do2r:Cost',                                              fRestG42,
+          'do2r:CurrencyCode',                                      CURRENCYABBR (qMain.G42_CURRENCY),
+          'do2r:BruttoVolQuant\catWH_ru:GoodsQuantity',             fRestG35,
+          'do2r:BruttoVolQuant\catWH_ru:MeasureUnitQualifierName',  'КГ',
+          'do2r:BruttoVolQuant\catWH_ru:MeasureUnitQualifierCode',  '166',
+      ); // XMLNODESETVALUES
+
+      IF (bHaveMeasureQuantity,
+        XMLNODESETVALUES (XmlGoods, 'do2r:Result',
+            'do2r:MeasureQuantity\catWH_ru:GoodsQuantity',            fRestG315A,
+            'do2r:MeasureQuantity\catWH_ru:MeasureUnitQualifierName', IF (qMain.RELEASE_G315, qMain.RELEASE_G315, 'ШТ'),
+            'do2r:MeasureQuantity\catWH_ru:MeasureUnitQualifierCode', IF (REFERENCE ('UNITS', 'UNITNAME', qMain.RELEASE_G315, 'UNITCODE') <> '', REFERENCE ('UNITS', 'UNITNAME', qMain.RELEASE_G315, 'UNITCODE'), '796'),
+        ); // XMLNODESETVALUES
+      ); // IF
+
+      XMLNODESETVALUES (XmlGoods, 'do2r:Result',
+          'do2r:CargoPlace\catWH_ru:PlaceNumber',      IF ((FIELDISNULL ('qMain', 'G311') = 0) | (FIELDISNULL ('qMain', 'RELEASE_G311') = 0), iRestG311),
+          'do2r:CargoPlace\catWH_ru:PackageCode',    qMain.G313_CODE,
+          'do2r:CargoPlace\catWH_ru:PlaceDescription', COPY (qMain.G313, 1, 40),
+      ); // XMLNODESETVALUES
+
+      CLOSEDATASET ('qRests');
+      iGoodsNumner := iGoodsNumner + 1;
+      NEXT ('qMain');
+    )
+  ); // WHILE
+
+  IF (bQContsOpened, CLOSEDATASET ('qConts'));
+  CLOSEDATASET ('qMain');
+  CLOSEDATASET ('qStore');
+
+{
+//
+// DEBUG /*
+writelog (dbg, 'do2_album.exp (end) ' + FDT ('SS', (Date()+Time(1)) - timerStart) + ' sec (' + INIFILE ('STSDB', 'Driver Name', '') + ')');
+writelog (dbg, '');
+// DEBUG */
+//
+}

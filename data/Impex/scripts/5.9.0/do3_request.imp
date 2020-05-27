@@ -1,0 +1,74 @@
+// *****************************************************************************
+// Название: Загрузка требования ДО3
+// Описание: Загрузка требования ДО3
+// Кнопка вызова: 0
+// Подпись кнопки: загрузка требования ДО3
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+
+VAR('XmlRequest', integer, XMLNODECHILD (XmlRoot, 0));
+VAR('XmlDocumentId', integer, XMLNODEFIND (XmlRequest, 'cat_ru:DocumentID'));
+IF (XmlDocumentId = 0, XmlDocumentId := XMLNodeFind (XmlRequest, 'DocumentID'));
+
+VAR('RefId', string, UPPERSTR(XMLNODEVALUE(XmlDocumentId)));
+
+OPENQUERY ('qryReq', 'Select * from jrdo3 where refdocumentid ='+char(39)+RefId+char(39), 'dbJournals');
+IF (RECORDCOUNT ('qryReq') > 0,
+  RaiseException('В журнале ДО-3 уже есть ДО-3/требование с таким идентификатором.'),
+  Block(
+
+    OPENTABLE ('JRDO3_2', 'JRDO3', '', 'dbJournals', 1);
+
+    EDITRECORD ('JRDO3_2');
+    APPENDRECORD ('JRDO3_2');
+
+    OPENQUERY ('qryNUM', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM JRDO3 ', 'dbJournals');
+    VAR('iMaxID', Integer, qryNUM.MAX_ID + 1);
+
+    VAR ('sSendTime', String, IF (TRIM (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:SendTime'))) <> '', ' ' +  XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:SendTime'))));
+    IF (STRPOS ('.', sSendTime) > 0, sSendTime := COPY (sSendTime, 0, (STRPOS ('.', sSendTime)-1)));
+
+    SETFIELDVALUE('JRDO3_2', 'JOURNAL_MASTER_ID', iMaxId);   
+    SetFieldValue ('JRDO3_2',
+                      'COMMENTS', XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:Comments')),
+                      'SENDDATETIME', StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:SendDate')), 'YYYY-MM-DD', '-') + sSendTime,
+                      'REPORTBEGINDATE', StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:BeginDate')), 'YYYY-MM-DD', '-'),
+                      'REPORTENDDATE',   StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:EndDate')), 'YYYY-MM-DD', '-'),
+                      'REFDOCUMENTID',   RefId,
+                      'REQCUSTOMSCODE',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'do3re:Customs'), 'cat_ru:Code')),
+                      'REQPERSONNAME',   XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'do3re:CustomsPerson'), 'cat_ru:PersonName')),
+                      'REQLNP',          XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'do3re:CustomsPerson'), 'cat_ru:LNP')),
+                      'CERTIFICATENUMBER', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'do3re:Permits'), 'catWH_ru:CertificateNumber')),
+                      'CERTIFICATEDATE', StrToDate (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'do3re:Permits'), 'catWH_ru:CertificateDate')), 'YYYY-MM-DD', '-'),
+                      'RECORDTYPE', 'Требование ДО-3'
+                      
+    );
+    POSTRECORD ('JRDO3_2');
+    CLOSEDATASET ('JRDO3_2');
+
+    VAR ('vPlaceID',  String, 9999);
+    VAR ('vID', String, '0');
+    VAR ('strStatus', String, '');
+    VAR ('DoType', String, '');
+    VAR ('DoNo', String, '');
+    VAR ('DocId', String, '');
+    VAR ('DoDate', DateTime);
+    VAR ('dRegDate', DateTime);
+    VAR ('sSubStatus', String, '');
+    VAR ('DoDt', String, '');
+    
+      OPENQUERY ('qS', 'STS_DB', 'SELECT PLACEID FROM STORES WHERE LICENCENO=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlRequest, 'do3re:Permits'), 'catWH_ru:CertificateNumber')) +char(39));
+      IF (RECORDCOUNT ('qS') > 0, vPlaceID := qS.PLACEID);
+//      vPlaceID := JRDO3_2.PLACEID;
+      DocId   := RefId;
+      DoType   := 'Требование ДО-3';
+      DoNo     := '';
+      dodt     := XMLNODEATTRIBUTE (XmlRequest, 'dodt');
+      DoDate   := StrToDate (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'SendDate')), 'YYYY-MM-DD', '-') + IF (TRIM (XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:SendTime'))) <> '', ' ' +  XMLNODEVALUE(XMLNODEFIND (XmlRequest, 'do3re:SendTime')));
+      strStatus:= 'Получено требование ДО-3';
+      dRegDate := Date () + Time (1);
+      sJourGuid := DocId;
+  )
+);

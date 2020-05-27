@@ -1,0 +1,202 @@
+// *****************************************************************************
+// Название: WHContractInfo
+// Описание:
+// Кнопка вызова: 0
+// Подпись кнопки:
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+// TODO: создание XML-документа
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+  IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+  FORCEDIRECTORIES (sDir);
+
+VAR ('sSQL', String, 'SELECT * FROM STORES WHERE PLACEID=');
+VAR ('sContractId', String, GENERATEUUID(1));
+
+//  IF (LENGTH (TRIM (CONTRACTINFO.DOCUMENTID)) > 0, sContractId := CONTRACTINFO.DOCUMENTID);
+
+  IF (CONTRACTINFO.PLACEID <> 0,
+    sSQL := sSQL + CONTRACTINFO.PLACEID, sSQL := sSQL + '9999');
+    OPENQUERY ('qStores', 'STS_DB', sSQL);
+
+VAR ('xDoc', Integer, XMLDOCUMENTCREATE());
+XMLDOCUMENTENCODING (xDoc, 'UTF-8');
+VAR ('xRoot', Integer, XMLDOCUMENTROOT (xDoc));
+
+  xRoot := XMLNODEADDCHILD(xRoot, 'ED_Container');
+  XMLNODESETATTRIBUTE (xRoot, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+  XMLNODESETATTRIBUTE (xRoot, 'DocumentModeID', '1006058E');
+  XMLNODESETATTRIBUTE (xRoot, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+  XMLNODESETVALUES (xRoot, '',
+                          'cat_ru:DocumentID', GENERATEUUID (1),
+  ); // XMLNODESETVALUES
+  xRoot := XMLNODEADDCHILD (XMLNODEADDCHILD (xRoot, 'ContainerDoc'), 'DocBody');
+
+VAR ('xWhContractInfo', Integer, XMLNODEADDCHILD (xRoot, 'whci:WHContractInfo'));
+
+//  XMLNODESETATTRIBUTE (xWhContractInfo, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+  XMLNODESETATTRIBUTE (xWhContractInfo, 'xmlns:whci', 'urn:customs.ru:Information:WarehouseDocuments:WHContractInfo:5.14.3');
+  XMLNODESETATTRIBUTE (xWhContractInfo, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.14.3');
+  XMLNODESETATTRIBUTE (xWhContractInfo, 'DocumentModeID', '1008030E');
+
+// TODO: формируем тело XML-документа
+  XMLNODESETVALUES (xWhContractInfo, '',
+                                     'cat_ru:DocumentID', sContractId,
+                                     'whci:Number', CONTRACTINFO.DOGNUMBER,
+                                     'whci:Date', FDT ('YYYY-MM-DD', CONTRACTINFO.DOGDATE));
+
+VAR ('xPartisipants', Integer, XMLNODEADDCHILD (xWhContractInfo, 'whci:Participants'));
+VAR ('xWareHouseOwner', Integer, XMLNODEADDCHILD (xPartisipants, 'whci:WareHouseOwner'));
+// TODO:
+  XMLNODESETVALUES (xWareHouseOwner, '',
+                                     'cat_ru:OrganizationName', CONTRACTINFO.WH_NAME);
+  XMLNODESETVALUES (xWareHouseOwner, 'catWH_ru:Address',
+                                     'catWH_ru:AddressLine', qStores.ADDRESS);
+  XMLNODESETVALUES (xWareHouseOwner, 'catWH_ru:WarehouseLicense',
+                                     'catWH_ru:CertificateKind', CONTRACTINFO.WH_CERTKIND,
+                                     'catWH_ru:CertificateNumber', CONTRACTINFO.WH_CERTNUMBER,
+                                     'catWH_ru:CertificateDate', FDT ('YYYY-MM-DD', CONTRACTINFO.WH_CERTDATE));
+
+  IF (CONTRACTINFO.ORG_TYPE = 'Перевозчик',
+    Block(
+      VAR ('xCarrier', Integer, XMLNODEADDCHILD (xPartisipants, 'whci:Carrier'));
+      XMLNODESETVALUES (xCarrier, '',
+                                  'cat_ru:OrganizationName', CONTRACTINFO.ORG_NAME,
+                                  'catWH_ru:CountryCode', CONTRACTINFO.ORG_COUNTRYCODE);
+      XMLNODESETVALUES (xCarrier, 'catWH_ru:Address',
+                                  'catWH_ru:AddressLine', CONTRACTINFO.ORG_ADDRESS);
+    ),
+    Block(
+      VAR ('xConsignee', Integer, XMLNODEADDCHILD (xPartisipants, 'whci:Consignee'));
+      XMLNODESETVALUES (xConsignee, '',
+                                    'cat_ru:OrganizationName', CONTRACTINFO.ORG_NAME);
+      XMLNODESETVALUES (xConsignee, 'catWH_ru:Address',
+                                    'catWH_ru:AddressLine', CONTRACTINFO.ORG_ADDRESS);
+    )
+  );
+
+  IF (LENGTH (TRIM (CONTRACTINFO.LIMITDATE)) > 0 |
+      LENGTH (TRIM (CONTRACTINFO.GOODSDESCRIPTION)) > 0 |
+      LENGTH (TRIM (CONTRACTINFO.OTHERINFO)) > 0 |
+      RECORDCOUNT ('PROCUREMENTPERIOD') > 0,
+    Block(
+      VAR ('xDetails', Integer, XMLNODEADDCHILD (xWhContractInfo, 'whci:Details'));
+      XMLNODESETVALUES (xDetails, '',
+                                  'whci:LimitDate', FDT ('YYYY-MM-DD', CONTRACTINFO.LIMITDATE));
+      FIRST ('PROCUREMENTPERIOD');
+      WHILE (EOF ('PROCUREMENTPERIOD') = 0,
+        Block(
+          VAR ('xProcurementPerion', Integer, XMLNODEADDCHILD (xDetails, 'whci:ProcurementPeriod'));
+          XMLNODESETVALUES (xProcurementPerion, '',
+                                                'whci:StartDate', FDT ('YYYY-MM-DD', PROCUREMENTPERIOD.STARTDATE),
+                                                'whci:FinishDate', FDT('YYYY-MM-DD', PROCUREMENTPERIOD.FINISHDATE));
+          NEXT ('PROCUREMENTPERIOD');
+        )
+      ); //
+
+      // разбить на N-блоков по 250 символов
+      VAR ('mGoodsDescription', Memo, TRIM (CONTRACTINFO.GOODSDESCRIPTION));
+      VAR ('mKeepingConditions', Memo, TRIM (CONTRACTINFO.KEEPINGCONDITIONS));
+      VAR ('mOtherInfo', Memo, TRIM (CONTRACTINFO.OTHERINFO));
+
+      WHILE (LENGTH (mGoodsDescription) > 0,
+        Block(
+          VAR ('xGoodsDescription', Integer, XMLNODEADDCHILD (xDetails, 'whci:GoodsDescription'));
+          IF (LENGTH (mGoodsDescription) >= 250,
+            Block(
+              XMLNODESETVALUE (xGoodsDescription, COPY (mGoodsDescription, 1, 250));
+              mGoodsDescription := DELETE (mGoodsDescription, 1, 250);
+            ),
+            Block(
+              XMLNODESETVALUE (xGoodsDescription, COPY (mGoodsDescription, 1, LENGTH (mGoodsDescription)));
+              mGoodsDescription := DELETE (mGoodsDescription, 1, LENGTH (mGoodsDescription));
+            )
+          ); // IF - //
+        )
+      );
+
+      WHILE (LENGTH (mKeepingConditions) > 0,
+        Block(
+          VAR ('xKeepingConditions', Integer, XMLNODEADDCHILD (xDetails, 'whci:KeepingConditions'));
+          IF (LENGTH (mKeepingConditions) >= 250,
+            Block(
+              XMLNODESETVALUE (xKeepingConditions, COPY (mKeepingConditions, 1, 250));
+              mKeepingConditions := DELETE (mKeepingConditions, 1, 250);
+            ),
+            Block(
+              XMLNODESETVALUE (xKeepingConditions, COPY (mKeepingConditions, 1, LENGTH (mKeepingConditions)));
+              mKeepingConditions := DELETE (mKeepingConditions, 1, LENGTH (mKeepingConditions));
+            )
+          ); // IF - //
+        )
+      );
+
+      WHILE (LENGTH (mOtherInfo) > 0,
+        Block(
+          VAR ('xOtherInfo', Integer, XMLNODEADDCHILD (xDetails, 'whci:OtherInfo'));
+          IF (LENGTH (mOtherInfo) >= 250,
+            Block(
+              XMLNODESETVALUE (xOtherInfo, COPY (mOtherInfo, 1, 250));
+              mOtherInfo := DELETE (mOtherInfo, 1, 250);
+            ),
+            Block(
+              XMLNODESETVALUE (xOtherInfo, COPY (mOtherInfo, 1, LENGTH (mOtherInfo)));
+              mOtherInfo := DELETE (mOtherInfo, 1, LENGTH (mOtherInfo));
+            )
+          ); // IF - //
+        )
+      );
+
+    )
+  ); //
+
+// сохранение XML-документа
+// сформировать имя файла
+  VAR ('sFileName', String, '');
+  VAR ('sTemp', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS\validate\' );
+
+  IF (LENGTH (qStores.EPS_ID) > 0,
+    sFileName := 'sendcontract_' + sContractId + '_' + qStores.CUSTOMS_CODE + '_' + qStores.EPS_ID  + '.xml',
+    sFileName := 'sendcontract_' + sContractId + '_' + qStores.CUSTOMS_CODE + '.xml',
+  ); // IF - //
+
+  FORCEDIRECTORIES (sTemp);
+  XMLDOCUMENTSAVE (xDoc, sTemp + sFileName, 1);
+
+
+  VAR ('v', Variant, CREATEOLEOBJECT('SchemaValidator.Validator'));
+  VAR ('sAlbumVersion', String, INIFILE ('XmlFormat', 'Version', '5.9.1'));
+
+  v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + sAlbumVersion + '\';
+
+  IF (v.ValidateFile (sTemp + sFileName) = 'True',
+    Block(
+
+      VAR ('o', Variant, CREATEOLEOBJECT ('svh.Extention'));
+      IF (o.GetXSLT(sTemp + sFileName) = 'True',
+        Block(
+          IF (o.Transformate () = 'True',
+            Block(
+              o.ShowDocument();
+              IF (YESNO ('Передать договор в систему таможенных органов?'),
+                Block(
+                  XMLDOCUMENTSAVE (xDoc, sDir + sFileName);
+                  EDIT ('CONTRACTINFO');
+                  SETFIELDVALUE ('CONTRACTINFO', 'DOCUMENTID', sContractId);
+                  SETFIELDVALUE ('CONTRACTINFO', 'EPS_STATUS', 'Договор ВХ подготовлен к отправке');
+                  POST ('CONTRACTINFO');
+                )
+              ); // IF
+            )
+          ); // IF
+        )
+      ); // IF
+    ),
+    Block(
+      v.ShowResult();
+    )
+  );

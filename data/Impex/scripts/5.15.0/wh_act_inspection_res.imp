@@ -1,0 +1,443 @@
+// *****************************************************************************
+// Название: wh_act_inspection_res.imp
+// Описание:
+// Кнопка вызова: 0
+// Подпись кнопки: wh_act_inspection_res
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sql_insert.prd');
+
+sSQL := 'SELECT'  +
+        ' JOURNAL_MASTER_ID' +
+        ' FROM ' + CORRECTTABLENAME ('JR_WHAI') +
+        ' WHERE' +
+        ' UPPER(DOCUMENTID)=' +char(39)+ UPPERSTR(xmlMainNode.DocumentID) +char(39);
+OPENQUERY ('qJRWHAI', 'dbJournals', sSQL, 1);
+TRYFINALLY (
+  Block(
+    VAR ('iPlaceId', Integer, XMLNODEATTRIBUTE (xmlMainNode, 'whid'));
+    VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'do1id'));
+    IF (FIELDISNULL ('qJRWHAI', 'JOURNAL_MASTER_ID'),
+      Block(
+        IF (LOCATE ('KRD_MAIN_2', 'PLACEID;DOCUMENTID', [iPlaceId, sDocumentId]),
+          Block(
+            VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+            VAR ('sStatus', String, 'Выявлены несоответствия в ходе таможенного досмотра');
+            VAR ('sSubStatus', String, '');
+            VAR ('iReaded', Integer, INIFILE ('JR_EPS_LOG', 'WHActInspectionRes', 0));
+            VAR ('iJMID', Integer, 0);
+
+            FUNC ('GET_CONTAINER_INFO',
+              '',
+              Block(
+                VAR ('iContainerIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlMainNode, 'Container')));
+                VAR ('iWhActInspectionResChildCount', Integer, XMLNODECHILDCOUNT (xmlMainNode));
+                VAR ('mContainer', Memo, '');
+
+                IF (iContainerIndex > 0,
+                  Block(
+                    VAR ('xmlContainer', Integer, XMLNODECHILD (xmlMainNode, iContainerIndex));
+                    WHILE ((XMLNODENAME (xmlContainer, 1) = 'Container') * (iContainerIndex < iWhActInspectionResChildCount),
+                      Block(
+                        mContainer := mContainer + IF (LENGTH (mContainer) = 0, '', ',') + XMLNODEVALUE (xmlContainer);
+                        iContainerIndex := iContainerIndex + 1;
+                        xmlContainer := XMLNODECHILD (xmlMainNode, iContainerIndex);
+                      )
+                    ); // WHILE
+                  ),
+                  Block(
+                    mContainer := '';
+                  )
+                ); // IF
+                mContainer
+              )
+            ), // FUNC - GET_CONTAINER_INFO
+
+            FUNC ('GET_GOODS_DESCRIPTION', '',
+              Block(
+                VAR ('iGoodsDescriptionIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGood, 'GoodsDescription')));
+                VAR ('iGoodChildCount', Integer, XMLNODECHILDCOUNT (xmlGood));
+                VAR ('mGoodsDescription', Memo, '');
+
+                IF (iGoodsDescriptionIndex > 0,
+                  Block(
+                    VAR ('xmlGoodsDescription', Integer, XMLNODECHILD (xmlGood, iGoodsDescriptionIndex));
+                    WHILE ((XMLNODENAME (xmlGoodsDescription, 1) = 'GoodsDescription') * (iGoodsDescriptionIndex < iGoodChildCount),
+                      Block(
+                        mGoodsDescription := mGoodsDescription + XMLNODEVALUE (xmlGoodsDescription);
+                        iGoodsDescriptionIndex := iGoodsDescriptionIndex + 1;
+                        xmlGoodsDescription := XMLNODECHILD (xmlGood, iGoodsDescriptionIndex);
+                      )
+                    ); // WHILE
+                  ),
+                  Block(
+                    mGoodsDescription := '';
+                  )
+                ); // IF
+                mGoodsDescription
+              )
+            ), // FUNC - GET_GOODS_DESCRIPTION
+
+
+            FUNC ('GetAddressLine',
+              Block(
+                PARAM ('pAddress', Integer, 0);
+              ),
+              Block(
+                VAR ('sAddress', String, '');
+                IF (XMLNODEFIND (pAddress, 'AddressLine'),
+                  Block(
+                    sAddress := pAddress.AddressLine;
+                  ),
+                  Block(
+                    sAddress := pAddress.PostalCode;
+                    IF (XMLNODEFIND (pAddress, 'CounryName'),
+                      Block(
+                        IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+                        sAddress := sAddress + pAddress.CounryName;
+                      )
+                    ); // IF
+                    IF (XMLNODEFIND (pAddress, 'Region'),
+                      Block(
+                        IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+                        sAddress := sAddress + pAddress.Region;
+                      )
+                    ); // IF
+                    IF (XMLNODEFIND (pAddress, 'City'),
+                      Block(
+                        IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+                        sAddress := sAddress + pAddress.City;
+                      )
+                    ); // IF
+                    IF (XMLNODEFIND (pAddress, 'StreetHouse'),
+                      Block(
+                        IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+                        sAddress := sAddress + pAddress.StreetHouse;
+                      )
+                    ); // IF
+                  )
+                ); // IF
+                sAddress
+              )
+            ); // FUNC - GetAddressLine
+
+
+            PrepareInsert2 ();
+            Insert2 ('CREATED_AT',        FDT ('DD.MM.YYYY HH:NN:SS', Date()+Time(1)));
+            Insert2 ('ACTTYPE',           xmlMainNode.ActType);
+            Insert2 ('ACTNUMBER',         xmlMainNode.ActNumber);
+            Insert2 ('DOCUMENTID',        xmlMainNode.DocumentID);
+
+            VAR ('sInspectionDateTime', String, xmlMainNode.InspectionDateTime);
+            VAR ('sInspectionDate', String, '');
+            VAR ('sInspectionTime', String, '');
+            SPLITSTR (sInspectionDateTime, 'T', sInspectionDate, sInspectionTime);
+            sInspectionDateTime := FDT ('DD.MM.YYYY', STRTODATE (sInspectionDate, 'YYYY-MM-DD', '-')) + ' ' + COPY (sInspectionTime, 1, 8);
+            Insert2 ('INSPECTIONDATETIME', sInspectionDateTime);
+
+            VAR ('xmlWarehouseOwner', Integer, xmlMainNode.WarehouseOwner);
+            IF (xmlWarehouseOwner,
+              Block(
+                Insert2 ('WO_ORGNAME', xmlWarehouseOwner.OrganizationName);
+                IF (XMLNODEFIND (xmlWarehouseOwner, 'RFOrganizationFeatures'),
+                  Block(
+                    Insert2 ('WO_OGRN', xmlWarehouseOwner.RFOrganizationFeatures.OGRN);
+                    Insert2 ('WO_INN',  xmlWarehouseOwner.RFOrganizationFeatures.INN);
+                    Insert2 ('WO_KPP',  xmlWarehouseOwner.RFOrganizationFeatures.KPP);
+                  )
+                ); // IF
+
+                Insert2 ('WO_ADDRESSLINE', GetAddressLine(xmlWarehouseOwner.Address));
+
+                VAR ('xmlWarehouseLicence', Integer, XMLNODEFIND (xmlWarehouseOwner, 'WarehouseLicense'));
+                IF (xmlWarehouseLicence,
+                  Block(
+                    Insert2 ('WL_CERTIFICATEKIND',   xmlWarehouseLicence.CertificateKind);
+                    Insert2 ('WL_CERTIFICATENUMBER', xmlWarehouseLicence.CertificateNumber);
+                    Insert2 ('WL_CERTIFICATEDATE',   STRTODATE (xmlWarehouseLicence.CertificateDate, 'YYYY-MM-DD', '-'));
+                  )
+                ); // IF
+                VAR ('xmlWarehousePerson', Integer, xmlWarehouseOwner.WarehousePerson);
+                IF (xmlWarehousePerson,
+                  Block(
+                    Insert2 ('WP_PERSONSURNAME',    xmlWarehousePerson.PersonSurname);
+                    Insert2 ('WP_PERSONNAME',       xmlWarehousePerson.PersonName);
+                    Insert2 ('WP_PERSONMIDDLENAME', xmlWarehousePerson.PersonMiddleName);
+                    Insert2 ('WP_PERSONPOST',       xmlWarehousePerson.PersonPost);
+                  )
+                ); // IF
+              )
+            ); // IF
+
+            VAR ('xDO1Report', Integer, xmlMainNode.DO1Report);
+            Insert2 ('DO1_REPORTNUMBER',  xDO1Report.ReportNumber);
+            Insert2 ('DO1_REPORTDATE',    STRTODATE (xDO1Report.ReportDate, 'YYYY-MM-DD', '-'), 2);
+
+            // INSERT CONSIGNEE
+            VAR ('xmlConsignee', Integer, xmlMainNode.Consignee);
+            IF (xmlConsignee,
+              Block(
+                Insert2 ('C_ORGNAME',     xmlConsignee.OrganizationName);
+                Insert2 ('C_OGRN',        xmlConsignee.RFOrganizationFeatures.OGRN);
+                Insert2 ('C_INN',         xmlConsignee.RFOrganizationFeatures.INN);
+                Insert2 ('C_KPP',         xmlConsignee.RFOrganizationFeatures.KPP);
+                Insert2 ('C_ADDRESSLINE', GetAddressLine(xmlConsignee.Address));
+
+                VAR ('xmlIdentityCard', Integer, XMLNODEFIND (xmlConsignee, 'IdentityCard'));
+                IF (xmlIdentityCard,
+                  Block(
+                    Insert2 ('C_IDENTITYCARDCODE',     xmlIdentityCard.IdentityCardCode);
+                    Insert2 ('C_IDENTITYCARDNAME',     xmlIdentityCard.IdentityCardName);
+                    Insert2 ('C_FULLIDENTITYCARDNAME', xmlIdentityCard.FullIdentityCardName);
+                    Insert2 ('C_IDENTITYCARDSERIES',   xmlIdentityCard.IdentityCardSeries);
+                    Insert2 ('C_IDENTITYCARDNUMBER',   xmlIdentityCard.IdentityCardNumber);
+                    VAR ('sIdentityCardDate', String,  xmlIdentityCard.IdentityCardDate);
+                    IF (LENGTH (sIdentityCardDate) > 0,
+                      Block(
+                        Insert2 ('C_IDENTITYCARDDATE', FDT ('DD.MM.YYYY', STRTODATE (sIdentityCardDate, 'YYYY-MM-DD', '-')));
+                      )
+                    ); // IF
+                    Insert2 ('C_IDC_ORGNAME',     xmlIdentityCard.OrganizationName);
+                    Insert2 ('C_IDC_ISSUERCODE',  xmlIdentityCard.IssuerCode);
+                    Insert2 ('C_IDC_AUTHORITYID', xmlIdentityCard.AuthorityId);
+                    Insert2 ('C_IDC_COUNTRYCODE', xmlIdentityCard.CountryCode);
+                  )
+                ); // IF
+              )
+            ); // IF
+
+            Insert2 ('CONTAINER',         GET_CONTAINER_INFO (), 0);
+            Insert2 ('JOURNAL_UUID',      GENERATEUUID());
+            iJMID := GENFIELDVALUE ('JR_WHAI.JOURNAL_MASTER_ID');
+            Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+            Insert2 ('', '', 0, 'JR_WHAI', 'dbJournals'); // Завершает SQL-запрос и выполняет его
+
+            // INSERT DOCUMENT
+            VAR ('iDocumentIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlMainNode, 'Document')));
+            IF (iDocumentIndex > 0,
+              Block(
+                VAR ('iJCID', Integer, 1);
+                VAR ('xmlDocument', Integer, XMLNODECHILD (xmlMainNode, iDocumentIndex));
+                WHILE ((XMLNODENAME (xmlDocument, 1) = 'Document') * (iDocumentIndex < iWhActInspectionResChildCount),
+                  Block(
+                    PrepareInsert2 ();
+                    Insert2 ('JOURNAL_MASTER_ID',         iJMID, 1);
+                    Insert2 ('JOURNAL_CHILD_ID',          iJCID, 1);
+                    Insert2 ('JOURNAL_UUID',              GENERATEUUID ());
+                    Insert2 ('PRDOCUMENTNAME',            xmlDocument.PrDocumentName);
+                    Insert2 ('PRDOCUMENTNUMBER',          xmlDocument.PrDocumentNumber);
+                    IF (XMLNODEFIND (xmlDocument, 'PrDocumentDate'),
+                      Insert2 ('PRDOCUMENTDATE',          STRTODATE (xmlDocument.PrDocumentDate, 'YYYY-MM-DD', '-'));
+                    ); // IF
+                    Insert2 ('PRESENTEDDOCUMENTMODECODE', xmlDocument.PresentedDocumentModeCode);
+                    Insert2 ('', '', 0, 'JR_WHAI_DOCUMENT', 'dbJournals');
+
+                    iDocumentIndex := iDocumentIndex + 1;
+                    iJCID := iJCID + 1;
+                    xmlDocument := XMLNODECHILD (xmlMainNode, iDocumentIndex);
+                  )
+                ); // WHILE
+              )
+            ); // IF
+
+            // INSERT GOOD
+            VAR ('iGoodIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlMainNode, 'Good')));
+            IF (iGoodIndex > 0,
+              Block(
+                VAR ('iJCID', Integer, 1);
+                VAR ('xmlGood', Integer, XMLNODECHILD (xmlMainNode, iGoodIndex));
+
+                WHILE ((XMLNODENAME (xmlGood, 1) = 'Good') * (iGoodIndex < iWhActInspectionResChildCount),
+                  Block(
+                    PrepareInsert2 ();
+                    Insert2 ('JOURNAL_MASTER_ID',   iJMID, 1);
+                    Insert2 ('JOURNAL_CHILD_ID',    iJCID, 1);
+                    Insert2 ('JOURNAL_UUID',        GENERATEUUID ());
+                    Insert2 ('GOODSNUMBER',         xmlGood.GoodsNumber, 1);
+                    Insert2 ('GOODSTNVEDCODE',      xmlGood.GoodsTNVEDCode);
+                    IF (XMLNODEFIND (xmlGood, 'InvoiceCost'),
+                      Block(
+                        Insert2 ('INVOICECOST',     xmlGood.InvoiceCost, 1);
+                      )
+                    ); // IF
+                    Insert2 ('CURRENCYCODE',        xmlGood.CurrencyCode);
+                    Insert2 ('GOODSDESCRIPTION',    GET_GOODS_DESCRIPTION ());
+
+                    VAR ('xmlCargoPlace', Integer, XMLNODEFIND (xmlGood, 'CargoPlace'));
+                    IF (xmlCargoPlace,
+                      Block(
+                        IF (XMLNODEFIND (xmlCargoPlace, 'PlaceNumber'),
+                          Block(
+                            Insert2 ('PLACENUMBER',      xmlCargoPlace.PlaceNumber, 1);
+                          )
+                        ); // IF
+                        Insert2 ('PACKAGECODE',      xmlCargoPlace.PackageCode);
+                        Insert2 ('PLACEDESCRIPTION', xmlCargoPlace.PlaceDescription);
+                      )
+                    ); // IF
+
+                    VAR ('xmlBruttoVolQuant', Integer, XMLNODEFIND (xmlGood, 'BruttoVolQuant'));
+                    IF (xmlBruttoVolQuant,
+                      Block(
+                        Insert2 ('BVQ_GOODSQUANTITY',    xmlBruttoVolQuant.GoodsQuantity, 1);
+                        Insert2 ('BVQ_MEASUREUNITNAME',  xmlBruttoVolQuant.MeasureUnitQualifierName);
+                        Insert2 ('BVQ_MEASUREUNITQCODE', xmlBruttoVolQuant.MeasureUnitQualifierCode);
+                      )
+                    ); // IF
+
+                    VAR ('xmlMeasureQuantity', Integer, XMLNODEFIND (xmlGood, 'MeasureQuantity'));
+                    IF (xmlMeasureQuantity,
+                      Block(
+                        Insert2 ('MQ_GOODSQUANTITY',    xmlMeasureQuantity.GoodsQuantity, 1);
+                        Insert2 ('MQ_MEASUREUNITQNAME', xmlMeasureQuantity.MeasureUnitQualifierName);
+                        Insert2 ('MQ_MEASUREUNITQCODE', xmlMeasureQuantity.MeasureUnitQualifierCode);
+                      )
+                    ); // IF
+
+                    Insert2 ('DOCBRUTTOWEIGHT', xmlGood.DocBruttoWeight, 1);
+
+                    VAR ('xmlBillDocument', Integer, XMLNODEFIND (xmlGood, 'BillDocument'));
+                    IF (xmlBillDocument,
+                      Block(
+                        Insert2 ('BD_PRDOCNAME',     xmlBillDocument.PrDocumentName);
+                        Insert2 ('BD_PRDOCNUMBER',   xmlBillDocument.PrDocumentNumber);
+                        VAR ('sBD_PrDocumentDate', String, xmlBillDocument.PrDocumentDate);
+                        IF (LENGTH (sBD_PrDocumentDate) > 0,
+                          Block(
+                            Insert2 ('BD_PRDOCDATE', STRTODATE (sBD_PrDocumentDate, 'YYYY-MM-DD', '-'));
+                          )
+                        ); // IF
+                        Insert2 ('BD_PRDOCMODECODE', xmlBillDocument.PresentedDocumentModeCode);
+
+                        VAR ('xmlCustomNuber', Integer, XMLNODEFIND (xmlBillDocument, 'CustomNumber'));
+                        IF (xmlCustomNuber,
+                          Block(
+                            Insert2 ('CN_CUSTOMSCODE',      xmlCustomNuber.CustomsCode);
+                            Insert2 ('CN_REGISTRATIONDATE', STRTODATE (xmlCustomNuber.RegistrationDate, 'YYYY-MM-DD', '-'));
+                            Insert2 ('CN_GTDNUMBER',        xmlCustomNuber.GTDNumber);
+                            Insert2 ('CN_WAYBILLNUMPP',     xmlCustomNuber.WaybillNumPP);
+                          )
+                        ); // IF
+                      )
+                    ); // IF
+
+                    VAR ('sGoodsDamageFlag', String, '1');
+                    CASE (xmlGood.GoodsDamageFlag,
+                       [
+                         'true', sGoodsDamageFlag := '1',
+                         'false', sGoodsDamageFlag := '0',
+                         '1', sGoodsDamageFlag := '1',
+                         '0', sGoodsDamageFlag := '0',
+                       ], sGoodsDamageFlag := ''
+                    ); // CASE
+                    Insert2 ('GOODSDAMAGEFLAG', sGoodsDamageFlag);
+
+                    // ПОКА ПЕРВАЯ СТРОКА ОПИСАНИЯ
+                    VAR ('iDamageDescIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGood, 'DamageDesc')));
+                    VAR ('iGoodChildCount', Integer, XMLNODECHILDCOUNT (xmlGood));
+                    IF (iDamageDescIndex > 0,
+                      Block(
+                        VAR ('mDamageDesc', Memo, '');
+                        VAR ('xmlDamageDesc', Integer, XMLNODECHILD (xmlGood, iDamageDescIndex));
+                        WHILE ((XMLNODENAME (xmlDamageDesc, 1) = 'DamageDesc') * (iDamageDescIndex < iGoodChildCount),
+                          Block(
+                            mDamageDesc := mDamageDesc + XMLNODEVALUE (xmlDamageDesc);
+                            iDamageDescIndex := iDamageDescIndex + 1;
+                            xmlDamageDesc := XMLNODECHILD (xmlGood, iDamageDescIndex);
+                          )
+                        ); // WHILE
+                        Insert2 ('DAMAGEDESC', mDamageDesc);
+                      )
+                    ); // IF
+
+                    VAR ('xmlViolationFlag', Integer, XMLNODEFIND (xmlGood, 'GoodsViolationFlag'));
+                    IF (xmlViolationFlag,
+                      Block(
+                        Insert2 ('GOODSVIOLATIONFLAG', XMLNODEVALUE (xmlViolationFlag));
+                      )
+                    ); // IF
+
+                    // ПОКА ПЕРВАЯ СТРОКА ОПИСАНИЯ
+                    VAR ('iGoodsViolationDescIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGood, 'GoodsViolationDesc')));
+                    VAR ('iGoodChildCount', Integer, XMLNODECHILDCOUNT (xmlGood));
+                    IF (iGoodsViolationDescIndex > 0,
+                      Block(
+                        VAR ('mGoodsViolationDesc', Memo, '');
+                        VAR ('xmlGoodsViolationDesc', Integer, XMLNODECHILD (xmlGood, iGoodsViolationDescIndex));
+                        WHILE ((XMLNODENAME (xmlGoodsViolationDesc, 1) = 'GoodsViolationDesc') * (iGoodsViolationDescIndex < iGoodChildCount),
+                          Block(
+                            mGoodsViolationDesc := mGoodsViolationDesc + XMLNODEVALUE (xmlGoodsViolationDesc);
+                            iGoodsViolationDescIndex := iGoodsViolationDescIndex + 1;
+                            xmlGoodsViolationDesc := XMLNODECHILD (xmlGood, iGoodsViolationDescIndex);
+                          )
+                        ); // WHILE
+                        Insert2 ('GOODSVIOLATIONDESC', mGoodsViolationDesc);
+                      )
+                    ); // IF
+
+                    Insert2 ('', '', 0, 'JR_WHAI_GOOD', 'dbJournals');
+
+                    iGoodIndex := iGoodIndex + 1;
+                    iJCID := iJCID + 1;
+                    xmlGood := XMLNODECHILD (xmlMainNode, iGoodIndex);
+                  )
+                ); // WHILE
+              )
+            ); // IF
+
+            // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+            WriteEpsLog (
+                KRD_MAIN_2.PLACEID,
+                KRD_MAIN_2.MAIN_ID,
+                0,
+                KRD_MAIN_2.DOCUMENTID,
+                'ДО-1',
+                KRD_MAIN_2.NBD,
+                KRD_MAIN_2.BD_DATE,
+                sStatus,
+                Date() + Time(1),
+                GENERATEUUID (),
+                sSubStatus,
+                sXmlFileName, // внешняя переменная из скрипта eps.imp
+                iReaded,
+                dtDoDt,
+                0
+            ); // WriteEpsLog
+
+            sSQL := 'UPDATE ' + CORRECTTABLENAME ('KRD_MAIN') +
+                    ' SET' +
+                    ' STATUS_EPS=' +char(39)+ 'Выявлены несоответствия в ходе таможенного досмотра' +char(39)+
+                    ' WHERE' +
+                    ' PLACEID=' + iPlaceId +
+                    ' AND DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+            EXECUTESQL ('STS_DB', sSQL);
+          ),
+          Block(
+            WriteLog(
+                'EPSIMP',
+                '(' + sXmlFileName + '): wh_ai:WHActInspectionRes, не найдена ДО-1 №' + xmlMainNode.DO1Report.ReportNumber + ' от ' + FDT ('DD.MM.YYYY', STRTODATE (xmlMainNode.DO1Report.ReportDate, 'YYYY-MM-DD', '-')) + ' по PLACEID: ' + iPlaceId + '; DOCUMENTID: ' + sDocumentId
+            ); // WriteLog
+            FORCEDIRECTORIES (sDir + 'unknown\');
+            COPYFILE (sXmlFilePath, sDir + 'unknown\' + sXmlFileName);
+          )
+        ); // IF
+      ),
+      Block(
+        WriteLog(
+            'EPSIMP',
+            '(' + sXmlFileName + '): В журнале результатов таможенного досмотра (осмотра) уже есть запись с идентификатором ' + xmlMainNode.DocumentID + ' (' +  iPlaceid + '; ' + sDocumentId + ')'
+        ); // WriteLog
+      )
+    ); // IF
+  ),
+  Block(
+    CLOSEDATASET ('qJRWHAI');
+    IF (LENGTH (EXCEPTIONMESSAGE ()) > 0, RAISEEXCEPTION (EXCEPTIONMESSAGE ()));
+  )
+); // TRYFINALLY

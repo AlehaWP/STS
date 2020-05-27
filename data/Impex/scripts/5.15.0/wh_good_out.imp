@@ -1,0 +1,834 @@
+// *****************************************************************************
+// Название: wh_good_out
+// Описание: wh_good_out
+// Кнопка вызова: 0
+// Подпись кнопки: wh_good_out
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+// CREATELOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\whGoodOut.log', 0);
+
+VAR ('sTemp', String, ''); // мусорная переменная для REGEXMATCH
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('sDocumentId', String, xmlMainNode.DocumentID);
+VAR ('iReaded', Integer, INIFILE ('JR_EPS_LOG', 'WHGoodOut', 0));
+VAR ('sStatus', String, '');
+VAR ('sSubStatus', String, '');
+VAR ('iJMID', Integer, 0);
+VAR ('iJCID', Integer, 0);
+VAR ('iJCID2', Integer, 0);
+VAR ('mDTTransptDocList', Memo, '');
+VAR ('sTransportDocCombined', String, '');
+VAR ('mDTContList', Memo, '');
+
+// текстовые поля и итоговые суммы
+VAR ('mCont', Memo, '');
+VAR ('mDoc', Memo, '');
+VAR ('mGoodsDescr', Memo, '');
+VAR ('mTransp', Memo, '');
+VAR ('fSumInvoiceCost', Float, 0);
+VAR ('iSumPlaceNumber', Integer, 0);
+VAR ('fSumBruttoVolQuantity', Float, 0);
+VAR ('fSumMeasureQuantity', Float, 0);
+VAR ('iContCount', Integer, 0);
+
+FUNC ('GetAddressLine', '',
+  Block(
+    VAR ('xmlAddress', Integer, xmlDeliveryGoods.Consignee.Address);
+    VAR ('sAddress', String, '');
+    IF (XMLNODEFIND (xmlAddress, 'AddressLine'),
+      Block(
+        sAddress := xmlAddress.AddressLine;
+      ),
+      Block(
+        sAddress := xmlAddress.PostalCode;
+        IF (XMLNODEFIND (xmlAddress, 'CounryName'),
+          Block(
+            IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+            sAddress := sAddress + xmlAddress.CounryName;
+          )
+        ); // IF
+        IF (XMLNODEFIND (xmlAddress, 'Region'),
+          Block(
+            IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+            sAddress := sAddress + xmlAddress.Region;
+          )
+        ); // IF
+        IF (XMLNODEFIND (xmlAddress, 'City'),
+          Block(
+            IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+            sAddress := sAddress + xmlAddress.City;
+          )
+        ); // IF
+        IF (XMLNODEFIND (xmlAddress, 'StreetHouse'),
+          Block(
+            IF (LENGTH (sAddress) > 0, sAddress := sAddress + ', ');
+            sAddress := sAddress + xmlAddress.StreetHouse;
+          )
+        ); // IF
+      )
+    ); // IF
+    sAddress
+  )
+); // FUNC - GetAddressLine
+
+
+FUNC ('GetGoodsDescription', '',
+  Block(
+    VAR ('iGoodsDescriptionIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGoodInfo, 'GoodsDescription')));
+    VAR ('sFullGoodDescription', String, '');
+
+    WHILE (XMLNODENAME (XMLNODECHILD (xmlGoodInfo, iGoodsDescriptionIndex), 1) = 'GoodsDescription',
+      Block(
+        sFullGoodDescription := sFullGoodDescription + REMOVECHAR (REPLACECR (XMLNODEVALUE (XMLNODECHILD (xmlGoodInfo, iGoodsDescriptionIndex))), char(39));
+//        sFullGoodDescription := sFullGoodDescription + REPLACESTR (REPLACECR (XMLNODEVALUE (XMLNODECHILD (xmlGoodInfo, iGoodsDescriptionIndex))), char(39), char(39)+char(39));
+        iGoodsDescriptionIndex := iGoodsDescriptionIndex + 1;
+      )
+    );
+    sFullGoodDescription
+  )
+); // FUNC - GetGoodsDescription
+
+
+sSQL := 'SELECT' +
+        ' JOURNAL_MASTER_ID, PRDOCUMENTNUMBER, PRDOCUMENTDATE' +
+        ' FROM' +
+        ' JRGOODOUT2' +
+        ' WHERE' +
+        ' DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+OPENQUERY ('qJRGoodOut', 'dbJournals', sSQL, 1);
+
+IF (FIELDISNULL ('qJRGoodOut', 'JOURNAL_MASTER_ID'),
+  Block(
+    EXECUTESCRIPT ('PROCDOCS\sql_insert.prd');
+
+    VAR ('sTablesList', String, '');
+    VAR ('sJMIDList', string, '');
+    VAR ('iPlaceId', Integer, 0);
+
+    VAR ('xmlSVHLicenceNumber', Integer, xmlMainNode.SVHLicenceNumber);
+    IF (XMLNODEFIND (xmlSVHLicenceNumber, 'PrDocumentNumber'),
+      Block(
+        IF (LOCATE ('STORES_2', 'LICENCENO', [xmlSVHLicenceNumber.PrDocumentNumber]),
+          iPlaceId := STORES_2.PLACEID
+        ); // IF
+      )
+    ); // IF
+
+    VAR ('sIssueDocNumber', String, XMLNODEATTRIBUTE (xmlMainNode, 'issuedocnumber'));
+    VAR ('sIssueDocName', String, XMLNODEATTRIBUTE (xmlMainNode, 'issuedocname'));
+    VAR ('dtIssueDocDate', String, STRTODATE (XMLNODEATTRIBUTE (xmlMainNode, 'issuedocdate'), 'DD.MM.YYYY', '.'));
+    VAR ('sRegisterNumber', String, '');
+
+    IF (XMLNODEFIND (xmlMainNode, 'RegisterNumber'),
+      Block(
+        sRegisterNumber := xmlMainNode.RegisterNumber.CustomsCode + '/' +
+                           FDT ('DDMMYY', STRTODATE (xmlMainNode.RegisterNumber.RegistrationDate, 'YYYY-MM-DD', '-')) + '/' +
+                           xmlMainNode.RegisterNumber.GTDNumber;
+      )
+    ); // IF
+
+    VAR ('sDocKindDescr', String, '');
+    CASE (xmlMainNode.DocumentKind,
+      [
+        'DtRegistration',
+        Block(
+          sDocKindDescr := 'Сведения из зарегистрированной декларации о товарах';
+          sStatus := 'Получены сведения из зарегистрированной декларации о товарах';
+        ),
+        'DtCancelation',
+        BlocK(
+          sDocKindDescr := 'Сведения об отзыве декларации о товарах';
+          sStatus := 'Получены сведения об отзыве декларации о товарах';
+        ),
+        'DtIssueProhibited',
+        Block(
+          sDocKindDescr := 'Сведения об отказе в выпуске товаров по декларации';
+          sStatus := 'Получены сведения об отказе в выпуске товаров по декларации';
+        ),
+        'DtIssueSuspended',
+        Block(
+          sDocKindDescr := 'Сведения о продлении срока выпуска товаров по декларации';
+          sStatus := 'Получены сведения о продлении срока выпуска товаров по декларации';
+        ),
+        'DtGoodsChanged',
+        Block(
+          sDocKindDescr := 'Сведения об изменении характеристик товаров на временном хранении, выявленные при проведении таможенного контроля';
+          sStatus := 'Получены сведения об изменении характеристик товаров на временном хранении, выявленные при проведении таможенного контроля';
+        ),
+        'GoodOutDecision',
+        Block(
+          sDocKindDescr := 'Уведомление о принятии решения о выдаче товаров с СВХ';
+          sStatus := 'Получено уведомление о принятии решения о выдаче товаров с СВХ';
+        )
+      ], ''
+    ); // CASE
+
+    // ЕСЛИ СЛУЧИЛАСЬ ОШИБКА ВСТАВКИ ЗАПИСЕЙ В ПОДТАБЛИЦЫ, ТО ВЫПОЛНЯЕМ КАСКАДНОЕ УДАЛЕНИЕ ВСЕГО УВЕДОМЛЕНИЯ
+    TRYEXCEPT (
+      Block(
+
+        VAR ('sComments', String, xmlMainNode.Comments);
+        VAR ('mComments', Memo, '');
+        IF (XMLNODEFIND (xmlMainNode, 'Comments'),
+          Block(
+            VAR ('iCommentsIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlMainNode, 'Comments')));
+
+            WHILE (XMLNODENAME (XMLNODECHILD (xmlMainNode, iCommentsIndex), 1) = 'Comments',
+              Block(
+                mComments := mComments + REMOVECHAR (REPLACECR (XMLNODEVALUE (XMLNODECHILD (xmlMainNode, iCommentsIndex))), char(39));
+                iCommentsIndex := iCommentsIndex + 1;
+              )
+            ); // WHILE
+          )
+        ); // IF
+        VAR ('i', integer, XmlNodeIndex (xmlMainNode.DeliveryGoods));
+        WHILE (XmlNodeName (XmlNodeChild(xmlMainNode, i), 1) = 'DeliveryGoods',
+          BLOCK(
+            mCont := '';
+            mDoc := '';
+            mGoodsDescr := '';
+            mTransp := '';
+            VAR ('xmlDeliveryGoods', Integer, XmlNodeChild(xmlMainNode, i));
+            PrepareInsert2 ();
+            Insert2 ('DOCUMENTID', sDocumentId);
+            Insert2 ('DOCUMENTKIND', xmlMainNode.DocumentKind);
+            // вставка значений MEMO-полей вынесена в отдельный UPDATE-запрос
+            // Insert2 ('DOCKINDTXT', sDocKindDescr);
+            Insert2 ('REGISTER_NUMBER', sRegisterNumber);
+            Insert2 ('SENDDATE', STRTODATE (xmlMainNode.SendDate, 'YYYY-MM-DD', '-') + COPY (xmlMainNode.SendTime, 1, 8), 2);
+            Insert2 ('SENDTIME', COPY (xmlMainNode.SendTime, 1, 8));
+            IF (XMLNODEFIND (xmlMainNode, 'ReleaseDate'),
+              Insert2 ('RELEASEDATE', STRTODATE (xmlMainNode.ReleaseDate, 'YYYY-MM-DD', '-'), 2)
+            ); // IF
+            Insert2 ('COMMENTS', COPY (sComments, 1, 250));
+            Insert2 ('COMMENTSTEXT', mComments);
+            IF (xmlMainNode.Customs,
+              Block(
+                Insert2 ('CUSTOMSCODE', Trim(xmlMainNode.Customs.Code));
+                Insert2 ('CUSTOMSNAME', Trim(xmlMainNode.Customs.OfficeName));
+              )
+            ); // IF
+            IF (xmlMainNode.CustomsPerson,
+              Block(
+                Insert2 ('CUSTOMSPERSON', xmlMainNode.CustomsPerson.PersonName);
+                Insert2 ('LNP', xmlMainNode.CustomsPerson.LNP);
+              )
+            ); // IF
+            IF (XMLNODEFIND (xmlMainNode, 'TotalPackageNumber'),
+              Insert2 ('SUMPLACENUMBER', xmlMainNode.TotalPackageNumber, 1)
+            ); // IF
+
+            VAR ('xmlProduceDocuments', Integer, xmlMainNode.ProduceDocuments);
+            IF (xmlProduceDocuments,
+              Block(
+                Insert2 ('PRDOCUMENTNAME', xmlProduceDocuments.PrDocumentName);
+                IF (XMLNODEFIND (xmlProduceDocuments, 'PrDocumentNumber'),
+                  Block(
+                    Insert2 ('PRDOCUMENTNUMBER', xmlProduceDocuments.PrDocumentNumber);
+                    Insert2 ('DT1', CUSTOMSNOPART (xmlProduceDocuments.PrDocumentNumber, 1));
+                    Insert2 ('DT2', CUSTOMSNOPART (xmlProduceDocuments.PrDocumentNumber, 2));
+                    Insert2 ('DT3', CUSTOMSNOPART (xmlProduceDocuments.PrDocumentNumber, 3));
+                  )
+                ); // IF
+                IF (XMLNODEFIND (xmlProduceDocuments, 'PrDocumentDate'),
+                  Insert2 ('PRDOCUMENTDATE', STRTODATE (xmlProduceDocuments.PrDocumentDate, 'YYYY-MM-DD', '-'), 2)
+                ); // IF
+              )
+            ); // IF
+
+            // получатель
+            VAR ('xmlConsignee', Integer, xmlDeliveryGoods.Consignee);
+            IF (xmlConsignee,
+              Block(
+                Insert2 ('ORGANIZATIONNAME', xmlConsignee.OrganizationName);
+                Insert2 ('OGRN', xmlConsignee.RFOrganizationFeatures.OGRN);
+                Insert2 ('INN', xmlConsignee.RFOrganizationFeatures.INN);
+                Insert2 ('KPP', xmlConsignee.RFOrganizationFeatures.KPP);
+                Insert2 ('POSTALCODE', xmlConsignee.Address.PostalCode);
+                Insert2 ('COUNTRYCODE', xmlConsignee.Address.CountryCode);
+                Insert2 ('COUNTRYNAME', xmlConsignee.Address.CounryName);
+
+                Insert2 ('ADDRESSLINE', GetAddressLine ());
+
+                VAR ('xIdentityCard', Integer, xmlConsignee.IdentityCard);
+                IF (xIdentityCard,
+                  Block(
+                    Insert2 ('IdentityCardName', xIdentityCard.IdentityCardName);
+                    Insert2 ('IdentityCardSeries', xIdentityCard.IdentityCardSeries);
+                    Insert2 ('IdentityCardNumber', xIdentityCard.IdentityCardNumber);
+                    Insert2 ('IdentityCardDate', STRTODATE (xIdentityCard.IdentityCardDate, 'YYYY-MM-DD', '-'));
+                    Insert2 ('CardOrganizationName', xIdentityCard.OrganizationName);
+                  )
+                ); // IF
+              )
+            ); // IF
+
+            Insert2 ('SVHDOCNAME', xmlSVHLicenceNumber.PrDocumentName);
+            Insert2 ('SVHDOCNUMBER', xmlSVHLicenceNumber.PrDocumentNumber);
+            IF (XMLNODEFIND (xmlSVHLicenceNumber, 'PrDocumentDate'),
+              Insert2 ('SVHDOCDATE', STRTODATE (xmlSVHLicenceNumber.PrDocumentDate, 'YYYY-MM-DD', '-'), 2)
+            ); // IF
+            Insert2 ('SVHDOCMODECODE', xmlSVHLicenceNumber.DocumentModeCode);
+            iJMID := GENFIELDVALUE ('JRGOODOUT2.JOURNAL_MASTER_ID');
+            sJMIDList := sJMIDList + IF (LENGTH(sJMIDList) <> 0, ',') + iJMID;
+            Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+            Insert2 ('CREATED_AT', Date()+Time(1), 2);
+            // выполняем вставку записи
+            Insert2 ('', '', 0, 'JRGOODOUT2');
+            // после успешной вставки добавляем таблицу в список на очистку при ошибке
+            IF (STRPOS ('JRGOODOUT2', sTablesList) = 0, sTablesList := 'JRGOODOUT2');
+
+            // TODO: вынести MEMO-поля в отдельные UPDATE-запросы,
+            // чтобы избежать превышения размера SQL-выражения
+            sSQL := 'UPDATE' +
+                    ' JRGOODOUT2' +
+                    ' SET' +
+                    ' DOCKINDTXT=' +char(39)+ EscapeQuote(sDocKindDescr) +char(39)+
+                    ' WHERE' +
+                    ' JOURNAL_MASTER_ID=' + iJMID;
+            EXECUTESQL ('dbJournals', sSQL);
+            // читаем всегда первый элемент DeliveryGoods (xmlMainNode.DeliveryGoods)
+            // заполняем таблицы TRANSPORT2
+            // и GOODINFO2 (а с ней CONTAINER2, DTCONT2, TRANSPODTDOC2, DTTRANSPDOC2,
+            // GOODSGROUP2 (а с ней GROUPINFO2))
+            VAR ('xmlTransport', Integer, 0);
+            VAR ('iTransportIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlDeliveryGoods, 'Transport')));
+
+            WHILE (XMLNODENAME (XMLNODECHILD (xmlDeliveryGoods, iTransportIndex), 1) = 'Transport',
+              Block(
+                xmlTransport := XMLNODECHILD (xmlDeliveryGoods, iTransportIndex);
+                PrepareInsert2 ();
+                Insert2 ('TRANSPORTMODECODE', xmlTransport.TransportModeCode);
+                Insert2 ('TRANSPORTIDENTIFIER', xmlTransport.TransportIdentifier);
+
+                IF (xmlTransport.Avto,
+                  Block(
+                    Insert2 ('TRAILERIDENTIFIER', xmlTransport.Avto.TrailerIdentifier);
+                    Insert2 ('SECONDTRAILERIDENTIFIER', xmlTransport.Avto.SecondTrailerIdentifier);
+                  ),
+                  IF (xmlTransport.Sea,
+                    Block(
+                      Insert2 ('TRAILERIDENTIFIER', xmlTransport.Sea.EntryNumber);
+                      Insert2 ('COUNTRYCODE', xmlTransport.Sea.CountryCode);
+                    ),
+                    IF (xmlTransport.Avia,
+                      Block(
+                        Insert2 ('TRAILERIDENTIFIER', xmlTransport.Avia.FlightNumber)
+                      ),
+                      IF (xmlTransport.RailRoad,
+                        Block(
+                          Insert2 ('TRAILERIDENTIFIER', xmlTransport.RailRoad.RailStation);
+                        )
+                      ) // IF
+                    ) // IF
+                  ) // IF
+                ); // IF
+
+                Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                iJCID := GENFIELDVALUE ('TRANSPORT2.JOURNAL_CHILD_ID', 'JOURNAL_MASTER_ID', iJMID);
+                Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                Insert2 ('', '', 0, 'TRANSPORT2');
+                // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                IF (STRPOS ('|TRANSPORT2', sTablesList) = 0, sTablesList := sTablesList + '|TRANSPORT2');
+
+                iTransportIndex := iTransportIndex + 1;
+
+                IF (STRPOS (xmlTransport.TransportIdentifier, mTransp) = 0,
+                  IF (mTransp <> '',
+                    mTransp := mTransp + ',' + xmlTransport.TransportIdentifier,
+                    mTransp := mTransp + xmlTransport.TransportIdentifier
+                  )
+                ); // IF
+              )
+            ); // WHILE
+
+            VAR ('iGoodInfoIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlDeliveryGoods, 'GoodInfo')));
+            VAR ('xmlGoodInfo', Integer);
+
+            WHILE (XMLNODENAME (XMLNODECHILD (xmlDeliveryGoods, iGoodInfoIndex), 1) = 'GoodInfo',
+              Block(
+                xmlGoodInfo := XMLNODECHILD (xmlDeliveryGoods, iGoodInfoIndex);
+                PrepareInsert2 ();
+                Insert2 ('GOODSNUMBER', xmlGoodInfo.GoodsNumber);
+                Insert2 ('GOODSTNVEDCODE', xmlGoodInfo.GoodsTNVEDCode);
+                IF (XMLNODEFIND (xmlGoodInfo, 'InvoiceCost'),
+                  Block(
+                    Insert2 ('INVOICECOST', xmlGoodInfo.InvoiceCost, 1);
+                    fSumInvoiceCost := fSumInvoiceCost + xmlGoodInfo.InvoiceCost;
+                  )
+                ); // IF
+                Insert2 ('CURRENCYCODE', xmlGoodInfo.CurrencyCode);
+
+                VAR ('xmlCargoPlace', Integer, xmlGoodInfo.CargoPlace);
+                IF (xmlCargoPlace,
+                  Block(
+                    Insert2 ('PLACENUMBER', xmlCargoPlace.PlaceNumber, 1);
+                    Insert2 ('PACKAGECODE', xmlCargoPlace.PackageCode);
+                    IF (XMLNODEFIND (xmlCargoPlace, 'PlaceDescription'),
+                      Block(
+                        Insert2 ('PLACEDESCRIPTION', REMOVECHAR (xmlCargoPlace.PlaceDescription, char(39)));
+        //                Insert2 ('PLACEDESCRIPTION', REPLACESTR (xmlCargoPlace.PlaceDescription, char(39), char(39)+char(39)));
+                      ),
+                      Block(
+                        // если код упаковки вида указан, то пробуем получить значениеи из справочника
+                        IF (XMLNODEFIND (xmlCargoPlace, 'PackageCode'),
+                          Block(
+                            Insert2 ('PLACEDESCRIPTION', COPY (REFERENCE ('VIDUPAK', 'KOD', xmlCargoPlace.PackageCode, 'NAIM_R'), 1, 40));
+                          )
+                        ); // IF
+                      )
+                    ); // IF
+                  )
+                ); // IF
+
+                VAR ('xmlBruttoVolQuant', Integer, xmlGoodInfo.BruttoVolQuant);
+                IF (xmlBruttoVolQuant,
+                  Block(
+                    IF (XMLNODEFIND (xmlBruttoVolQuant, 'GoodsQuantity'),
+                      Block(
+                        Insert2 ('BruttoVolQuantity', xmlBruttoVolQuant.GoodsQuantity, 1);
+                        fSumBruttoVolQuantity := fSumBruttoVolQuantity + xmlBruttoVolQuant.GoodsQuantity;
+                      )
+                    ); // IF
+                    Insert2 ('BruttoVolName', xmlBruttoVolQuant.MeasureUnitQualifierName);
+                    Insert2 ('BruttoVolCode', xmlBruttoVolQuant.MeasureUnitQualifierCode);
+                  )
+                ); // IF
+
+                VAR ('xmlMeasureQuantity', Integer, xmlGoodInfo.MeasureQuantity);
+                IF (xmlMeasureQuantity,
+                  Block(
+                    IF (XMLNODEFIND (xmlMeasureQuantity, 'GoodsQuantity'),
+                      Block(
+                        Insert2 ('MeasureQuantity', xmlMeasureQuantity.GoodsQuantity, 1);
+                        fSumMeasureQuantity := fSumMeasureQuantity + xmlMeasureQuantity.GoodsQuantity;
+                      )
+                    ); // IF
+                    Insert2 ('MeasureName', xmlMeasureQuantity.MeasureUnitQualifierName);
+                    Insert2 ('MeasureCode', xmlMeasureQuantity.MeasureUnitQualifierCode);
+                  )
+                ); // IF
+
+                IF (XMLNODEFIND (xmlGoodInfo, 'PackagePartQuantity'),
+                  Insert2 ('PACKAGEPARTQUANTITY', xmlGoodInfo.PackagePartQuantity, 1)
+                ); // IF
+
+                Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                iJCID := GENFIELDVALUE ('GOODINFO2.JOURNAL_CHILD_ID', 'JOURNAL_MASTER_ID', iJMID);
+                Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                Insert2 ('', '', 0, 'GOODINFO2');
+                // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                IF (STRPOS ('|GOODINFO2', sTablesList) = 0, sTablesList := sTablesList + '|GOODINFO2');
+
+                // мемо-поля заполгяем отдельным запросом
+                VAR ('sGoodsDescr', String, GetGoodsDescription());
+                sSQL := 'UPDATE' +
+                        ' GOODINFO2' +
+                        ' SET' +
+                        ' GOODSDESCRIPTION=' +char(39)+ EscapeQuote (sGoodsDescr) +char(39)+
+                        ' WHERE' +
+                        ' JOURNAL_MASTER_ID=' + iJMID +
+                        ' AND JOURNAL_CHILD_ID=' + iJCID;
+                EXECUTESQL ('dbJournals', sSQL);
+
+                IF (mGoodsDescr <> '',
+                  mGoodsDescr := mGoodsDescr + '|' + sGoodsDescr,
+                  mGoodsDescr := sGoodsDescr
+                ); // IF
+
+                VAR ('iJCIDDTCont', Integer, 0);
+                VAR ('iContainerIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGoodInfo, 'Container')));
+                VAR ('xmlContainer', Integer, 0);
+                WHILE (XMLNODENAME (XMLNODECHILD (xmlGoodInfo, iContainerIndex), 1) = 'Container',
+                  Block(
+                    xmlContainer := XMLNODECHILD (xmlGoodInfo, iContainerIndex);
+                    // добавляем контейнер к конкретному товару
+                    PrepareInsert2 ();
+                    Insert2 ('CONTAINERNUMBER', xmlContainer.ContainerNumber);
+                    Insert2 ('GROSSWEIGHTQUANTITY', CONVERT (xmlContainer.GrossWeightQuantity, Integer), 1);
+                    Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                    Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                    Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                    iJCID2 := GENFIELDVALUE ('CONTAINER2.JOURNAL_CHILD_ID_2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', [iJMID, iJCID]);
+                    Insert2 ('JOURNAL_CHILD_ID_2', iJCID2, 1);
+                    Insert2 ('', '', 0, 'CONTAINER2');
+                    // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                    IF (STRPOS ('|CONTAINER2', sTablesList) = 0, sTablesList := sTablesList + '|CONTAINER2');
+
+                    // добавляем только если это новый контейнер
+                    IF (REGEXMATCH (mDTContList, TRIM (xmlContainer.ContainerNumber), 1, 'sTemp') = 0,
+                      Block(
+                        mDTContList := mDTContList + '|' + TRIM(xmlContainer.ContainerNumber) + '|';
+                        // добавляем контейнер в общий список по уведомлению
+                        PrepareInsert2 ();
+                        Insert2 ('CONTAINERNUMBER', xmlContainer.ContainerNumber);
+                        Insert2 ('GROSSWEIGHTQUANTITY', CONVERT (xmlContainer.GrossWeightQuantity, Integer), 1);
+                        Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                        Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                        iJCIDDTCont := GENFIELDVALUE ('DTCONT2.JOURNAL_CHILD_ID', 'JOURNAL_MASTER_ID', iJMID);
+                        Insert2 ('JOURNAL_CHILD_ID', iJCIDDTCont, 1);
+                        Insert2 ('', '', 0, 'DTCONT2');
+                        // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                        IF (STRPOS ('|DTCONT2', sTablesList) = 0, sTablesList := sTablesList + '|DTCONT2');
+
+                        iContCount := iContCount + 1;
+                        IF (mCont <> '',
+                          mCont := mCont + ',' + xmlContainer.ContainerNumber,
+                          mCont := xmlContainer.ContainerNumber
+                        ); // IF
+                      )
+                    ); // IF
+
+                    iContainerIndex := iContainerIndex + 1;
+                  )
+                ); // WHILE
+
+                VAR ('iJCIDTranspDoc', Integer, 0);
+                VAR ('xmlTransportDoc', Integer);
+                VAR ('iTransportDocIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGoodInfo, 'TransportDoc')));
+                WHILE (XMLNODENAME (XMLNODECHILD (xmlGoodInfo, iTransportDocIndex), 1) = 'TransportDoc',
+                  Block(
+                    xmlTransportDoc := XMLNODECHILD (xmlGoodInfo, iTransportDocIndex);
+
+                    // добавляем документ к конкретному товару
+                    PrepareInsert2 ();
+                    Insert2 ('PRDOCUMENTNAME', xmlTransportDoc.PrDocumentName);
+                    Insert2 ('PRDOCUMENTNUMBER', xmlTransportDoc.PrDocumentNumber);
+                    IF (XMLNODEFIND (xmlTransportDoc, 'PrDocumentDate'),
+                      Insert2 ('PRDOCUMENTDATE', STRTODATE (xmlTransportDoc.PrDocumentDate, 'YYYY-MM-DD', '-'));
+                    ); // IF
+
+                    Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                    Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                    Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                    iJCID2 := GENFIELDVALUE ('TRANSPORTDOC2.JOURNAL_CHILD_ID_2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', [iJMID, iJCID]);
+                    Insert2 ('JOURNAL_CHILD_ID_2', iJCID2, 1);
+                    Insert2 ('', '', 0, 'TRANSPORTDOC2');
+                    // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                    IF (STRPOS ('|TRANSPORTDOC2', sTablesList) = 0, sTablesList := sTablesList + '|TRANSPORTDOC2');
+
+                    // формируем запись о документе
+                    sTransportDocCombined := TRIM ( REMOVECHAR( REMOVECHAR( REMOVECHAR (xmlTransportDoc.PrDocumentName, '\') ,'(') ,')') ) +
+                                             TRIM ( REMOVECHAR( REMOVECHAR( REMOVECHAR (xmlTransportDoc.PrDocumentNumber, '\') ,'(') ,')') ) +
+                                             FDT('DDMMYYYY', STRTODATE (xmlTransportDoc.PrDocumentDate, 'YYYY-MM-DD', '-'));
+                    // добавляем запись только если это новый документ
+                    IF (REGEXMATCH (mDTTransptDocList, sTransportDocCombined, 1, 'sTemp') = 0,
+                      Block(
+                        // если документ новый, фиксируем его в списке
+                        mDTTransptDocList := mDTTransptDocList + '|' + sTransportDocCombined + '|';
+                        // добавляем документ в общий список по уведомлению DTTRANSPDOC2
+                        PrepareInsert2 ();
+                        Insert2 ('PRDOCUMENTNAME', xmlTransportDoc.PrDocumentName);
+                        Insert2 ('PRDOCUMENTNUMBER', xmlTransportDoc.PrDocumentNumber);
+                        // удаляем из номера все символы кроме цифр
+                        Insert2 ('ONLYNUMBER', REGEXREPLACE (xmlTransportDoc.PrDocumentNumber, '(\D)', '', 1));
+                        IF (XMLNODEFIND (xmlTransportDoc, 'PrDocumentDate'),
+                          Insert2 ('PRDOCUMENTDATE', STRTODATE (xmlTransportDoc.PrDocumentDate, 'YYYY-MM-DD', '-'));
+                        ); // IF
+
+                        Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                        Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                        iJCIDTranspDoc := GENFIELDVALUE ('DTTRANSPDOC2.JOURNAL_CHILD_ID', 'JOURNAL_MASTER_ID', iJMID);
+                        Insert2 ('JOURNAL_CHILD_ID', iJCIDTranspDoc, 1);
+                        Insert2 ('', '', 0, 'DTTRANSPDOC2');
+                        // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                        IF (STRPOS ('|DTTRANSPDOC2', sTablesList) = 0, sTablesList := sTablesList + '|DTTRANSPDOC2');
+
+                        IF (mDoc <> '',
+                          mDoc := mDoc + ',' + xmlTransportDoc.PrDocumentNumber,
+                          mDoc := xmlTransportDoc.PrDocumentNumber
+                        ); // IF
+                      )
+                    ); // IF
+
+                    iTransportDocIndex := iTransportDocIndex + 1;
+                  )
+                ); // WHILE
+
+                // по умолчанию не загружаем данные о группах товаров
+                IF (INIFILE ('JRGOODOUT', 'IgnoreGoodsGroup', 1) = 0,
+                  Block(
+                    VAR ('iGoodsGroupDescriptionIndex', Integer, XMLNODEINDEX (XMLNODEFIND (xmlGoodInfo, 'GoodsGroupDescription')));
+                    VAR ('xmlGoodsGroupDescription', Integer, 0);
+                    VAR ('iJCID2GoodsGroup', Integer, 0);
+                    WHILE (XMLNODENAME (XMLNODECHILD (xmlGoodInfo, iGoodsGroupDescriptionIndex), 1) = 'GoodsGroupDescription',
+                      Block(
+                        xmlGoodsGroupDescription := XMLNODECHILD (xmlGoodInfo, iGoodsGroupDescriptionIndex);
+
+                        // формируем полное описание товара
+                        iGoodsDescriptionIndex := XMLNODEINDEX (XMLNODEFIND (xmlGoodsGroupDescription, 'GoodsDescription'));
+                        VAR ('sGoodsDescription', String, '');
+                        WHILE (XMLNODENAME (XMLNODECHILD (xmlGoodsGroupDescription, iGoodsDescriptionIndex), 1) = 'GoodsDescription',
+                          Block(
+                            sGoodsDescription := sGoodsDescription + XMLNODEVALUE (XMLNODECHILD (xmlGoodsGroupDescription, iGoodsDescriptionIndex));
+                            iGoodsDescriptionIndex := iGoodsDescriptionIndex + 1;
+                          )
+                        ); // WHILE
+                        sGoodsDescription := REMOVECHAR (REPLACECR (sGoodsDescription), char(39));
+        //                sGoodsDescription := REPLACESTR (REPLACECR (sGoodsDescription), char(39), char(39)+char(39));
+
+                        PrepareInsert2 ();
+                        Insert2 ('GOODSDESCRIPTION', sGoodsDescription);
+                        Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                        Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                        Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                        iJCID2GoodsGroup := GENFIELDVALUE ('GOODSGROUP2.JOURNAL_CHILD_ID_2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', [iJMID, iJCID]);
+                        Insert2 ('JOURNAL_CHILD_ID_2', iJCID2GoodsGroup, 1);
+                        Insert2 ('', '', 0, 'GOODSGROUP2');
+                        // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                        IF (STRPOS ('|GOODSGROUP2', sTablesList) = 0, sTablesList := sTablesList + '|GOODSGROUP2');
+
+                        //TODO: заполняем таблицы GROUPINFO2, DTGROUPINFO2
+                        VAR ('iJCID3GroupInfo', Integer, 0);
+                        VAR ('iGoodsGroupInformationIndex', Integer, 0);
+                        VAR ('xmlGoodsGroupInformation', Integer, 0);
+                        iGoodsGroupInformationIndex := XMLNODEINDEX (XMLNODEFIND (xmlGoodsGroupDescription, 'GoodsGroupInformation'));
+                        WHILE (XMLNODENAME (XMLNODECHILD (xmlGoodsGroupDescription, iGoodsGroupInformationIndex), 1) = 'GoodsGroupInformation',
+                          Block(
+                            xmlGoodsGroupInformation := XMLNODECHILD (xmlGoodsGroupDescription, iGoodsGroupInformationIndex);
+
+                            PrepareInsert2 ();
+                            Insert2 ('MANUFACTURER', xmlGoodsGroupInformation.Manufacturer);
+                            Insert2 ('TRADEMARK', xmlGoodsGroupInformation.TradeMark);
+                            Insert2 ('GOODSMARK', xmlGoodsGroupInformation.GoodsMark);
+                            Insert2 ('GOODSMODEL', xmlGoodsGroupInformation.GoodsModel);
+                            Insert2 ('GOODSMARKING', xmlGoodsGroupInformation.GoodsMarking);
+                            Insert2 ('GOODSSTANDARD', xmlGoodsGroupInformation.GoodsStandard);
+                            Insert2 ('GOODSSORT', xmlGoodsGroupInformation.GoodsSort);
+                            Insert2 ('DIMENSIONS', xmlGoodsGroupInformation.Dimensions);
+                            Insert2 ('SERIALNUMBER', xmlGoodsGroupInformation.SerialNumber);
+
+                            VAR ('xmlGoodsGroupQuantity', Integer, xmlGoodsGroupInformation.GoodsGroupQuantity);
+                            IF (xmlGoodsGroupQuantity,
+                              Block(
+                                Insert2 ('GOODSQUANTITY', CONVERT (xmlGoodsGroupQuantity.GoodsQuantity, Integer), 1);
+                                Insert2 ('UNITNAME', xmlGoodsGroupQuantity.MeasureUnitQualifierName);
+                                Insert2 ('UNITCODE', xmlGoodsGroupQuantity.MeasureUnitQualifierCode);
+                              )
+                            ); // IF
+
+                            Insert2 ('JOURNAL_UUID', GENERATEUUID ());
+                            Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                            Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                            Insert2 ('JOURNAL_CHILD_ID_2', iJCID2GoodsGroup, 1);
+                            iJCID3GroupInfo := GENFIELDVALUE ('GROUPINFO2.JOURNAL_CHILD_ID_3', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID;JOURNAL_CHILD_ID_2', [iJMID, iJCID, iJCID2GoodsGroup]);
+                            Insert2 ('JOURNAL_CHILD_ID_3', iJCID3GroupInfo, 1);
+                            Insert2 ('', '', 0, 'GROUPINFO2');
+                            // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                            IF (STRPOS ('|GROUPINFO2', sTablesList) = 0, sTablesList := sTablesList + '|GROUPINFO2');
+
+                            // пополняем список артикулов ДТ (DTGROUPINFO2)
+                            PrepareInsert2 ();
+                            Insert2 ('MANUFACTURER', xmlGoodsGroupInformation.Manufacturer);
+                            Insert2 ('TRADEMARK', xmlGoodsGroupInformation.TradeMark);
+                            Insert2 ('GOODSMARK', xmlGoodsGroupInformation.GoodsMark);
+                            Insert2 ('GOODSMODEL', xmlGoodsGroupInformation.GoodsModel);
+                            Insert2 ('GOODSMARKING', xmlGoodsGroupInformation.GoodsMarking);
+                            Insert2 ('GOODSSTANDARD', xmlGoodsGroupInformation.GoodsStandard);
+                            Insert2 ('GOODSSORT', xmlGoodsGroupInformation.GoodsSort);
+                            Insert2 ('DIMENSIONS', xmlGoodsGroupInformation.Dimensions);
+                            Insert2 ('SERIALNUMBER', xmlGoodsGroupInformation.SerialNumber);
+
+                            VAR ('xmlGoodsGroupQuantity', Integer, xmlGoodsGroupInformation.GoodsGroupQuantity);
+                            IF (xmlGoodsGroupQuantity,
+                              Block(
+                                Insert2 ('GOODSQUANTITY', CONVERT (xmlGoodsGroupQuantity.GoodsQuantity, Integer), 1);
+                                Insert2 ('UNITNAME', xmlGoodsGroupQuantity.MeasureUnitQualifierName);
+                                Insert2 ('UNITCODE', xmlGoodsGroupQuantity.MeasureUnitQualifierCode);
+                              )
+                            ); // IF
+
+                            VAR ('iJCIDDTGroupInfo', Integer, 0);
+                            Insert2 ('G32', xmlGoodInfo.GoodsNumber);
+                            Insert2 ('G32G', iJCIDDTGroupInfo);
+                            Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                            iJCIDDTGroupInfo := GENFIELDVALUE ('DTGROUPINFO2.JOURNAL_CHILD_ID', 'JOURNAL_MASTER_ID', iJMID);
+                            Insert2 ('JOURNAL_CHILD_ID', iJCIDDTGroupInfo, 1);
+                            Insert2 ('', '', 0, 'DTGROUPINFO2');
+                            // после успешной вставки добавляем таблицу в список на очистку при ошибке
+                            IF (STRPOS ('|DTGROUPINFO2', sTablesList) = 0, sTablesList := sTablesList + '|DTGROUPINFO2');
+
+                            iGoodsGroupInformationIndex := iGoodsGroupInformationIndex + 1;
+                          )
+                        ); // WHILE
+
+                        iGoodsGroupDescriptionIndex := iGoodsGroupDescriptionIndex + 1;
+                      )
+                    ); // WHILE
+
+                  )
+                ); // IF
+
+                iGoodInfoIndex := iGoodInfoIndex + 1;
+              )
+            ); // WHILE
+
+            VAR ('iMaxLen', Integer, 30000);
+            IF (LENGTH (mGoodsDescr) > iMaxLen, mGoodsDescr := COPY (mGoodsDescr, 1, iMaxLen));
+            sSQL := 'UPDATE' +
+                    ' JRGOODOUT2' +
+                    ' SET' +
+                    ' SUMINVOICECOST=' + FLOATROUND (fSumInvoiceCost, 2) +
+                    ', SUMBRUTTOVOLQUANTITY=' + FLOATROUND (fSumBruttoVolQuantity, 6) +
+                    ', KOLKONT=' + iContCount +
+                    ', SUMMEASUREQUANTITY=' + FLOATROUND (fSumMeasureQuantity, 6) +
+                    ', TXT_CONT=' +char(39)+ EscapeQuote (mCont) +char(39)+
+                    ', TXT_TDOC=' +char(39)+ EscapeQuote (mDoc) + char(39)+
+                    ', TXT_G312=' +char(39)+ EscapeQuote (mGoodsDescr) + char(39)+
+                    ', TXT_TRAN=' +char(39)+ EscapeQuote (mTransp) +char(39)+
+                    ' WHERE JOURNAL_MASTER_ID=' + iJMID;
+            EXECUTESQL ('dbJournals', sSQL);
+
+            i := i + 1;
+          )
+        );
+
+      ),
+      Block(
+        // ЕСЛИ В СПИСКЕ ТАБЛИЦ ЕСТЬ ЗАПИСИ И БЫЛ СГЕНЕРИРОВАН JOURNAL_MASTER_ID
+        EXECUTESCRIPT ('PROCDOCS\utils\cascade_delete.prd');
+        IF ((LENGTH (sTablesList) > 0) * (LENGTH (sJMIDList) > 0),
+          CascadeDelete (sTablesList, 'JOURNAL_MASTER_ID in (' + sJMIDList + ')', 'dbJournals')
+        ); // IF
+
+        // ЕСЛИ ДО ПАДЕНИЯ МЫ УСПЕЛИ ПРОЧИТАТЬ ДАННЫЕ УВЕДОМЛЕНИЯ, ТО ПИШЕМ ОШИБКУ В ЖУРНАЛ РЕГИСТРАЦИИ СООБЩЕНИЙ
+        IF (LENGTH (sIssueDocNumber) > 0,
+          Block(
+            IF (XMLNODEFIND (xmlSVHLicenceNumber, 'PrDocumentNumber'),
+              Block(
+                IF (LOCATE ('STORES_2', 'LICENCENO', [xmlSVHLicenceNumber.PrDocumentNumber]),
+                  iPlaceId := STORES_2.PLACEID
+                ); // IF
+              )
+            ); // IF
+            sSubStatus := 'Уведомление рег. №' + sRegisterNumber;
+            WriteEpsLog (
+                iPlaceId,
+                0,
+                0,
+                sDocumentId,
+                IF (LENGTH(sIssueDocName) > 0, sIssueDocName, 'ДТ'),
+                sIssueDocNumber,
+                FDT ('DD.MM.YYYY', dtIssueDocDate),
+                'Ошибка обработки Уведомления',
+                Date() + Time(1),
+                GENERATEUUID (),
+                'Описание ошибки в логе ("Лог ЭПС" \ меню "Сервис \ Просмотр логов \ Лог ошибок импорта сообщений")',
+                sXmlFileName,
+                0,
+                dtDoDt,
+                0
+            ); // WriteEpsLog
+          )
+        ); // IF
+
+        // ПРОКИДЫВАЕМ ОШИБКУ ДАЛЬШЕ, ЧТОБЫ ОНА БЫЛА ЗАФИКСИРОВАНА В ЛОГЕ
+        RAISEEXCEPTION (EXCEPTIONMESSAGE ());
+      )
+    ); // TRYEXCEPT
+
+    sSubStatus := 'Уведомление рег. №' + sRegisterNumber;
+
+    WriteEpsLog (
+        iPlaceId,
+        0,
+        0,
+        sDocumentId,
+        IF (LENGTH(sIssueDocName) > 0, sIssueDocName, 'ДТ'),
+        sIssueDocNumber,
+        FDT ('DD.MM.YYYY', dtIssueDocDate),
+        sStatus,
+        Date() + Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName,
+        iReaded,
+        dtDoDt,
+        0
+    ); // WriteEpsLog
+
+    //TODO: если тип Уведомления - GoodOutDecision, то проверяем mComments на наличие рег. номера ДО-1
+    IF (xmlMainNode.DocumentKind = 'GoodOutDecision',
+      Block(
+        VAR ('sRegNbd', String, '');
+        VAR ('reDO1RegNumber', Integer, REGEXPRCREATE ('ДО-1 Рег.№ (\d{8}\/\d{6}\/\d{7})\s', 1));
+        VAR ('iMatchCount', Integer, REGEXPRMATCHES (reDO1RegNumber, mComments));
+        VAR ('iMatch', Integer, 0);
+        VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+        VAR ('sStatus', String, 'Установлена связь с уведомлением рег. №' + sRegisterNumber);
+        VAR ('sSubStatus', String, sIssueDocName + ' №' + sIssueDocNumber + ' от ' + FDT ('DD.MM.YYYY', dtIssueDocDate));
+        VAR ('iReaded', Integer, INIFILE ('JR_EPS_LOG', 'WHGoodOutMatch', 1));
+
+        WHILE (iMatch < iMatchCount,
+          Block(
+
+            IF (REGEXPRMATCH (reDO1RegNumber, iMatch, 'sRegNbd'),
+              Block(
+
+                sSQL := 'SELECT' +
+                        ' PLACEID, MAIN_ID, NBD, BD_DATE, DOCUMENTID' +
+                        ' FROM KRD_MAIN' +
+                        ' WHERE' +
+                        ' REG_NBD=' +char(39)+ sRegNbd +char(39);
+                OPENQUERY ('qDO1Match', 'STS_DB', sSQL, 1);
+
+                IF (FIELDISNULL ('qDO1Match', 'PLACEID') = 0,
+                  Block(
+                    //TODO: добаляем запись в EpsLog
+                    // нужно ли обновлять текст статуса ЭПС?
+                    WriteEpsLog (
+                        qDO1Match.PLACEID,
+                        qDO1Match.MAIN_ID,
+                        0,
+                        qDO1Match.DOCUMENTID,
+                        'ДО-1',
+                        qDO1Match.NBD,
+                        qDO1Match.BD_DATE,
+                        sStatus,
+                        Date() + Time(1),
+                        GENERATEUUID (),
+                        sSubStatus,
+                        sXmlFileName,
+                        iReaded,
+                        dtDoDt,
+                        0
+                    ); // WriteEpsLog
+
+                    sSQL := 'UPDATE' +
+                            ' KRD_MAIN' +
+                            ' SET' +
+                            ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+                            ' WHERE' +
+                            ' PLACEID=' + qDO1Match.PLACEID +
+                            ' AND MAIN_ID=' + qDO1Match.MAIN_ID;
+                    EXECUTESQL ('STS_DB', sSQL);
+                  )
+                );
+                CLOSEDATASET ('qDO1Match');
+
+              )
+            ); // IF
+            iMatch := iMatch + 1;
+          )
+        ); // WHILE
+      )
+    ); // IF
+  ),
+  Block(
+    // WriteLog - внешняя функция, подключена в скрипте eps.imp
+    WriteLog(
+        'EPSIMP',
+        '(' + sXmlFileName + '): В журнале уже есть уведомление ' + qJRGoodOut.PRDOCUMENTNUMBER
+    ) // WriteLog
+  )
+); // IF
+CLOSEDATASET ('qJRGoodOut');
+
+// SHOWLOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\whGoodOut.log');

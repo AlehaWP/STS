@@ -1,0 +1,138 @@
+// *****************************************************************************
+// Название: WHGoodsDeadline
+// Описание: WHGoodsDeadline
+// Кнопка вызова: 1
+// Подпись кнопки: WHGoodsDeadline
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('XmlDoc', Integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('whid', String);
+VAR ('do1id', String);
+VAR ('iCounter', Integer);
+
+
+IF (XMLNODENAME (XMLNODECHILD (XmlRoot, 0)) = 'WHGoodsDeadline',
+  Block(
+    CASE (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'WHSign')),
+         ['1', Block(
+               // уведомление об истечении сроков временного хранения товаров
+
+               APPENDLOGFILE (sLogFile, 'ПОЛУЧЕНО УВЕДОМЛЕНИЕ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+               VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+               VAR ('vID', String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+               APPENDLOGFILE (sLogFile, 'PLACEID = ' + vPlaceID + ', ID = ' + vID);
+
+               IF ((vPlaceID <> '') * (vID <> ''),
+                 Block(
+                   OPENQUERY ('qryDO1', 'STS_DB', 'SELECT NBD FROM KRD_MAIN WHERE PLACEID='+vPlaceID+' AND ID='+vID);
+                   IF (RECORDCOUNT ('qryDO1') > 0,
+                     Block(
+                       FORMCREATE (frmWHGD, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\GoodsDeadline.cfm');
+
+                       FORMSETPROPERTY (frmWHGD, 'Caption', 'Уведомление № ' +XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'DocumentNumber'))+ ' от ' +FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'DocumentDate')))+ ' об истечении сроков временного хранения товаров');
+                       FORMSETPROPERTY (frmWHGD, 'rtDO1.Text', qryDO1.NBD);
+                       FORMSETPROPERTY (frmWHGD, 'rtPlacementDate.Text', FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'PlacementDate'))));
+                       FORMSETPROPERTY (frmWHGD, 'rtEndDate.Text',       FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'EndDate'))));
+                       FORMSETPROPERTY (frmWHGD, 'rtCode.Text',          XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'Customs'), 'cat_ru:Code')));
+                       FORMSETPROPERTY (frmWHGD, 'rtPersonSurname.Text', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'CustomInspector'), 'cat_ru:PersonSurname')));
+                       FORMSETPROPERTY (frmWHGD, 'rtPersonName.Text',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'CustomInspector'), 'cat_ru:PersonName')));
+                       FORMSETPROPERTY (frmWHGD, 'rtLNP.Text',           XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlDoc, 'CustomInspector'), 'catWH_ru:LNP')));
+
+                       FORMSHOWMODAL (frmWHGD);
+                     )
+                   ); // IF - //
+                   
+                 )
+               ); // IF - //
+
+             ),
+          '2', Block(
+               // акт об истечении сроков временного хранения товаров
+               APPENDLOGFILE (sLogFile, 'ПОЛУЧЕН АКТ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+             )],
+    ); // CASE - //
+  ),
+  Block(
+    CASE (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:WHSign')),
+         [1, Block(
+               // уведомление об истечении сроков временного хранения товаров
+               // APPENDLOGFILE (sLogFile, 'ПОЛУЧЕНО УВЕДОМЛЕНИЕ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+               whid := XMLNODEATTRIBUTE (XmlDoc, 'whid');
+               do1id := XMLNODEATTRIBUTE (XmlDoc, 'do1id');
+               OPENQUERY ('qryMax', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_PROL WhERE PLACEID=' + whid + ' AND ID=' + do1id);
+               iCounter := qryMax.MC + 1;
+
+               VAR ('XmlCustomInspector', Integer, XMLNODEFIND (XmlDoc, 'whgd:CustomInspector'));
+               VAR ('sAuthor', String, '');
+               sAuthor := XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonSurname'));
+               IF (sAuthor <> '', sAuthor := sAuthor + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonName')));
+               IF (sAuthor <> '', sAuthor := sAuthor + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonMiddleName')));
+
+               APPENDRECORD ('KRD_PROL_2');
+               EDIT ('KRD_PROL_2');
+               SETFIELDVALUE ('KRD_PROL_2',
+                              'PLACEID', whid,
+                              'ID', do1id,
+                              'COUNTER',         iCounter,
+                              'DOC_TYPE',        'УВИСВХ',
+                              'DOC_NO',          XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:DocumentNumber')),
+                              'DOC_DATE',        FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:DocumentDate')), 'YYYY-MM-DD', '-')),
+                              'DOC_STARTDATE',   FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:PlacementDate')), 'YYYY-MM-DD', '-')),
+                              'STORAGE_DATE',    FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:EndDate')), 'YYYY-MM-DD', '-')),
+                              'DOC_ARTICLE_NO',  '',
+                              'INSPECTOR_LNP',   XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'catWH_ru:LNP')),
+                              'DOC_REASON',      '',
+// DOC_AUTHOR и DOC_AUTHOR_POST не видны из SETFIELDVALUE ()
+//                              'DOC_AUTHOR',      char(39) + sAuthor + char(39),
+//                              'DOC_AUTHOR_POST', XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonPost')),
+               ); // SETFIELDVALUE  //
+               POST ('KRD_PROL_2');
+               EXECUTESQL ('STS_DB', 'UPDATE KRD_PROL SET DOC_AUTHOR=' +char(39)+ sAuthor +char(39)+ ', DOC_AUTHOR_POST=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonPost')) +char(39)+ ' WHERE PLACEID=' + whid + ' AND ID=' + do1id + ' AND COUNTER=' + iCounter);
+
+			         // выводим сообщение, либо как-то иначе визуализируем уведомление об истечении сроков ВХ.
+             ),
+          2, Block(
+               // акт об истечении сроков временного хранения товаров
+               //APPENDLOGFILE (sLogFile, 'ПОЛУЧЕН АКТ ОБ ИСТЕЧЕНИИ СРОКОВ ВРЕМЕННОГО ХРАНЕНИЯ ТОВАРОВ');
+               
+               whid := XMLNODEATTRIBUTE (XmlDoc, 'whid');
+               do1id := XMLNODEATTRIBUTE (XmlDoc, 'do1id');
+               OPENQUERY ('qryMax', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_PROL WhERE PLACEID=' + whid + ' AND ID=' + do1id);
+               iCounter := qryMax.MC + 1;
+
+               VAR ('XmlCustomInspector', Integer, XMLNODEFIND (XmlDoc, 'whgd:CustomInspector'));
+               VAR ('sAuthor', String, '');
+               sAuthor := XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonSurname'));
+               IF (sAuthor <> '', sAuthor := sAuthor + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonName')));
+               IF (sAuthor <> '', sAuthor := sAuthor + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonMiddleName')));
+
+               APPENDRECORD ('KRD_PROL_2');
+               EDIT ('KRD_PROL_2');
+               SETFIELDVALUE ('KRD_PROL_2',
+                              'PLACEID', whid,
+                              'ID', do1id,
+                              'COUNTER', iCounter,
+                              'DOC_TYPE',        'АИСВХ',
+                              'DOC_NO',          XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:DocumentNumber')),
+                              'DOC_DATE',        FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:DocumentDate')), 'YYYY-MM-DD', '-')),
+                              'DOC_STARTDATE',   FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:PlacementDate')), 'YYYY-MM-DD', '-')),
+                              'STORAGE_DATE',    FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'whgd:EndDate')), 'YYYY-MM-DD', '-')),
+                              'DOC_ARTICLE_NO',  '',
+                              'INSPECTOR_LNP',   XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'catWH_ru:LNP')),
+                              'DOC_REASON',      '',
+// DOC_AUTHOR и DOC_AUTHOR_POST не видны из SETFIELDVALUE ()
+//                              'DOC_AUTHOR',      char(39) + sAuthor + char(39),
+//                              'DOC_AUTHOR_POST', XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonPost')),
+               ); // SETFIELDVALUE - //
+               POST ('KRD_PROL_2');
+               EXECUTESQL ('STS_DB', 'UPDATE KRD_PROL SET DOC_AUTHOR=' +char(39)+ sAuthor +char(39)+ ', DOC_AUTHOR_POST=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomInspector, 'cat_ru:PersonPost')) +char(39)+ ' WHERE PLACEID=' + whid + ' AND ID=' + do1id + ' AND COUNTER=' + iCounter);
+
+             )],
+    ); // CASE - //
+  )
+); // IF - //
+
+
+

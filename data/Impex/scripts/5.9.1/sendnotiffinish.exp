@@ -1,0 +1,214 @@
+// *****************************************************************************
+// Название: Создать решение по требованию
+// Описание: Создать решение по требованию
+// Кнопка вызова: 0
+// Подпись кнопки: Создать решение по требованию
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'proc.ini');
+VAR ('sIniSection', String, 'sendNotifFinish.exp');
+VAR ('sXmlDocEncoding', String, TRIM (INIFILE (sIniSection, 'XmlEncoding', 'UTF-8', sIniFile)));
+
+VAR ('sDocumentID', String, UPPERSTR(JRREQOPER.DocumentID));
+
+
+
+//Ищем ДО1
+VAR ('mSQL', Memo, '');
+VAR('vDocID', string);
+mSQL := 'SELECT * FROM KRD_MAIN WHERE PLACEID=' + JRREQOPER.PLACEID +  ' AND ID=' + JRREQOPER.ID;
+OPENQUERY ('qDO1', 'STS_DB', mSQL);
+IF (RecordCount ('qDO1', 1) > 0,  vDocID := qDO1.DOCUMENTID);
+//--------
+
+//Записываем в темп для проверки на валидность
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
+IF (DIRECTORYEXISTS (sDir) = 0, FORCEDIRECTORIES (sDir));
+
+VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'NotifFinishRejectOperations_'+JRREQOPER.PLACEID+'_'+vDocID+'.xml');
+
+FUNC ('SaveXML', ,
+  Block(
+    XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
+  )
+),
+//--------------------------------------------
+
+
+FUNC ('CreateXML', ,
+  Block(
+    VAR ('XMLDoc', Integer, XMLDocumentCreate());
+    XMLDOCUMENTENCODING (XMLDoc, sXmlDocEncoding);
+    VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+    VAR ('XMLNfRejOper', Integer, XMLNodeAddChild(XMLDocRoot, 'nfro:NotifFinishRejectOperations'));
+
+//АТТРИБУТЫ ДОБАВЛЕНЫ, ЧТОБЫ XML-ФАЙЛ ОТКРЫВАЛСЯ В IE И КПС (НАЧАЛО)
+    XmlNodeSetAttribute (XMLNfRejOper, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.8.0');
+    XmlNodeSetAttribute (XMLNfRejOper, 'xmlns:nfro', 'urn:customs.ru:Information:CustomsDocuments:NotifFinishRejectOperations:5.8.0');
+//АТТРИБУТЫ ДОБАВЛЕНЫ, ЧТОБЫ XML-ФАЙЛ ОТКРЫВАЛСЯ В IE И КПС (КОНЕЦ)
+
+    XmlNodeSetAttribute (XMLNfRejOper, 'xsi:schemaLocation', 'urn:customs.ru:Information:CustomsDocuments:NotifFinishRejectOperations:5.8.0 NotifFinishRejectOperations.xsd');
+    XmlNodeSetAttribute (XMLNfRejOper, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+    XmlNodeSetAttribute (XMLNfRejOper, 'DocumentModeID', '1006176E');
+    //XmlNodeSetAttribute (XMLDO3Report, 'cat_ru:RefDocumentID', JRDO3.RefDocumentId);
+    XMLNODESETVALUES (XMLNfRejOper, '',
+				    'cat_ru:DocumentID', GENERATEUUID_2 (),
+				    'cat_ru:RefDocumentID', JRREQOPER.DocumentId
+    ); // XMLNODESETVALUES - //
+
+  )
+), // FUNC - CreateXML() //
+
+
+CreateXML();
+
+
+//-------------------------------------------Заносим данные-------------------------------------------------------------------------------------------------------------
+XMLNODESETVALUES (XMLNfRejOper, '',
+      				    'nfro:DocumentSign', IF(JRREQOPER.DocFinishSign='Выполнено', 'true', false)
+);
+
+VAR('iOperationDescription', integer);
+
+//Транспортировка
+IF ((JRREQOPER.TranspValue='1')*(JRREQOPER.TranspFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 1);
+     )
+);
+
+//Взвешивание
+IF ((JRREQOPER.WeighValue='1')*(JRREQOPER.WeighFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 2);
+     )
+);
+
+//Иное определение кол-ва
+IF ((JRREQOPER.DiffValue='1')*(JRREQOPER.DiffFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 3);
+     )
+);
+
+//Погрузка
+IF ((JRREQOPER.LoadValue='1')*(JRREQOPER.LoadFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 4);
+     )
+);
+
+//Выгрузка
+IF ((JRREQOPER.UnloadValue='1')*(JRREQOPER.UnloadFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 5);
+     )
+);
+
+//Перегрузка
+IF ((JRREQOPER.OverloadValue='1')*(JRREQOPER.OverloadFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 6);
+     )
+);
+
+//Исправление поврежденной упаковки
+IF ((JRREQOPER.CorrPackValue='1')*(JRREQOPER.CorrPackFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 7);
+     )
+);
+
+//Вскрытие упаковки
+IF ((JRREQOPER.UnPackValue='1')*(JRREQOPER.UnPackFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 8);
+     )
+);
+
+//Упаковка
+IF ((JRREQOPER.PackValue='1')*(JRREQOPER.PackFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 9);
+     )
+);
+
+//Переупаковка
+IF ((JRREQOPER.RePackValue='1')*(JRREQOPER.RePackFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 10);
+     )
+);
+
+//Вскрытие пом.
+IF ((JRREQOPER.OpenValue='1')*(JRREQOPER.OpenFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 11);
+     )
+);
+
+//Разделение тов. партии
+IF ((JRREQOPER.DivValue='1')*(JRREQOPER.DivFinish='Отказ'),
+     BLOCK(
+           iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
+           XMLNODESETVALUE (iOperationDescription, 12);
+     )
+);
+
+// ГТД нумбер стал необязательным
+IF(JRREQOPER.GTDNumber<>'', Block(
+
+  VAR('sDTdate', string, '');
+
+  sDTDate := EXTRACTSTR (JRREQOPER.GTDNumber, 2, '/');
+
+  sDTDate := '20'+ COPY(sDTDate, 5, 2) + '-' + COPY(sDTDate, 3, 2) + '-' + COPY(sDTDate, 1, 2);
+
+  XMLNODESETVALUES (XMLNfRejOper, 'nfro:GTDNumber',
+      				    'cat_ru:CustomsCode', EXTRACTSTR (JRREQOPER.GTDNumber, 1, '/'),
+      				    'cat_ru:RegistrationDate', sDTDate,
+      				    'cat_ru:GTDNumber', EXTRACTSTR (JRREQOPER.GTDNumber, 3, '/')
+  );
+));
+
+VAR('iDeclarant', integer, XMLNODEADDCHILD (XMLNfRejOper, 'nfro:Declarant'));
+IF(JRREQOPER.DeclOrgName<>'', XMLNODESETVALUES (iDeclarant, '','cat_ru:OrganizationName',JRREQOPER.DeclOrgName));
+
+IF(JRREQOPER.DeclINN<>'', XMLNODESETVALUES (iDeclarant, 'cat_ru:RFOrganizationFeatures','cat_ru:INN',JRREQOPER.DeclINN));
+
+IF(JRREQOPER.ReprOrgName<>'',
+   BLOCK(
+      VAR('iRepr', integer, XMLNODEADDCHILD(iDeclarant, 'nfro:Representative'));
+      XMLNODESETVALUES (iRepr, '','cat_ru:OrganizationName',JRREQOPER.ReprOrgName);
+      IF(JRREQOPER.ReprINN<>'', XMLNODESETVALUES (iRepr, 'cat_ru:RFOrganizationFeatures','cat_ru:INN',JRREQOPER.ReprINN));
+
+   )
+);
+
+
+
+VAR('iCustomsOffice', integer, XMLNODEADDCHILD (XMLNfRejOper, 'nfro:CustomsOffice'));
+
+
+XMLNODESETVALUES (iCustomsOffice, '','cat_ru:Code',JRREQOPER.CustomsCode);
+
+IF(JRREQOPER.CustomsOfficeName<>'', XMLNODESETVALUES (iCustomsOffice, '','cat_ru:OfficeName',JRREQOPER.CustomsOfficeName));
+IF(JRREQOPER.CustomsCountryCode<>'', XMLNODESETVALUES (iCustomsOffice, '','cat_ru:CustomsCountryCode',JRREQOPER.CustomsCountryCode));
+
+//----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+SaveXML ();
+
+WRITEINIFILE ('STS-MED', 'iin', INCLUDETRAILINGBACKSLASH (sDir));

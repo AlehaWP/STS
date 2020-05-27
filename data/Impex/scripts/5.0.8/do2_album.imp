@@ -1,0 +1,726 @@
+// *****************************************************************************
+// Название: Импорт ДО2 в формате СВХ.Альбом (5.0.8)
+// Описание: Импорт ДО2 в формате СВХ.Альбом (5.0.8)
+// Кнопка вызова: 0
+// Подпись кнопки: ДО2.Альбом(им)
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sLogFile', String, TempDirectory() + 'impDO2.log');  { имя файла журнала }
+CreateLogFile (sLogFile);                                  { создание журнала }
+VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'proc.ini');
+VAR ('sIniSection', String, 'do2_album.imp');
+VAR ('sTmpFileName', String, TempDirectory() {'E:\'} + 'tmpXML.xml');
+VAR ('sDocNo', String);
+VAR ('sCurrentFilter', String);
+VAR ('NodeNumber', Integer);
+VAR ('CustomDocNode', Integer);
+VAR ('GoodNode', Integer);
+VAR ('LinkNode', Integer);
+VAR ('bEditMode', Boolean, False);
+VAR ('bImportData', Boolean, False);
+
+VAR ('Report', Integer, GetCurrentReportNode());
+
+VAR ('GoodsShipment', Integer, XmlNodeFind (Report, 'GoodsShipment'));
+VAR ('CustomDocs', Integer, XmlNodeFind (GoodsShipment, 'CustomDocs'));
+VAR ('iCustomDocCount', Integer, XmlNodeChildCount (GoodsShipment));
+VAR ('iCustomDoc', Integer, 0);
+VAR ('CustomDoc', Integer, 0);
+VAR ('iDocID', Integer);
+VAR ('iDocG32', Integer);
+VAR ('iRelCommCount', Integer);
+VAR ('iGood', Integer);
+VAR ('iCustomDoc', Integer);
+
+    VAR ('n1', Integer, 1); //количество документов выдачи
+    VAR ('n2', Integer, 1); //количество товаров
+    VAR ('n3', Integer, 1); //количество связей товар-документ выдачи
+    VAR ('n4', Integer, 0); //ненужная переменная ;)
+    
+VAR ('iDocPlaceID', Integer, DocPlaceID());
+VAR ('iDocID', Integer);
+VAR ('iDocG32', Integer);
+VAR ('iMainID', Integer, 0);
+VAR ('iMainCounter', Integer, 0);
+
+VAR ('iG32GN', Integer, 1);
+VAR ('bWriteUser', Boolean, False);
+
+//== подготовка временной XML ==================================================
+
+FUNC ('CreateTmpXML', ,
+  Block(
+    VAR ('XMLDoc', Integer, XMLDocumentCreate());
+    VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+    VAR ('XMLDO2Report', Integer, XMLNodeAddChild(XMLDocRoot, 'DO2Report'));
+    //VAR ('XMLConsigneeNode', Integer, XMLNodeAddChild(XMLDO2Report, 'ConsigneeNode'));
+    VAR ('XMLCustomDocsNodes', Integer, XMLNodeAddChild(XMLDO2Report, 'CustomDocsNodes'));
+    VAR ('XMLGoodsNodes', Integer, XMLNodeAddChild(XMLDO2Report, 'GoodsNodes'));
+    VAR ('XMLLinksNodes', Integer, XMLNodeAddChild(XMLDO2Report, 'LinksNodes'));
+  )
+), {FUNC - CreateTmpXML() }
+
+{FUNC ('GenConsigneeNode', ,
+  Block(
+    NodeNumber := XMLNodeAddChild(XMLConsigneeNode, 'NodeNumber');
+    XMLNodeSetAttribute(NodeNumber, 'read', 'false');
+    XMLNodeSetValue(NodeNumber, CustomDoc);
+  )
+),} {FUNC - GenConsigneeNode() } //убрать
+
+FUNC ('GenCustomDocsNodes', ,
+  Block(
+    NodeNumber := XMLNodeAddChild(XMLCustomDocsNodes, 'NodeNumber');
+    XMLNodeSetAttribute(NodeNumber, 'number', n1);
+    XMLNodeSetAttribute(NodeNumber, 'read', 'false');
+    XMLNodeSetAttribute(NodeNumber, 'loaded', 'false');
+    XMLNodeSetValue(NodeNumber, CustomDoc);
+    n1 := n1 + 1;
+  )
+), {FUNC - GenCustomDocsNodes() }
+
+FUNC ('GenGoodsNodes', ,
+  Block(
+    NodeNumber := XMLNodeAddChild(XMLGoodsNodes, 'NodeNumber');
+    XMLNodeSetAttribute(NodeNumber, 'number', n2);
+    XMLNodeSetAttribute(NodeNumber, 'read', 'false');
+    XMLNodeSetValue(NodeNumber, CustomDoc);
+    n2 := n2 + 1;
+  )
+), {FUNC - GenGoodsNodes() }
+
+FUNC ('GenLinksNodes', ,
+  Block(
+    NodeNumber := XMLNodeAddChild(XMLLinksNodes, 'NodeNumber');
+    XMLNodeSetAttribute(NodeNumber, 'number', n3);
+    XMLNodeSetAttribute(NodeNumber, 'read', 'false');
+    XMLNodeSetValue(NodeNumber, CustomDoc);
+    n3 := n3 + 1;
+  )
+), {FUNC - GenLinksNodes() }
+
+FUNC ('SaveTmpXML', ,
+  Block(
+    XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
+  )
+), {FUNC - SaveTmpXML() }
+
+//== загрузка XML в БД =========================================================
+
+FUNC ('DefineDocID', ,
+  Block (
+  
+    //переменные для "склеивания" описания товара
+    VAR ('sGoodsDescr', Memo, '');
+    VAR ('iGoodChildCount', Integer, 0);
+    VAR ('iGoodChildIndex', Integer, 0);
+    VAR ('GoodChild', Integer, 0);
+  
+    iDocID := 0;
+    iDocG32 := 0;
+    VAR ('dtDo1Date', DateTime, 0);
+    GoodNode := XMLNODEVALUE (XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex));
+    IF (GoodNode.Input.DO1GoodLink.DO1Date <> '', dtDo1Date := StrToDate (GoodNode.Input.DO1GoodLink.DO1Date, 'YYYY-MM-DD', '-'));
+    VAR ('sQueryBase', Memo,
+       'SELECT C.PLACEID, C.ID, C.G32, M.BD_DATE FROM KRD_MAIN M, KRD_COMM C WHERE (M.PLACEID = ' + iDocPlaceID + ') AND ' +
+       '(M.NBD = ' + CHAR(39) + GoodNode.Input.DO1GoodLink.DO1Number + CHAR(39) + ')' +
+       IF(sDriverName = 'ORACLE',
+           IF (dtDo1Date <> 0, ' AND (M.BD_DATE >= to_date(' + CHAR(39) + FDT ('DD.MM.YYYY 00:00:00', dtDo1Date) + CHAR(39) + ','+char(39)+'DD.MM.YYYY HH24:MI:SS'+char(39)+')) AND (' +
+               'M.BD_DATE < to_date(' + CHAR(39) + FDT ('DD.MM.YYYY 00:00:00', dtDo1Date + 1) + CHAR(39) + ','+char(39)+'DD.MM.YYYY HH24:MI:SS'+char(39)+'))', '')
+       ,
+           IF (dtDo1Date <> 0, ' AND (M.BD_DATE >= ' + CHAR(39) + FDT ('DD/MM/YYYY', dtDo1Date) + CHAR(39) + ') AND (' +
+              'M.BD_DATE < ' + CHAR(39) + FDT ('DD/MM/YYYY', dtDo1Date + 1) + CHAR(39) + ')', '')
+       ) + //IF(sDriverName = 'ORACLE'
+       ' AND (M.PLACEID = C.PLACEID) AND (M.ID = C.ID) AND ');
+    VAR ('sQueryOrder', String, IF (dtDo1Date <> 0, '', ' ORDER BY M.BD_DATE DESC'));
+    IF ((GoodNode.Input.DO1GoodLink.DO1GoodNumber <> '') & (GoodNode.Input.DO1GoodLink.DO1GoodNumber <> '0'),
+      Block(
+        OPENQUERY ('qryGETIDs', 'STS_DB', sQueryBase + ' (C.GN = ' + GoodNode.Input.DO1GoodLink.DO1GoodNumber + ')' + sQueryOrder);
+      );
+      Block(
+
+        // ПРОБЕГАЕМСЯ ПО ЭЛЕМЕНТАМ do1r:Goods И ИЩЕМ В НЁМ НОДЫ carWH_ru:GoodsDescription
+        // А ИЗ НИХ "СКЛЕИВАЕМ" ОПИСАНИЕ ТОВАРА
+        iGoodChildCount := XmlNodeChildCount (GoodNode);
+        iGoodChildIndex := 0;
+        sGoodsDescr := '';
+        WHILE ((iGoodChildIndex < iGoodChildCount) & (iGoodChildCount > 0),
+          Block(
+            GoodChild := XmlNodeChild (GoodNode, iGoodChildIndex);
+            IF (XmlNodeName (GoodChild) = 'catWH_ru:GoodsDescription',
+              Block(
+                IF (sGoodsDescr = '',
+                  sGoodsDescr := XmlNodeValue (GoodChild),
+                  sGoodsDescr := sGoodsDescr + XmlNodeValue (GoodChild)
+                ); // IF - sGoodsDescr = '' //
+
+              )
+            ); // IF  - XmlNodeName (GoodChild) = 'carWH_ru:GoodsDescription' //
+            iGoodChildIndex := iGoodChildIndex + 1;
+          )
+        ); // WHILE - (iGoodChildIndex < iGoodChildCount) & (iGoodChildCount > 0) //
+      
+        OPENQUERY ('qryGETIDs', 'STS_DB', sQueryBase + ' (C.G312 LIKE ' + CHAR(39) + sGoodsDescr + CHAR(39) + ')' + sQueryOrder);
+      )
+    ); {IF - (GoodNodeNumber.Input.DO1GoodLink.DO1GoodNumber <> '') & (GoodNodeNumber.DO1GoodLink.DO1GoodNumber <> '0') }
+    IF (EOF ('qryGETIDs') = 0,
+      Block(
+        iDocID := qryGETIDs.ID;
+        iDocG32 := qryGETIDs.G32;
+      )
+    ); {IF - EOF ('qryGETIDs') = 0 }
+    LOCATE ('KRD_MAIN', 'PLACEID;ID', [iDocPlaceID, iDocID]);
+  )
+), {FUNC - DefineDocID() }
+
+FUNC ('ImportGood', ,
+  Block(
+    IF ((iRelCommCount=0)&(bEditMode=0),
+      Block(
+        AppendRecord('REL_COMM');
+        SetFieldGood();
+      ),
+      IF (LOCATE ('REL_COMM', 'PLACEID;ID;COUNTER;G32', [REL_MAIN.PLACEID, REL_MAIN.ID, REL_MAIN.COUNTER, GoodNode.Input.DO1GoodLink.DO1GoodNumber]),
+        Block(
+          FINDKEY ('REL_COMM', [REL_MAIN.PLACEID, REL_MAIN.ID, REL_MAIN.COUNTER, GoodNode.Input.DO1GoodLink.DO1GoodNumber]);
+          EditRecord ('REL_COMM');
+          SetFieldGood();
+        )
+      ) {IF - LOCATE ('REL_COMM', 'PLACEID;ID;COUNTER;G32', [REL_MAIN.PLACEID, REL_MAIN.ID, REL_MAIN.COUNTER, GoodNode.Input.DO1GoodLink.DO1GoodNumber]) }
+    ); {IF - (iRelCommCount=0)&(bEditMode=0) }
+  )
+), {FUNC - ImportGood() }
+
+FUNC ('ImportCustomDoc', PARAM ('aEditMode', Boolean, 0),
+  Block(
+    //showmessage(aEditMode);
+    CustomDocNode := XMLNODECHILD (XMLCustomDocsNodes, CustomDocsNodesIndex);
+    iCustomDoc := XMLNODEVALUE (CustomDocNode);
+    IF (aEditMode,
+      Block(
+        IF (iMainID = 0,
+          Block(
+            iMainID := REL_MAIN.MAIN_ID;
+            iMainCounter := REL_MAIN.MAIN_COUNTER;
+          )
+        );
+        EditRecord ('REL_MAIN');
+        SetFieldValue ('REL_MAIN',
+                       'MAIN_ID', iMainID,
+                       'MAIN_COUNTER', iMainCounter,
+                       'MAIN_NO', GetNewReleaseMainNo(iDocPlaceID, iMainID, iMainCounter)
+        ); // SETFIELDVALUE - //
+      ),
+      Block(
+        SetIsNewDoc();
+        n4 := n4 + 1;
+        XMLNodeSetAttribute(CustomDocNode, 'loaded', 'true');
+        AppendRecord ('REL_MAIN');
+        bWriteUser := True;
+        IF (iMainID = 0,
+          Block(
+            iMainID := REL_MAIN.ID;
+            iMainCounter := REL_MAIN.COUNTER;
+          ),
+        ),
+        SetFieldValue ('REL_MAIN',
+                       'MAIN_ID', iMainID,
+                       'MAIN_COUNTER', iMainCounter,
+                       'MAIN_NO', GetNewReleaseMainNo(iDocPlaceID, iMainID, iMainCounter)
+        ); // SETFIELDVALUE - //
+        VAR ('sSQL', String);
+        VAR ('dtLicenceDate', DateTime);
+        IF (XMLNODEFIND (XMLNODEFIND (Report, 'catWH_ru:WarehouseOwner'), 'catWH_ru:ActualWarehouseLicense'),
+          Block(
+            sSQL := 'SELECT NAME, ADDRESS, LICENCEDATE FROM STORES WHERE LICENCENO=' +char(39)+ Report.WarehouseOwner.ActualWarehouseLicense.CertificateNumber +char(39);
+            dtLicenceDate := STRTODATE (Report.WarehouseOwner.ActualWarehouseLicense.CertificateDate, 'YYYY-MM-DD', '-');
+            IF (dtLicenceDate > 0,
+              Block(
+                sSQL := sSQL + ' AND LICENCEDATE=' +char(39)+ dtLicenceDate +char(39);
+              )
+            ); // IF - //
+            OPENQUERY ('qWhOwner', 'STS_DB', sSQL);
+            SETFIELDVALUE ('REL_MAIN',
+                           'G142', qWhOwner.NAME,
+                           'G143', qWhOwner.ADDRESS,
+                           'G1440', CASE (Report.WarehouseOwner.ActualWarehouseLicense.CertificateKind, ['lic_Certificate', 1, 'lic_Licence', 2, 'lic_Permition', 3, 'lic_PermZtk', 4, 'lic_TempZtk', 5], 1),
+                           'G144', Report.WarehouseOwner.ActualWarehouseLicense.CertificateNumber,
+                           'G145', IF (dtLicenceDate > 0, dtLicenceDate, qWhOwner.LICENCEDATE),
+            ); // SETFIELDVALUE - //
+          ),
+          Block(
+            sSQL := 'SELECT NAME, ADDRESS, LICENCEDATE FROM STORES WHERE LICENCENO=' +char(39)+ Report.WarehouseOwner.WarehouseLicense.CertificateNumber +char(39);
+            dtLicenceDate := STRTODATE (Report.WarehouseOwner.WarehouseLicense.CertificateDate, 'YYYY-MM-DD', '-');
+            IF (dtLicenceDate > 0,
+              Block(
+                sSQL := sSQL + ' AND LICENCEDATE=' +char(39)+ dtLicenceDate +char(39);
+              )
+            ); // IF - //
+            //showmessage (sSQL);
+            OPENQUERY ('qWhOwner', 'STS_DB', sSQL);
+            SETFIELDVALUE ('REL_MAIN',
+                           'G142', qWhOwner.NAME,
+                           'G143', qWhOwner.ADDRESS,
+                           'G1440', CASE (Report.WarehouseOwner.WarehouseLicense.CertificateKind, ['lic_Certificate', 1, 'lic_Licence', 2, 'lic_Permition', 3, 'lic_PermZtk', 4, 'lic_TempZtk', 5], 1),
+                           'G144', Report.WarehouseOwner.WarehouseLicense.CertificateNumber,
+                           'G145', IF (dtLicenceDate > 0, dtLicenceDate, qWhOwner.LICENCEDATE),
+            ); // SETFIELDVALUE - //
+          )
+        ); // IF - //
+      )
+    ); {IF - aEditMode}
+    VAR ('dtRelDate', DateTime, StrToDate (iCustomDoc.PrDocumentDate, 'YYYY-MM-DD', '-'));
+    IF (iCustomDoc,
+      Block(
+        SetFieldValue ('REL_MAIN',
+                       'DOC_CODE', IF (TRIM (REL_MAIN.DOC_NO)='', iCustomDoc.DocumentCode, REL_MAIN.DOC_CODE),
+                       'DOC_TYPE', IF (TRIM (REL_MAIN.DOC_NO)='', iCustomDoc.PrDocumentName, REL_MAIN.DOC_TYPE),
+                       'DOC_NO',   IF (TRIM (REL_MAIN.DOC_NO)='', iCustomDoc.PrDocumentNumber, REL_MAIN.DOC_NO));
+      )
+    );
+    IF (XmlNodeFind (Report, 'CustomRegistration\RegisterNumber'),
+      Block(
+        SetFieldValue ('REL_MAIN', 'REG_RELEASE_NO',
+          Report.CustomRegistration.RegisterNumber.CustomsCode + '/' +
+          FDT ('DDMMYY', StrToDate (Report.CustomRegistration.RegisterNumber.RegistrationDate, 'YYYY-MM-DD', '-')) + '/' +
+          Report.CustomRegistration.RegisterNumber.GTDNumber + 
+		  IF (XmlNodeFind (Report, 'CustomRegistration\RegisterNumber\CertificateNumber'),
+		    Block(
+			  '/' + Report.CustomRegistration.RegisterNumber.CertificateNumber
+			),
+			IF (XmlNodeFind (Report, 'CustomRegistration\RegisterNumber\OtherWHPlaceKind'),
+			  Block(
+			    '/' + Report.CustomRegistration.RegisterNumber.OtherWHPlaceKind
+			  )
+			)
+		  )
+        );
+        IF (TRIM (Report.CustomRegistration.RegisterTime) <> '',
+          SetFieldValue ('REL_MAIN', 'REG_TIME',
+            IF (FDT ('DDMMYYY',REL_MAIN.REG_TIME)='', StrToDate (Report.CustomRegistration.RegisterNumber.RegistrationDate, 'YYYY-MM-DD', '-') + IF (Report.CustomRegistration.Time <> '', ' ' + Report.CustomRegistration.RegisterTime, ''),REL_MAIN.REG_TIME)
+          ),
+          SetFieldValue ('REL_MAIN', 'REG_TIME',
+            IF (FDT ('DDMMYYY',REL_MAIN.REG_TIME)='', StrToDate (Report.CustomRegistration.RegisterNumber.RegistrationDate, 'YYYY-MM-DD', '-'), REL_MAIN.REG_TIME))
+        );
+      )
+    ); {IF - XmlNodeFind (Report, 'CustomRegistration\RegisterNumber') }
+    IF (XmlNodeFind (Report, 'catWH_ru:CustomRegistration') |  XmlNodeFind (Report, 'CustomRegistration'),
+       SetFieldValue ('REL_MAIN', 'MC_STATUS',
+                                   CASE (Report.CustomRegistration.CustomState, ['ds_Rebuilding', '1',
+                            	   	                                        	     'ds_OnInspect', 'И',
+                            			                                               'ds_Registered', '3'],
+                            			                                               '')
+       )
+    ); {IF - XmlNodeFind (Report, 'CustomRegistration') }
+    SetFieldValue ('REL_MAIN',
+                   'FIO_INSPECTOR', TRIM(Report.CustomRegistration.Inspector.PersonSurname + ' ' + Report.CustomRegistration.Inspector.PersonName + ' ' + Report.CustomRegistration.Inspector.PersonMiddleName ),
+                   'POST_INSPECTOR', Report.CustomRegistration.Inspector.PersonPost,
+                   'GD2', Report.CustomRegistration.Inspector.LNP
+    );
+    SetFieldValue ('REL_MAIN',
+                   'RELEASE_NO', IF (REL_MAIN.RELEASE_NO='',Report.ReportNumber,REL_MAIN.RELEASE_NO),
+                   'OUT_DATE', IF (FDT ('DDMMYYY',REL_MAIN.OUT_DATE)='',StrToDate (Report.ReportDate, 'YYYY-MM-DD', '-') + IF (Trim(Report.ReportTime) <> '', ' ' + Report.ReportTime, ''),REL_MAIN.OUT_DATE),
+                   {'DOC_KIND', CASE (Report.Kind, ['at_Output', '1',
+					                                         'at_Reject', '2',
+					                                         'at_Difference', '3'],
+ 					                                         '0'),}
+                   'RELEASE_RECEIVE_POST', IF (TRIM (REL_MAIN.RELEASE_RECEIVE_POST)='',Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonPost,REL_MAIN.RELEASE_RECEIVE_POST),
+                   'RELEASE_RECEIVE', IF (TRIM (REL_MAIN.RELEASE_RECEIVE)='',TRIM(Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonSurname+' '+Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonName+' '+Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonMiddleName),REL_MAIN.RELEASE_RECEIVE),
+                   'RELEASE_GIVE_POST',    IF (TRIM (REL_MAIN.RELEASE_GIVE_POST)='',Report.WarehouseOwner.WarehousePerson.PersonPost, REL_MAIN.RELEASE_GIVE_POST),
+                   'RELEASE_GIVE',    IF (TRIM (REL_MAIN.RELEASE_GIVE)='',TRIM(Report.WarehouseOwner.WarehousePerson.PersonSurname+' '+Report.WarehouseOwner.WarehousePerson.PersonName+' '+Report.WarehouseOwner.WarehousePerson.PersonMiddleName), REL_MAIN.RELEASE_GIVE),
+    );
+    PostRecord ('REL_MAIN');    
+    IF (TRIM (REL_MAIN.G042)='',
+      Block(
+        EditRecord ('REL_MAIN');
+        SetFieldValue ('REL_MAIN',
+                       'G042',        Report.Carrier.OrganizationName,
+                       'G043',        Report.Carrier.Address.AddressLine,
+                       'G044C',       Report.Carrier.RFOrganizationFeatures.INN,
+                       'G04_KPP',     Report.Carrier.RFOrganizationFeatures.KPP,
+                       'G04_OGRN',    Report.Carrier.RFOrganizationFeatures.OGRN,
+                       'G04_COUNTRY', Report.Carrier.CountryCode,
+                       'G040P',       Report.Carrier.CarrierPerson.PersonPost,
+                       'G040',        TRIM(Report.Carrier.CarrierPerson.PersonSurname + ' ' + Report.Carrier.CarrierPerson.PersonName + ' ' + Report.Carrier.CarrierPerson.PersonMiddleName)
+        );
+        PostRecord ('REL_MAIN')
+      )
+    ); {IF - TRIM (REL_MAIN.G042)='' }
+
+    IF (TRIM (REL_MAIN.G082)='',
+      Block(
+        EditRecord ('REL_MAIN');
+        SetFieldValue ('REL_MAIN',
+                       'G082',        Report.GoodsShipment.Goods.Output.Consignee.OrganizationName,
+                       'G083',        Report.GoodsShipment.Goods.Output.Consignee.Address.AddressLine,
+                       'G084C',       Report.GoodsShipment.Goods.Output.Consignee.RFOrganizationFeatures.INN,
+                       'G08_KPP',     Report.GoodsShipment.Goods.Output.Consignee.RFOrganizationFeatures.KPP,
+                       'G08_OGRN',    Report.GoodsShipment.Goods.Output.Consignee.RFOrganizationFeatures.OGRN
+        );
+        PostRecord ('REL_MAIN')
+      )
+    ); {IF - TRIM (REL_MAIN.G082)='' }
+    EditRecord ('REL_MAIN');
+    SetFieldValue ('REL_MAIN',
+                   'RELEASE_DATE', IF (TRIM (REL_MAIN.RELEASE_DATE) <> '', REL_MAIN.RELEASE_DATE, dtRelDate));
+    IF (bWriteUser,
+      Block(
+        SETFIELDVALUE ('REL_MAIN', 'USER_LOGIN', USERINFO ('', 'UserLogin'));
+        bWriteUser := False;
+      )
+    ); // IF - bWriteUser //
+
+    IF (Report.MainTransportModeCode <> '',
+      Block(
+        SETFIELDVALUE ('REL_MAIN', 'TRANSPTYPE', Report.MainTransportModeCode);
+      )
+    ); // IF - Report.MainTransportModeCode <> '' //
+    
+    PostRecord ('REL_MAIN');
+  )
+), {FUNC - ImportCustomDoc() }
+
+FUNC ('SetFieldGood', ,
+  Block(
+    SetFieldValue('REL_COMM',
+                  'COUNTER',	    REL_MAIN.COUNTER,
+                  'G32',          iG32GN {iGood.Input.DO1GoodLink.DO1GoodNumber},
+                  'RELEASE_G33',  iGood.Input.GoodsTNVEDCode,
+                  'RELEASE_G311', IF (iGood.Output.CargoPlace.PlaceNumber > 0, iGood.Output.CargoPlace.PlaceNumber, REL_COMM.RELEASE_G311),
+                  'RELEASE_G35',  IF (iGood.Output.BruttoVolQuant.GoodsQuantity > 0, iGood.Output.BruttoVolQuant.GoodsQuantity, REL_COMM.RELEASE_G35),
+                  'RELEASE_G38',  REL_COMM.RELEASE_G38,
+                  'RELEASE_G42',  IF (iGood.Output.Cost > 0, iGood.Output.Cost, REL_COMM.RELEASE_G42)
+    );
+    IF (XmlNodeFind (iGood, 'MeasureQuantity'),
+      SetFieldValue ('REL_COMM',
+                     'RELEASE_G315',  IF (iGood.Output.MeasureQuantity.MeasureUnitQualifierName <> '', iGood.Output.MeasureQuantity.MeasureUnitQualifierName,
+                                      IF (iGood.Output.MeasureQuantity.MeasureUnitQualifierCode <> '', REFERENCE ('UNITS', 'UNITCODE', iGood.Output.MeasureQuantity.MeasureUnitQualifierCode, 'UNITNAME'))),
+                     'RELEASE_G315A', IF (REL_COMM.RELEASE_G315A > 0, REL_COMM.RELEASE_G315A , IF (iGood.Output.MeasureQuantity.GoodsQuantity > 0, iGood.Output.MeasureQuantity.GoodsQuantity, REL_COMM.RELEASE_G315A))
+       )
+    ); {IF - XmlNodeFind (Good2, 'MeasureQuantity') }
+    VAR ('sOutputDate', String, '');
+    sOutputDate := IF (iGood.Output.OutputDate <> '', StrToDate (iGood.Output.OutputDate, 'YYYY-MM-DD', '-'));
+    IF (iGood.Output.OutputTime <> '', sOutputDate := sOutputDate + ' ' + iGood.Output.OutputTime, '');
+    IF (sOutputDate <> '', SetFieldValue ('REL_COMM', 'RELEASE_OUT_DATE', sOutputDate));
+    PostRecord ('REL_COMM');
+  )
+), {FUNC - SetFieldGood() }
+
+FUNC ('ImportGoods', ,
+  Block(
+    CONST ('sDriverName', String, UPPERSTR(INIFILE ('Database', 'DbmsType', 'PARADOX')));
+
+    IF (DefineDocID(),
+      Block(
+        bImportData := True;
+        CustomDocNode := XMLNODECHILD (XMLCustomDocsNodes, CustomDocsNodesIndex);
+        GoodNode := XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex);
+        iGood := XMLNODEVALUE (GoodNode);
+        iCustomDoc := XMLNODEVALUE (CustomDocNode);
+        IF(bEditMode=0,
+          bEditMode := LOCATE ('REL_MAIN', 'DOC_TYPE;DOC_NO;RELEASE_DATE;RELEASE_NO',
+                               [iCustomDoc.PrDocumentName,
+                               iCustomDoc.PrDocumentNumber,
+                               StrToDate(iCustomDoc.PrDocumentDate, 'YYYY-MM-DD', '-'),
+                               Report.ReportNumber])
+        ); {IF - bEditMode = 0 }
+        IF (bEditMode,
+          Block (
+            CASE (OverwriteMode(), [
+               1, Block (
+                    bImportData := REL_MAIN.MC_STATUS <> '3';
+                    IF (bImportData = False, SetCurItemStatus('4'));
+                  ),
+               2, Block (
+                    bImportData := False;
+                    SetCurItemStatus('7')
+                  )]
+            ); {CASE - OverwriteMode() }
+          )
+        ); {IF - bEditMode}
+        IF (bImportData,
+          Block(
+            IF ((XMLNODEATTRIBUTE (CustomDocNode, 'loaded') = 'true')|(bEditMode=1),
+              Block(
+                bEditMode := False;
+                ImportCustomDoc(1)
+              ),
+              Block(
+                bEditMode := False;
+                ImportCustomDoc(0)
+              )
+            ); {IF - XMLNODEATTRIBUTE (NodeNumber, 'loaded') = 'false' }
+//?            IF (bEditMode, Block(
+//?              SetRange ('REL_COMM', [iDocPlaceID, iDocID, REL_MAIN.COUNTER]);
+//?            )); {IF - bEditMode }
+            IF (sDriverName = 'INTRBASE',
+              sDocNo := 'SELECT PLACEID, ID, DOC_NO, COUNTER FROM RELEASE_ WHERE PLACEID='+CHAR(39)+iDocPlaceID+CHAR(39)+' AND ID='+CHAR(39)+iDocID+CHAR(39)+' AND DOC_NO='+CHAR(39)+iCustomDoc.PrDocumentNumber+CHAR(39) + ' AND COUNTER=' + REL_MAIN.COUNTER,
+              sDocNo := 'SELECT PLACEID, ID, DOC_NO, COUNTER FROM RELEASE  WHERE PLACEID='+CHAR(39)+iDocPlaceID+CHAR(39)+' AND ID='+CHAR(39)+iDocID+CHAR(39)+' AND DOC_NO='+CHAR(39)+iCustomDoc.PrDocumentNumber+CHAR(39) + ' AND COUNTER=' + REL_MAIN.COUNTER
+            ); {IF - sDriverName = 'INTRBASE' }
+            OPENQUERY ('qryRelease', 'STS_DB', sDocNo);
+            FIRST ('qryRelease');
+            IF (RECORDCOUNT ('qryRelease') > 0,
+              Block(
+                sCurrentFilter := GETFILTER ('REL_COMM');
+                WHILE (EOF ('qryRelease')= 0,
+                  Block(
+                    //IF (KRD_MAIN.A_MODE = '7',
+                    //   Block(
+                         OPENQUERY ('qryG32ByGN', 'STS_DB', 'SELECT PLACEID, ID, GN, G32 FROM KRD_COMM WHERE PLACEID='+CHAR(39)+iDocPlaceID+CHAR(39)+' AND ID='+CHAR(39)+iDocID+CHAR(39)+' AND GN='+CHAR(39)+iGood.Input.DO1GoodLink.DO1GoodNumber+CHAR(39));
+                         iG32GN := FIELDVALUE ('qryG32ByGN', 'G32');
+                    //   ),
+                    //     iG32GN := iGood.Input.DO1GoodLink.DO1GoodNumber
+                    //); {IF - KRD_MAIN.A_MODE = '7'}
+                    SETFILTER ('REL_COMM', 'PLACEID='+iDocPlaceID+' AND ID='+iDocID+' AND COUNTER='+FIELDVALUE ('qryRelease','COUNTER')+' AND G32='+iG32GN);
+                    iRelCommCount := RECORDCOUNT('REL_COMM');
+                    ImportGood();
+                    SETFILTER ('REL_COMM', '');
+                    NEXT ('qryRelease');
+                  )
+                ); {WHILE - EOF ('qryRelease')= 0 }
+                SETFILTER ('REL_COMM', sCurrentFilter);
+              ),
+              Block(
+                //тоже что-то надо делать О_о
+                //bEditMode := False;
+                //ImportCustomDoc(bEditMode);
+                //OPENQUERY ('qryRelease', 'STS_DB', sDocNo);
+                //FIRST ('qryRelease');
+              )
+            ); {IF - RECORDCOUNT ('qryRelease') > 0 }
+            ImportTransports();
+          )
+        ); {IF - bImportData }
+      ),
+      Block(
+        SetCurItemStatus('5');
+      )
+    ); {IF - DefineDocID() }
+  )
+), {FUNC - ImportGoods() }
+
+FUNC ('ImportTransports', ,
+  Block(
+    VAR ('Transports', Integer, XmlNodeFind (Report, 'Transports'));
+    VAR ('iTransportCount', Integer, XmlNodeChildCount (Report));
+    VAR ('iTransport', Integer, 0);
+    VAR ('Transport', Integer);
+    CONST ('bFound', Integer, 0);
+    
+    WHILE (iTransport < iTransportCount,
+      Block(
+        Transport := XmlNodeChild (Report, iTransport);
+        IF (((XMLNODENAME (Transport) = 'do2r:DOTransports')|(XMLNODENAME (Transport) = 'DOTransports'))*XmlNodeFind(Transport, 'TransportIdentifier')*(Trim(Transport.TransportIdentifier) <> ''),
+          Block(
+            bFound := LOCATE ('RELTRANS', 'PLACEID;ID;COUNTER;TRANSP_CODE;TRANSPNO',
+      				   [REL_MAIN.PLACEID, REL_MAIN.ID, REL_MAIN.COUNTER, Transport.TransportModeCode, Transport.TransportIdentifier]);
+            IF (bFound,
+      	      EditRecord ('RELTRANS'),
+      	      AppendRecord ('RELTRANS')
+            ); {IF - bFound }
+            SetFieldValue ('RELTRANS',
+        		               'COUNTER',	      REL_MAIN.COUNTER,
+                           'G32',           iDocG32,
+      		                 'TRANSP_CODE',   Transport.TransportModeCode
+            );
+            IF (Transport.TransportIdentifier <> '',
+              SetFieldValue ('RELTRANS',
+                       	     'TRANSPNO',    Transport.TransportIdentifier
+              )
+            );
+            IF (STRPOS (Transport.TransportModeCode, '10|80|81'),
+              SetFieldValue ('RELTRANS',
+      		                   'TRANSP_COUNTRY',   Transport.Sea.CountryCode,
+      		                   'TRANSP_NTRAILER',  Transport.Sea.EntryNumber
+      	      )
+            ); {IF - STRPOS (Transport.TransportModeCode, '10|80|81') }
+            IF (STRPOS (Transport.TransportModeCode, '12|20'),
+              SetFieldValue ('RELTRANS',
+      		                   'TRANSP_NTRAILER',  Transport.RailRoad.RailStation
+      	      )
+            ); {IF - STRPOS (Transport.TransportModeCode, '12|20') }
+            IF (STRPOS (Transport.TransportModeCode, '40'),
+              SetFieldValue ('RELTRANS',
+      		                   'TRANSP_NTRAILER',  Transport.Avia.FlightNumber
+      	      )
+            ); {IF - STRPOS (Transport.TransportModeCode, '40') }
+            IF (STRPOS (Transport.TransportModeCode, '16|23|30|31|39|43|55'),
+              SetFieldValue ('RELTRANS',
+      		                   'TRANSP_NTRAILER',  Transport.Avto.TrailerIdentifier
+      	      )
+            ); {IF - STRPOS (Transport.TransportModeCode, '16|23|30|31|39|43|55') }
+            PostRecord ('RELTRANS');
+          )
+        ); {IF - XMLNODENAME (Transport) = 'do2r:DOTransports'}
+        iTransport := iTransport + 1;
+      )
+    ); {WHILE - iTransport < iTransportCount }
+    IF (TRIM (REL_MAIN.TRANSPNO)='',
+      Block(
+        EditRecord ('REL_MAIN');
+        SetFieldValue ('REL_MAIN',
+                       'TRANSPNO', JOINVALUES ('RELTRANS', ';  ', ['TRANSPNO', IF (RELTRANS.TRANSP_NTRAILER<>'', ', ' + RELTRANS.TRANSP_NTRAILER)])
+        );
+        PostRecord ('REL_MAIN');
+      )
+    ); {IF - TRIM (REL_MAIN.TRANSPNO)='' }
+  )
+), {FUNC - ImportTransports() }
+
+//======================================================
+//=== Основная часть ===================================
+//======================================================
+
+CreateTmpXML();
+IF (iCustomDocCount,
+  Block(
+    WHILE (iCustomDoc < iCustomDocCount,
+      Block (
+        CustomDoc := XmlNodeChild (GoodsShipment, iCustomDoc);
+        {IF ((XmlNodeName (CustomDoc) = 'do2r:Consignee') | (XmlNodeName (CustomDoc) = 'Consignee'), Block(//убрать
+          GenConsigneeNode();
+        ));} {IF - XmlNodeName (CustomDoc) = 'do2r:Consignee' }
+        IF ((XmlNodeName (CustomDoc) = 'do2r:CustomsDocs') | (XmlNodeName (CustomDoc) = 'CustomsDocs'), Block(
+          GenCustomDocsNodes();
+        )); {IF - XmlNodeName (CustomDoc) = 'do2r:CustomsDocs' }
+        IF ((XmlNodeName (CustomDoc) = 'do2r:Goods') | (XmlNodeName (CustomDoc) = 'Goods'), Block(
+          GenGoodsNodes();
+        )); {IF - XmlNodeName (CustomDoc) = 'do2r:Goods' }
+        IF ((XmlNodeName (CustomDoc) = 'do2r:GoodsCustomDocsLinks') | (XmlNodeName (CustomDoc) = 'GoodsCustomDocsLinks'), Block(
+          GenLinksNodes();
+        )); {IF - XmlNodeName (CustomDoc) = 'do2r:GoodsCustomDocsLinks' }
+        iCustomDoc := iCustomDoc + 1;
+      )
+    );{WHILE - iCustomDoc < iCustomDocCount }
+    
+  ),
+); {IF - iCustomDocCount }
+
+//VAR ('ConsigneeNodeCount', Integer, XMLNODECHILDCOUNT (XMLConsigneeNode));
+VAR ('CustomDocsNodesCount', Integer, XMLNODECHILDCOUNT (XMLCustomDocsNodes));
+VAR ('CustomDocsNodesIndex', Integer, 0);
+VAR ('GoodsNodesCount', Integer, XMLNODECHILDCOUNT (XMLGoodsNodes));
+VAR ('GoodsNodesIndex', Integer, 0);
+VAR ('LinksNodesCount', Integer, XMLNODECHILDCOUNT (XMLLinksNodes));
+VAR ('LinksNodesIndex', Integer, 0);
+
+IF (CustomDocsNodesCount > 0,
+  Block(
+    APPENDLOGFILE (sLogFile, 'Начало загрузки: '+Date()+Time(1));
+    WHILE (CustomDocsNodesIndex < CustomDocsNodesCount,
+      Block(
+        NodeNumber := XMLNODECHILD (XMLCustomDocsNodes, CustomDocsNodesIndex);
+        XMLNodeSetAttribute(NodeNumber, 'read', 'true');
+        IF (LinksNodesCount > 0,
+          Block(
+            LinksNodesIndex := 0;
+            WHILE (LinksNodesIndex < LinksNodesCount,
+              Block(
+                IF (XMLNODEATTRIBUTE (XMLNODECHILD (XMLLinksNodes, LinksNodesIndex), 'read')='false',
+                  Block(
+                    VAR ('CustomDocNodeOrderNo', Integer, XMLNODEINDEX (XMLNODECHILD (XMLCustomDocsNodes, CustomDocsNodesIndex)));
+                    VAR ('CustomDocNumber', Integer, XMLNODEVALUE( XMLNODECHILD (XMLNODEVALUE (XMLNODECHILD (XMLLinksNodes, LinksNodesIndex)), 'CustomDocNumber')));
+                    IF ((CustomDocNodeOrderNo+1) = CustomDocNumber,
+                      Block(
+                        //ищем и добавляем\изменяем товар
+                        LinkNode := XMLNODECHILD (XMLLinksNodes, LinksNodesIndex);
+                        XMLNodeSetAttribute(LinkNode, 'read', 'true');
+                        GoodsNodesIndex := 0;
+                        IF (GoodsNodesCount > 0,
+                          Block(
+                            WHILE (GoodsNodesIndex < GoodsNodesCount,
+                              Block(
+                                IF (XMLNODEATTRIBUTE (XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex), 'read')='false',
+                                  Block(
+                                    VAR ('GoodNodeOrderNo', Integer, XMLNODEINDEX (XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex)));
+                                    VAR ('GoodNumber', Integer, XMLNODEVALUE( XMLNODECHILD (XMLNODEVALUE (XMLNODECHILD (XMLLinksNodes, LinksNodesIndex)), 'GoodNumber')));
+                                    IF ((GoodNodeOrderNo+1)=GoodNumber,
+                                      Block(
+                                        //непосредственное добавление товара в REL_COMM
+                                        ImportGoods();
+                                        GoodNode := XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex);
+                                        XMLNodeSetAttribute(GoodNode, 'read', 'true');
+                                        GoodsNodesIndex := GoodsNodesCount;
+                                        LinksNodesIndex := LinksNodesIndex + 1;
+                                      ),
+                                      Block(
+                                        GoodsNodesIndex := GoodsNodesIndex + 1;
+                                      )
+                                    ); {IF - (GoodNodeOrderNo+1)=GoodNumber }
+                                  ),
+                                  Block(
+                                    //следующий элемент XMLGoodsNodes
+                                    GoodsNodesIndex := GoodsNodesIndex + 1;
+                                  )
+                                ); {IF - XMLNODEATTRIBUTE (XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex), 'read')='false' }
+                              )
+                            ); {WHILE - GoodsNodesIndex < GoodsNodesCount }
+                          ),
+                          Block(
+                            //Отсутствуют товары
+                            APPENDLOGFILE (sLogFile, 'Отсутствуют товары "DO2Report\do2r:GoodsShipment\do2r:Goods"');
+                          )
+                        ); {IF - GoodsNodesCount > 0 }
+                      ),
+                      Block(
+                        //следующий элемент XMLLinksNodes
+                        LinksNodesIndex := LinksNodesIndex + 1;
+                      )
+                    ); {IF - (CustomDocNodeOrderNo+1) = CustomDocNumber }
+                  ),
+                  Block(
+                    LinksNodesIndex := LinksNodesIndex + 1;
+                  )
+                ); {IF - XMLNODEATTRIBUTE (XMLNODECHILD (XMLLinksNodes, LinksNodesIndex), 'read')='false' }
+              )
+            ); {WHILE - LinksNodesIndex < LinksNodesCount}
+          ),
+          Block(
+            //нет связей товар-документ
+            APPENDLOGFILE (sLogFile, 'Нет связей товар-документ выдачи "DO2Report\do2r:GoodsShipment\do2r:GoodsCustomDocsLinks"');
+            APPENDLOGFILE (sLogFile, 'Поэтому записываем все товары на первую накладную."');
+            GoodsNodesIndex := 0;
+            IF (GoodsNodesCount > 0,
+              Block(
+                WHILE (GoodsNodesIndex < GoodsNodesCount,
+                  Block(
+                    IF (XMLNODEATTRIBUTE (XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex), 'read')='false',
+                      Block(
+                        //непосредственное добавление товара в REL_COMM
+                        ImportGoods();
+                        GoodNode := XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex);
+                        XMLNodeSetAttribute(GoodNode, 'read', 'true');
+                        //следующий элемент XMLGoodsNodes
+                        GoodsNodesIndex := GoodsNodesIndex + 1;
+                      ),
+                      Block(
+                        //следующий элемент XMLGoodsNodes
+                        GoodsNodesIndex := GoodsNodesIndex + 1;
+                      )
+                    ); {IF - XMLNODEATTRIBUTE (XMLNODECHILD (XMLGoodsNodes, GoodsNodesIndex), 'read')='false' }
+                  )
+                ); {WHILE - GoodNodesIndex <= GoodNodesCount }
+              ),
+              Block(
+                //Отсутствуют товары
+                APPENDLOGFILE (sLogFile, 'Отсутствуют товары "DO2Report\do2r:GoodsShipment\do2r:Goods"');
+              )
+            ); {IF - GoodNodesCount > 0 }
+          )
+        ); {IF -  LinksNodesCount > 0 }
+        CustomDocsNodesIndex := CustomDocsNodesIndex + 1;
+      )
+    ); {WHILE - CustomDocsNodesIndex < CustomDocsNodesCount }
+  ),
+  Block(
+    APPENDLOGFILE (sLogFile, 'Нет таможенных документов выдачи - ветка "DO2Report\do2r:GoodsShipment\do2r:CustomDocs"');
+  )
+); {IF - CustomDocsNodesCount > 0 }
+
+
+APPENDLOGFILE (sLogFile, 'Окончание загрузки: '+ Date()+Time(1));
+
+{ДЛЯ ОТЛАДКИ СНЯТЬ КОММЕНТАРИИ}
+//SaveTmpXML();
+//SHOWLOGFILE (sLogFile, 'Результаты загрузки ДО2');

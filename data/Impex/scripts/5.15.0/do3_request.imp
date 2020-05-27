@@ -1,0 +1,96 @@
+// *****************************************************************************
+// Название: do3_request.imp
+// Описание: Загрузка требования ДО3
+// Кнопка вызова: 0
+// Подпись кнопки: do3_request
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT ('ProcDocs\sql_insert.prd');
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, 0);
+VAR ('sDocumentId', String, xmlMainNode.DocumentID);
+VAR ('sStatus', String, 'Получено требование ДО-3');
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 0);
+
+sSQL := 'SELECT' +
+        ' JOURNAL_MASTER_ID' +
+        ' FROM JRDO3' +
+        ' WHERE' +
+        ' REFDOCUMENTID=' +char(39)+ sDocumentId +char(39);
+OPENQUERY ('qJRDO3', 'dbJournals', sSQL, 1);
+
+IF (FIELDISNULL ('qJRDO3', 'JOURNAL_MASTER_ID'),
+  Block(
+    IF (LOCATE ('STORES_2', 'LICENCENO', [XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'Permits'), 'CertificateNumber'))]),
+      iPlaceId := STORES_2.PLACEID
+    ); // IF
+
+    sSubStatus := 'За период с ' + FDT ('DD.MM.YYYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'BeginDate')), 'YYYY-MM-DD', '-')) +
+                  ' по ' + FDT ('DD.MM.YYYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'EndDate')), 'YYYY-MM-DD', '-'));
+
+    VAR ('sSendTime', String, IF (TRIM (XMLNODEVALUE(XMLNODEFIND (xmlMainNode, 'do3re:SendTime'))) <> '', ' ' +  COPY(XMLNODEVALUE(XMLNODEFIND (xmlMainNode, 'do3re:SendTime')), 1, 8)));
+    IF (STRPOS ('.', sSendTime) > 0, sSendTime := COPY (sSendTime, 0, (STRPOS ('.', sSendTime)-1)));
+    VAR ('dtSendDateTime', DateTime, STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'SendDate')), 'YYYY-MM-DD', '-') + sSendTime);
+    VAR ('iMaxJMID', Integer);
+    sSQL := 'SELECT' +
+            ' MAX(JOURNAL_MASTER_ID) AS M' +
+            ' FROM JRDO3';
+    OPENQUERY ('qJMID', 'dbJournals', sSQL, 1);
+    iMaxJMID := qJMID.M + 1;
+    CLOSEDATASET ('qJMID');
+
+    PrepareInsert2 ();
+    Insert2 ('JOURNAL_MASTER_ID', iMaxJMID, 1);
+    Insert2 ('JOURNAL_UUID',      GENERATEUUID ());
+    Insert2 ('RECORDTYPE',        'Требование ДО-3');
+    Insert2 ('REFDOCUMENTID',     sDocumentId);
+    Insert2 ('COMMENTS',          XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'Comments')));
+    Insert2 ('SENDDATETIME',      dtSendDateTime, 2);
+    Insert2 ('REPORTBEGINDATE',   STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'BeginDate')), 'YYYY-MM-DD', '-'), 2);
+    Insert2 ('REPORTENDDATE',     STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'EndDate')), 'YYYY-MM-DD', '-'), 2);
+    Insert2 ('REQCUSTOMSCODE',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'Customs'), 'Code')));
+    Insert2 ('REQPERSONNAME',     XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomsPerson'), 'PersonName')));
+    Insert2 ('REQLNP',            XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomsPerson'), 'LNP')));
+    Insert2 ('CERTIFICATENUMBER', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'Permits'), 'CertificateNumber')));
+    Insert2 ('PLACEID',           iPlaceId, 1);
+    Insert2 ('CREATED_AT',        Date()+Time(1), 2);
+    IF (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'Permits'), 'CertificateDate'),
+      Insert2 ('CERTIFICATEDATE', STRTODATE (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'Permits'), 'CertificateDate')), 'YYYY-MM-DD', '-'), 2);
+    ); // IF
+    Insert2 ('', '', 0, 'JRDO3','dbJournals');
+
+    // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+    WriteEpsLog (
+        iPlaceId,
+        0,
+        0,
+        sDocumentId,
+        'Требование ДО-3',
+        '',
+        'NULL',
+        sStatus,
+        Date()+Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        iReaded,
+        dtDoDt,
+        0
+    ); // WriteEpsLog
+  ),
+  Block(
+    WriteLog(
+        'EPSIMP',
+        '(' + sXmlFileName + '): В журнале ДО-3 уже есть требование\ДО-3 с идентификатором ' + sDocumentId
+    ); // WriteLog
+  )
+); // IF
+
+CLOSEDATASET ('qJRDO3');

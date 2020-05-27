@@ -1,0 +1,562 @@
+// *****************************************************************************
+// Название: Отчёт о выдаче товаров с СВХ по форме ДО3 (DO3Report, Экспорт)
+// Описание: Отчёт о выдаче товаров с СВХ по форме ДО3 (DO3Report, Экспорт)
+// Кнопка вызова: 0
+// Подпись кнопки: ДО3.Альбом (ЭК)
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sPeriodStart', String);
+VAR ('sPeriodEnd', String);
+
+// вычисление складского номера
+Func('WriteBoxNo', '',
+Block(
+  Var('sConstStore', String);
+  sConstStore := '';
+  sBoxNo := '';
+  OPENQUERY ('qryCP1', 'STS_DB', 'SELECT * FROM KR_C_P WHERE PLACEID=' + qryGoods.PLACEID + ' AND ID=' + qryGoods.ID + ' AND G32=' + qryGoods.G32 + ' AND DOC_TYPE=' +char(39)+ '11' +char(39));
+
+  IF (FIELDISNULL ('qryCP1', 'PLACEID') = 0,
+    Block(
+      FIRST('qryCP1');
+      While(EOF('qryCP1') = 0,
+        Block(
+          OPENQUERY ('qryCont1', 'STS_DB', 'SELECT * FROM KRD_CONT WHERE PLACEID=' + qryCP1.PLACEID + ' AND ID=' + qryCP1.ID + ' AND COUNTER=' + qryCP1.DOC_COUNTER);
+          IF (LENGTH (sConstStore) > 0, sConstStore := sConstStore + ',');
+          sConstStore := sConstStore + qryCont1.CONTNO;
+
+          NEXT('qryCP1');
+        )
+      )
+    ),
+    Block(
+      OPENQUERY ('qryCont1', 'STS_DB', 'SELECT * FROM KRD_CONT WHERE PLACEID=' + qryGoods.PLACEID + ' AND ID=' + qryGoods.ID);
+      sConstStore := UNIONVALUES('qryCont1', ['CONTNO'], ', ', ' : ');
+    )
+  );
+
+  IF ((TRIM (qKC.BOXNO) <> '') * (FIELDISNULL ('qKC','BOXNO') = 0),
+    sBoxNo := qKC.BOXNO,
+    sBoxNo := sConstStore
+  )
+)
+),
+
+VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'proc.ini');
+VAR ('sIniSection', String, 'GoodsDeadline.exp');
+VAR ('iGoodsNumber', Integer, 1);
+//VAR ('vPLACEID', String);
+VAR ('vID', String);
+VAR ('vG32', String);
+VAR ('sBoxNo', String);
+VAR ('sValCode', String, '');
+
+// настройка на каталог обмена
+//VAR ('sDir', String, INIFILE ('STS-MED', 'iin', ''));
+//IF (sDir = '', IF (SELECTDIRECTORY ('sDir') = 0, RAISEEXCEPTION ('Отменено пользователем')));
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
+
+  IF (DIRECTORYEXISTS (sDir) = 0, FORCEDIRECTORIES (sDir));
+
+//VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'DO3Report_'+Convert(JRDO3.PLACEID, String)+'_'+Convert(JRDO3.JOURNAL_MASTER_ID, String)+'.xml');
+VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'DO3_' + UPPERSTR (JRDO3.RefDocumentID) + '.xml');
+VAR ('mSQL', Memo, '');
+
+
+FUNC ('CreateXML', ,
+  Block(
+    VAR ('XMLDoc', Integer, XMLDocumentCreate());
+    VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+    VAR ('XMLDO3Report', Integer, XMLNODEADDCHILD (XMLDocRoot, 'do3r:DO3Report'));
+
+//АТТРИБУТЫ ДОБАВЛЕНЫ, ЧТОБЫ XML-ФАЙЛ ОТКРЫВАЛСЯ В IE И КПС (НАЧАЛО)
+    XmlNodeSetAttribute (XMLDO3Report, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XmlNodeSetAttribute (XMLDO3Report, 'xmlns:do3r', 'urn:customs.ru:Information:WarehouseDocuments:DO3Report:5.11.0');
+//АТТРИБУТЫ ДОБАВЛЕНЫ, ЧТОБЫ XML-ФАЙЛ ОТКРЫВАЛСЯ В IE И КПС (КОНЕЦ)
+
+    XmlNodeSetAttribute (XMLDO3Report, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.10.0');
+    XmlNodeSetAttribute (XMLDO3Report, 'DocumentModeID', '1008013E');
+    //XmlNodeSetAttribute (XMLDO3Report, 'cat_ru:RefDocumentID', JRDO3.RefDocumentId);
+    XMLNODESETVALUES (XMLDO3Report, '',
+            'cat_ru:DocumentID', GENERATEUUID (1),
+            'cat_ru:RefDocumentID', JRDO3.RefDocumentId,
+            'do3r:ReportBegingDate', FDT ('YYYY-MM-DD', dtPeriodStart),
+            'do3r:ReportEndDate', FDT ('YYYY-MM-DD', dtPeriodEnd),
+            'do3r:AddSheetsNumber', '1',
+            'do3r:ReportNumber', JRDO3.ReportNumber,
+            'do3r:ReportDate', FDT ('YYYY-MM-DD', JRDO3.ReportDate),
+            'do3r:ReportTime', FDT ('HH:NN:SS', JRDO3.ReportDate),
+    ); // XMLNODESETVALUES - //
+
+  )
+), // FUNC - CreateXML() //
+
+FUNC ('SaveXML', ,
+  Block(
+    XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
+    XmlDestroy (XMLDoc);
+  )
+), // FUNC - SaveTmpXML() //
+
+//Сведения о товарах
+FUNC ('FillGoods', ,
+  Block(
+    mSQL := 'SELECT DISTINCT ' +
+            ' KC.PLACEID, KC.ID, KC.G32, KC.ACCEPTDATE ' +
+            'FROM ' +
+            ' KRD_COMM KC ' +
+            'LEFT JOIN REL_COMM RC ON' +
+            ' KC.PLACEID=RC.PLACEID AND KC.ID=RC.ID AND KC.G32=RC.G32 ' +
+            'WHERE ' +
+            ' ((KC.ACCEPTDATE BETWEEN ' + sPeriodStart + ' AND ' + sPeriodEnd + ')' +
+            '  OR ' +
+            '  (RC.RELEASE_OUT_DATE BETWEEN ' + sPeriodStart + ' AND ' + sPeriodEnd + ')) ' +
+            ' AND KC.PLACEID=' + vPlaceID +' ORDER BY KC.ACCEPTDATE, KC.PLACEID, KC.ID, KC.G32';
+
+    OPENQUERY ('qryGoods', 'STS_DB', mSQL);
+    VAR ('iGoodsCount', Integer, RECORDCOUNT ('qryGoods'));
+    VAR ('iGoodsIndex', Integer, 1);
+    IF (iGoodsCount > 0,
+      Block(
+        FIRST ('qryGoods');
+        SHOWPROGRESS ('Запись информации о товарах');
+        WHILE (EOF ('qryGoods') = 0,
+          Block(
+            mSQL := 'SELECT ID FROM KRD_CSDM WHERE PLACEID=' + qryGoods.PLACEID + ' AND ID=' + qryGoods.ID + ' AND G32=' + qryGoods.G32 + ' AND SDM_KIND=' +char(39)+ '1' +char(39);
+            OPENQUERY ('qCheckMismatch', 'STS_DB', mSQL);
+            IF (FIELDISNULL ('qCheckMismatch', 'ID'),
+              Block(
+                VAR ('XMLGoods', Integer, XMLNODEADDCHILD (XMLDO3Report, 'do3r:Goods'));
+
+    //!            LOCATE ('KRD_COMM', 'PLACEID;ID;G32', [qryGoods.PLACEID, qryGoods.ID, qryGoods.G32]);
+    //!            LOCATE ('KRD_MAIN', 'PLACEID;ID', [qryGoods.PLACEID, qryGoods.ID]);
+
+                mSQL := 'SELECT * FROM KRD_COMM WHERE PLACEID=' + qryGoods.PLACEID + ' AND ID=' + qryGoods.ID + ' AND G32=' + qryGoods.G32;
+                OPENQUERY ('qKC', 'STS_DB', mSQL);
+                mSQL := 'SELECT * FROM KRD_MAIN WHERE PLACEID=' + qryGoods.PLACEID + ' AND ID=' + qryGoods.ID;
+                OPENQUERY ('qKM', 'STS_DB', mSQL);
+
+                ///ПРИХОД, ДО1 =======
+                sValCode := IF (qKC.G42_CURRENCY <> '',
+                               IF (CURRENCYABBR (qKC.G42_CURRENCY) <> '', CURRENCYABBR (qKC.G42_CURRENCY), ''),
+                               IF (CURRENCYABBR (qKM.G221) <> '', CURRENCYABBR (qKM.G221), '')
+                );
+
+                VAR ('XMLInput', Integer, XMLNODEADDCHILD (XMLGoods, 'do3r:Input'));
+
+                XMLNODESETVALUES (XMLInput, '',
+                                            'catWH_ru:GoodsNumber',      iGoodsNumber,
+                                            'catWH_ru:GoodsTNVEDCode',   qKC.G33,
+                                            'catWH_ru:InvoiceCost',      FORMATFLOAT ('0.##', qKC.G42),
+                                            'catWH_ru:CurrencyCode',     sValCode,
+    //                                        'catWH_ru:GoodsDescription', qKC.G312
+                );
+
+                WriteBoxNo();
+
+                VAR ('sGoodsDescr', Memo, REPLACECR (qKC.G312));
+                sGoodsDescr := TRIM (sGoodsDescr);
+                IF (LENGTH (sGoodsDescr) > 250,
+                  Block(
+                    XMLNODESETVALUES (XmlInput, '',
+                              'catWH_ru:GoodsDescription', IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150));
+                    ); // XMLNODESETVALUES - //
+
+                    While( Length(sGoodsDescr) > 0,
+                      Block(
+                        sGoodsDescr := DELETE (sGoodsDescr, 1, 150);
+                        IF (LENGTH (sGoodsDescr) > 0,
+                          XMLNODESETVALUE (XMLNODEADDCHILD (XmlInput, 'catWH_ru:GoodsDescription'),  IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150)))
+                        ); // IF - //
+                      )
+                    ); // WHILE - //
+                  ),
+                  Block(
+                    XMLNODESETVALUES (XmlInput, '', 'catWH_ru:GoodsDescription', sGoodsDescr);
+                  )
+                ); // IF - //
+
+                iGoodsNumber := iGoodsNumber + 1;
+                //CASE или IF - Описание товара / Номер МПО
+    //!              XMLNODEADDCHILD(XMLInput, 'catWH_ru:GoodsDescription');
+    //!              XMLNODEADDCHILD(XMLInput, 'catWH_ru:MPONumber');
+
+                //Сведения о местах
+                XMLNODESETVALUES (XMLInput, 'catWH_ru:CargoPlace',
+                                            'catWH_ru:PlaceNumber', qKC.G311,
+    //?                                        'catWH_ru:PackageCode', '',
+    //?                                        'catWH_ru:PlaceDescription', '',
+                );
+                //Вес брутто\объем
+                XMLNODESETVALUES (XMLInput, 'catWH_ru:BruttoVolQuant',
+                                            'catWH_ru:GoodsQuantity', FormatFloat('0.######', qKC.G35),
+                                            'catWH_ru:MeasureUnitQualifierName', 'КГ',
+                                            'catWH_ru:MeasureUnitQualifierCode', '166'
+                );
+                //Количество в дополнительных еденицах
+    //!            XMLNODEADDCHILD(XMLInput, 'catWH_ru:MeasureQuantity\catWH_ru:GoodsQuantity');
+    //!            XMLNODEADDCHILD(XMLInput, 'catWH_ru:MeasureQuantity\catWH_ru:MeasureUnitQualifierName');
+    //!            XMLNODEADDCHILD(XMLInput, 'catWH_ru:MeasureQuantity\catWH_ru:MeasureUnitQualifierCode');
+    {
+                XMLNODESETVALUES (XMLInput, 'catWH_ru:MeasureQuantity',
+                                            'catWH_ru:GoodsQuantity', FormatFloat('0.######', qKC.G315A),
+                                            'catWH_ru:MeasureUnitQualifierName', REFERENCE ('UNITS', 'UNITCODE', qKC.G41A, 'UNITNAME'),
+                                            'catWH_ru:MeasureUnitQualifierCode', qKC.G41A
+                );
+    }
+                XMLNODESETVALUES (XMLInput, '',
+                //стал строковым(255)
+                                            'do3r:GoodsWHNumber', Copy(sBOXNO, 1, 255),
+                );
+
+                //Сведения о сроке хранения товара
+                XMLNODESETVALUES (XMLInput, 'do3r:KeepingLimit',
+                                            'do3r:AcceptDate', FDT ('YYYY-MM-DD', qKC.ACCEPTDATE),
+                                            'do3r:AcceptTime', FDT ('HH:NN:SS', qKC.ACCEPTDATE),
+                                            'do3r:StoringDateType', qKC.STORAGE_TYPE,
+                                            'do3r:DeadLineDate', FDT ('YYYY-MM-DD', IF (qKC.STORAGE_DATE, qKC.STORAGE_DATE,
+                                                                  IF (qKC.STORE_PERIOD, qKM.BEG_KEEP + qKC.STORE_PERIOD)))
+                );
+                //Транспортный документ
+                // В цикле по таблице KRD_PAPERS с текущим PLACEID, ID проверяем есть ли такая запись в qKC [PLACEID, ID, N_TTN=KRD_PAPERS.COUNTER]
+                // Так же у документа должен быть признак накладной (REFERENCE ('PAPERS', 'PAPERNAME', KRD_PAPERS.PAPERNAME, 'PAPER_IS_WAYBILL') = 1)
+                // И это должна быть первая накладная из встреченных
+    //!            XMLNODEADDCHILD(XMLInput, 'do3r:TransportDocument\cat_ru:PrDocumentName');
+    //!            XMLNODEADDCHILD(XMLInput, 'do3r:TransportDocument\cat_ru:PrDocumentNumber');
+    //!            XMLNODEADDCHILD(XMLInput, 'do3r:TransportDocument\cat_ru:PrDocumentDate');
+    {
+                SETFILTER ('KRD_PAPERS', 'PLACEID='+qKC.PLACEID+' AND ID='+qKC.ID);
+                FIRST ('KRD_PAPERS');
+                WHILE (EOF ('KRD_PAPERS') = 0,
+                  Block(
+
+                  )
+                ); // WHILE - //
+    }
+                mSQL := 'SELECT * FROM KR_PAPER WHERE PLACEID=' + qKC.PLACEID + ' AND ID=' + qKC.ID + ' AND COUNTER=' + qKC.N_TTN;
+                OPENQUERY ('qP', 'STS_DB', mSQL);
+
+    //!            IF (LOCATE ('KRD_PAPERS', 'PLACEID;ID;COUNTER', [qKC.PLACEID, qKC.ID, qKC.N_TTN]) = 1,
+                IF (FIELDISNULL ('qP', 'PLACEID') = 0,
+                  Block(
+                    XMLNODESETVALUES (XMLInput, 'do3r:TransportDocument',
+                                                'cat_ru:PrDocumentName', REFERENCE ('PAPERS', 'PAPERNAME', qP.PAPERNAME, 'PAPERFULLNAME'),
+                                                'cat_ru:PrDocumentNumber', qP.PAPERNO,
+                                                'cat_ru:PrDocumentDate', FDT ('YYYY-MM-DD', qP.PAPERDATE),
+                    );
+                  )
+                ); // IF - //
+
+                //Получатель
+                XMLNODESETVALUES (XMLInput, 'do3r:Recipient',
+                                            'cat_ru:OrganizationName', qKM.G082
+                );
+                If(qKM.G17A = '643',
+                     XMLNODESETVALUES (XMLInput, 'do3r:Recipient',
+                                            'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', qKM.G08_OGRN,
+                                            'cat_ru:RFOrganizationFeatures\cat_ru:INN', qKM.G084C,
+                                            'cat_ru:RFOrganizationFeatures\cat_ru:KPP', qKM.G08_KPP
+                      )
+                );
+
+                //Указание на товар отчёта ДО1, который помещён на склад
+                XMLNODESETVALUES (XMLInput, 'do3r:DO1GoodLink',
+                                            'do3r:DO1Date', FDT ('YYYY-MM-DD', qKM.BD_DATE),
+                                            'do3r:DO1Number', CUSTOMSNOPART (qKM.NBD, 3, RIGHT (qKM.NBD, 7)),
+                                            'do3r:DO1GoodNumber', qKC.G32,
+                );
+
+
+
+                ///РАСХОД, ДО2 (ЦИКЛ) =======
+               // showmessage (sPeriodStart);
+                mSQL := 'SELECT * FROM REL_COMM WHERE PLACEID=' + qryGoods.PLACEID + ' AND ID=' + qryGoods.ID + ' AND G32=' + qryGoods.G32 + ' AND RELEASE_OUT_DATE BETWEEN '+sPeriodStart+' AND '+sPeriodEnd;
+                OPENQUERY ('qRC', 'STS_DB', mSQL);
+
+                VAR ('XMLOutput', Integer);
+
+                FIRST ('qRC');
+                IF (EOF ('qRC') = 1,
+                  Block(
+                    XMLOutput := XMLNODEADDCHILD (XMLGoods, 'do3r:Output');
+                    VAR ('XMLOrderCustDoc', Integer, XMLNODEADDCHILD (XMLOutput, 'do3r:OrderCustDoc'));
+                  )
+                );
+                WHILE (EOF ('qRC') = 0,
+                  Block(
+                    sValCode := IF (qKC.G42_CURRENCY <> '',
+                                  IF (CURRENCYABBR (qKC.G42_CURRENCY) <> '', CURRENCYABBR (qKC.G42_CURRENCY), ''),
+                                  IF (CURRENCYABBR (qKM.G221) <> '', CURRENCYABBR (qKM.G221), '')
+                    );
+
+                    XMLOutput := XMLNODEADDCHILD (XMLGoods, 'do3r:Output');
+                    XMLNODESETVALUES (XmlOutput, '',
+                                                 'do3r:Cost',         FORMATFLOAT ('0.##', qRC.RELEASE_G42),
+                                                 'do3r:CurrencyCode', sValCode,
+                                                 'do3r:OutputDate',   FDT ('YYYY-MM-DD', qRC.RELEASE_OUT_DATE),
+                                                 'do3r:OutputTime',   FDT ('HH:NN:SS', qRC.RELEASE_OUT_DATE)
+                    );
+                    //Сведения о грузовых местах
+                    XMLNODESETVALUES (XMLOutput, 'do3r:CargoPlace',
+                                                 'catWH_ru:PlaceNumber',      qRC.RELEASE_G311,
+                                                 'catWH_ru:PackageCode',      REFERENCE('VIDUPAK', 'NAIM_R', qKC.G313, 'KOD'),
+                                                 'catWH_ru:PlaceDescription', Copy(qKC.G313, 1, 40),
+                    );
+                    //Вес брутто\объем
+                       XMLNODESETVALUES (XMLOutput, 'do3r:BruttoVolQuant',
+                                                    'catWH_ru:GoodsQuantity', FormatFloat('0.######', qRC.RELEASE_G35),
+                                                    'catWH_ru:MeasureUnitQualifierName', 'КГ',
+                                                    'catWH_ru:MeasureUnitQualifierCode', '166'
+                       );
+                    //Количество в дополнительных еденицах
+    //!                XMLNODEADDCHILD(XMLOutput, 'do3r:MeasureQuantity\catWH_ru:GoodsQuantity');
+    //!                XMLNODEADDCHILD(XMLOutput, 'do3r:MeasureQuantity\catWH_ru:MeasureUnitQualifierName');
+    //!                XMLNODEADDCHILD(XMLOutput, 'do3r:MeasureQuantity\catWH_ru:MeasureUnitQualifierCode');
+    {
+                       XMLNODESETVALUES (XMLOutput, 'do3r:MeasureQuantity',
+                                                    'catWH_ru:GoodsQuantity', FormatFloat('0.######', qRC.RELEASE_G315A),
+                                                    'catWH_ru:MeasureUnitQualifierName', IF (qRC.RELEASE_G315 <> '', qRC.RELEASE_G315, 'ШТ'),
+                                                    'catWH_ru:MeasureUnitQualifierCode', IF (REFERENCE ('UNITS', 'UNITNAME', qRC.RELEASE_G315, 'UNITCODE') <> '', REFERENCE ('UNITS', 'UNITNAME', qRC.RELEASE_G315, 'UNITCODE'), '796')
+                       );
+    }
+                    VAR ('XMLOrderCustDoc', Integer, XMLNODEADDCHILD (XMLOutput, 'do3r:OrderCustDoc'));
+                  //Документ, по которому разрешена выдача товара со склада
+                    LOCATE ('REL_MAIN', 'PLACEID;ID;COUNTER', [qRC.PLACEID, qRC.ID, qRC.COUNTER]);
+                    mSQL := 'SELECT * FROM ' + IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + qRC.PLACEID + ' AND ID=' + qRC.ID + ' AND COUNTER=' + qRC.COUNTER;
+                    OPENQUERY ('qRM', 'STS_DB', mSQL);
+
+                    XMLNODESETVALUES (XMLOrderCustDoc, '',
+                                                       'cat_ru:PrDocumentName',   REFERENCE ('PAPERS', 'PAPERNAME', qRM.DOC_TYPE, 'PAPERFULLNAME'),
+                                                       'cat_ru:PrDocumentNumber', qRM.DOC_NO,
+                                                       'cat_ru:PrDocumentDate',   FDT ('YYYY-MM-DD', qRM.RELEASE_DATE)
+                    );
+
+                    //! ИЩЕМ ДТ "БЕЗ ТОВАРОВ" и добавляем их как пустые do3r:Output > do3:OrderCustDoc
+
+                    mSQL := 'SELECT' +
+                        ' DISTINCT R.DOC_TYPE, R.DOC_NO, R.DOC_CODE, R.RELEASE_DATE' +
+                        ' FROM ' + CORRECTTABLENAME ('RELEASE') + ' R' +
+                        ' WHERE' +
+                        ' R.PLACEID=' + qRM.PLACEID +
+                        ' AND MAIN_ID=' + qRM.MAIN_ID +
+                        ' AND MAIN_COUNTER=' + qRM.MAIN_COUNTER +
+                        ' AND (SELECT COUNT(RC.ID) FROM REL_COMM RC WHERE RC.PLACEID=R.PLACEID AND RC.ID=R.ID AND RC.COUNTER=R.COUNTER) = 0';
+                    // showmessage(mSQL);
+                    OPENQUERY ('qUnLinkedDT', 'STS_DB', mSQL, 1);
+                    WHILE (EOF ('qUnLinkedDT') = 0,
+                      Block(
+                        XMLOutput := XMLNODEADDCHILD (XMLGoods, 'do3r:Output');
+                        XMLOrderCustDoc := XMLNODEADDCHILD (XMLOutput, 'do3r:OrderCustDoc');
+                        XMLNODESETVALUES (XMLOrderCustDoc, '',
+                                                           'cat_ru:PrDocumentName',   REFERENCE ('PAPERS', 'PAPERNAME', qUnLinkedDT.DOC_TYPE, 'PAPERFULLNAME'),
+                                                           'cat_ru:PrDocumentNumber', qUnLinkedDT.DOC_NO,
+                                                           'cat_ru:PrDocumentDate',   FDT ('YYYY-MM-DD', qUnLinkedDT.RELEASE_DATE)
+                        ); // XMLNODESETVALUES
+                        NEXT ('qUnLinkedDT');
+                      )
+                    ); // WHILE
+                    CLOSEDATASET ('qUnLinkedDT');
+
+                    CLOSEDATASET ('qRM');
+                    NEXT ('qRC');
+                  )
+                ); // WHILE - //
+              )
+            ); // IF - //
+
+            SETPROGRESS (iGoodsIndex, 100, iGoodsCount);
+            iGoodsIndex := iGoodsIndex + 1;
+            NEXT ('qryGoods');
+          )
+        );
+        HIDEPROGRESS ();
+      ),
+      Block(
+        VAR ('XMLEmptyGoodsFlag', Integer, XMLNODEADDCHILD (XMLDO3Report, 'do3r:EmptyGoodsFlag'));
+        XMLNODESETVALUES (XMLDO3Report, '', 'do3r:EmptyGoodsFlag', '1');
+        //RAISEEXCEPTION ('Формирование отчётности по Форме ДО-3 невозможно.' + char(13) + 'В базе данных отсутствуют товары помещённые или выданные в запрашиваемый период');
+      )
+    );
+
+  )
+), // FUNC - FillGoods() //
+
+//Данные о регистрации отчёта в таможенном органе
+FUNC ('FillCustomRegistration', ,
+  Block(
+    VAR ('XMLCustomRegistration', Integer, XMLNODEADDCHILD (XMLDO3Report, 'do3r:CustomRegistration'));
+
+       XMLNODESETVALUES (XMLCustomRegistration, '',
+              'catWH_ru:CustomState', CASE (JRDO3.CustomState, ['Отказ в регистрации', 'ds_Rebuilding',
+                                                                    'Рассматривается инспектором', 'ds_OnInspect',
+                                                                    'Зарегистрирован', 'ds_Registered'],
+                                                                    'ds_Editing')
+       );
+
+       IF(FDT ('HH:MM:SS', JRDO3.RegisterTime) <> '',
+         XMLNODESETVALUES (XMLCustomRegistration, '',
+             'catWH_ru:RegisterTime', FDT ('HH:MM:SS', JRDO3.RegisterTime)
+         )
+       );
+
+    //Сотрудник таможенного органаб зарегистрировавший отчёт
+       IF(JRDO3.PersonSurname <> '',
+         XMLNODESETVALUES (XMLCustomRegistration, 'catWH_ru:Inspector',
+                                                  'cat_ru:PersonSurname', JRDO3.PersonSurname,
+                                                  'cat_ru:PersonName', JRDO3.PersonName,
+                                                  'cat_ru:PersonPost', JRDO3.PersonPost,
+                                                  'catWH_ru:LNP', JRDO3.LNP,
+         )
+      );
+    //Данные об аннулировании отчёта
+    VAR ('XMLCancelation', Integer, XMLNODEADDCHILD (XMLCustomRegistration, 'catWH_ru:Cancelation'));
+//!    XMLNODEADDCHILD(XMLCancelation, 'catWH_ru:CancelDate');
+//!    XMLNODEADDCHILD(XMLCancelation, 'catWH_ru:CancelReason');
+    {XMLNODESETVALUES (XMLCancelation, '',
+                                      'catWH_ru:CancelDate', 'catWH_ru:CancelDate',
+                                      'catWH_ru:CancelReason', 'catWH_ru:CancelReason'
+    );}
+    //Сотрудник таможенного органа, аннулировавший отчёт
+//!    XMLNODEADDCHILD(XMLCancelation, 'catWH_ru:Inspector\cat_ru:PersonSurname');
+//!    XMLNODEADDCHILD(XMLCancelation, 'catWH_ru:Inspector\cat_ru:PersonName');
+//!    XMLNODEADDCHILD(XMLCancelation, 'catWH_ru:Inspector\cat_ru:PersonMiddleName');
+//!    XMLNODEADDCHILD(XMLCancelation, 'catWH_ru:Inspector\catWH_ru:LNP');
+       {XMLNODESETVALUES (XMLCancelation, 'catWH_ru:Inspector',
+                                         'cat_ru:PersonSurname', 'cat_ru:PersonSurname',
+                                         'cat_ru:PersonName', 'cat_ru:PersonName',
+                                         'cat_ru:PersonMiddleName', 'cat_ru:PersonMiddleName',
+                                         'catWH_ru:LNP', 'catWH_ru:LNP',
+       );}
+    //Регистрационный номер отчёта по журналу регистрации ДО таможенного органа
+//!    XMLNODEADDCHILD(XMLCustomRegistration, 'catWH_ru:RegisterNumber\cat_ru:CustomCode');
+//!    XMLNODEADDCHILD(XMLCustomRegistration, 'catWH_ru:RegisterNumber\cat_ru:RegistrationDate');
+//!    XMLNODEADDCHILD(XMLCustomRegistration, 'catWH_ru:RegisterNumber\cat_ru:GTDNUmber');
+
+       IF (JRDO3.GTDNumber <> '',
+         Block(
+           LOCATE ('STORES', 'PLACEID', [qryGOODS.PLACEID]);
+
+           VAR ('sTmp', String, '');
+           VAR ('iPartsCount', Integer, SPLITSTR (JRDO3.GTDNumber, '/', sTmp, sTmp));
+           IF (iPartsCount > 3,
+             XMLNODESETVALUES (XMLCustomRegistration, 'catWH_ru:RegisterNumber',
+                                                      'cat_ru:CustomCode', JRDO3.CustomsCode,
+                                                      'cat_ru:RegistrationDate', FDT('YYYY-MM-DD', JRDO3.RegistrationDate),
+                                                      'cat_ru:GTDNumber', EXTRACTSTR(JRDO3.GTDNumber, 3, '/'),
+                                                      'catWH_ru:OtherWHPlaceKind', EXTRACTSTR(JRDO3.GTDNumber, 4, '/')
+             ),
+             XMLNODESETVALUES (XMLCustomRegistration, 'catWH_ru:RegisterNumber',
+                                                      'cat_ru:CustomCode', JRDO3.CustomsCode,
+                                                      'cat_ru:RegistrationDate', FDT('YYYY-MM-DD', JRDO3.RegistrationDate),
+                                                      'cat_ru:GTDNumber', EXTRACTSTR(JRDO3.GTDNumber, 3, '/'),
+                                                      'catWH_ru:CertificateNumber',  STORES.LICENCENO
+             )
+           );
+         )
+       ); // IF - //
+  )
+), // FUNC - FillCustomRegistration() //
+
+//Данные о владельце склада
+FUNC ('FillWarehouseOwner', ,
+  Block(
+    VAR ('XMLWarehouseOwner', Integer, XMLNODEADDCHILD (XMLDO3Report, 'do3r:WarehouseOwner'));
+
+    LOCATE ('STORES', 'PLACEID', [qryGOODS.PLACEID]);
+    XMLNODESETVALUES (XMLWarehouseOwner, '',
+                                         'cat_ru:OrganizationName', STORES.NAME
+                                         //'cat_ru:ShortName', '',
+                                         //'cat_ru:OrganizationLanguage', ''
+    );
+    // Сведения об организации. Особенности Российской Федерации
+    XMLNODESETVALUES (XMLWarehouseOwner, 'cat_ru:RFOrganizationFeatures',
+                                         'cat_ru:OGRN', STORES.G140,
+                                         'cat_ru:INN',  STORES.G144C,
+                                         'cat_ru:KPP',  STORES.KPP
+    );
+    // Адрес места хранения
+    XMLNODESETVALUES (XMLWarehouseOwner, 'catWH_ru:Address',
+                                         //'cat_ru:PostalCode', '',
+                                         //'cat_ru:CountryCode', '',
+                                         //'cat_ru:CountryName', '',
+                                         //'cat_ru:Region', '',
+                                         'cat_ru:City', STORES.TOWN,
+                                         //'cat_ru:StreetHouse', '',
+                                         'catWH_ru:AddressLine',  STORES.ADDRESS
+    );
+
+    VAR ('sCertificateKind', String, 'lic_Certificate');
+
+    IF (LENGTH (TRIM (STORES.LICENCETYPE)) > 0,
+      Block(
+        sCertificateKind := CASE (STORES.LICENCETYPE, [1, 'lic_Certificate',
+                                                       2, 'lic_Licence',
+                                                       3, 'lic_Permition',
+                                                       4, 'lic_PermZtk',
+                                                       5, 'lic_TempZtk'
+                                                      ], 'lic_Certificate'); // CASE - //
+      ),
+      Block(
+        sCertificateKind := CASE (STORES.STORE_TYPE, ['СВХ', 'lic_Certificate',
+                                                      // '2', 'lic_Licence',
+                                                       'СП', 'lic_Permition',
+                                                       'ПЗТК', 'lic_PermZtk',
+                                                       'ВЗТК', 'lic_TempZtk'
+                                                     ], 'lic_Certificate'); // CASE - //
+      )
+    ); // IF - //
+
+     // Документ, на основании которого разрешено временное хранение
+     XMLNODESETVALUES (XMLWarehouseOwner, 'catWH_ru:WarehouseLicense',
+                                          'catWH_ru:CertificateKind', sCertificateKind,
+                                          'catWH_ru:CertificateNumber', STORES.LICENCENO,
+                                          'catWH_ru:CertificateDate',   FDT ('YYYY-MM-DD', STORES.LICENCEDATE)
+         );
+         // Представитель СВХ
+         IF(JRDO3.WHPersonSurname <> '',
+           XMLNODESETVALUES (XMLWarehouseOwner, 'catWH_ru:WarehousePerson',
+                                                'cat_ru:PersonSurname',     JRDO3.WHPersonSurname,
+                                                'cat_ru:PersonName',        JRDO3.WHPersonName,
+                                                'cat_ru:PersonPost',        JRDO3.WHPersonPost
+           )
+         );
+
+  )
+), // FUNC - FillWarehouseOwner() //
+
+    CreateXML ();
+
+    sPeriodStart := DBFORMATDATETIME (dtPeriodStart, GETDATABASETYPE ('STS_DB'), 0, 1);
+    sPeriodEnd := DBFORMATDATETIME (dtPeriodEnd, GETDATABASETYPE ('STS_DB'), 1, 1);
+
+    // Проверяем заполненность поля REL_COMM.RELEASE_OUT_DATE
+    // Если поле пустое, то пишем в него значение RELEASE.OUT_DATE
+
+    mSQL := 'SELECT COUNT(PLACEID) AS P FROM REL_COMM WHERE RELEASE_OUT_DATE IS NULL AND PLACEID=' + vPlaceId;
+    OPENQUERY ('qROD', 'STS_DB', mSQL);
+
+    IF (FIELDISNULL ('qROD', 'P') = 0,
+      Block(
+        mSQL := 'UPDATE REL_COMM SET REL_COMM.RELEASE_OUT_DATE=(SELECT R.OUT_DATE FROM ' +
+                IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE') +
+                ' R WHERE R.PLACEID=REL_COMM.PLACEID AND R.ID=REL_COMM.ID AND R.COUNTER=REL_COMM.COUNTER)' +
+                ' WHERE REL_COMM.RELEASE_OUT_DATE IS NULL AND REL_COMM.PLACEID=' + vPlaceId;
+        EXECUTESQL ('STS_DB', mSQL);
+      )
+    ); // IF - //
+
+    //Сведения о товарах (ЦИКЛ)
+    FillGoods ();
+
+    //Данные о регистрации отчёта в таможенном органе
+//!    FillCustomRegistration ();
+    //Данные о владельце склада
+    FillWarehouseOwner ();
+
+    SaveXML ();
+
+WRITEINIFILE ('STS-MED', 'iin', INCLUDETRAILINGBACKSLASH (sDir));

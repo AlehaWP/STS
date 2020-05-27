@@ -1,0 +1,507 @@
+// *****************************************************************************
+// Название: Экспорт ДО2 в формате СВХ.АЛЬБОМ
+// Описание: Экспорт ДО2 в формате СВХ.АЛЬБОМ
+// Кнопка вызова: 0
+// Подпись кнопки: ДО2.Альбом(эк)
+// *****************************************************************************
+//
+VAR ('bHaveTS', Boolean, False); {пока True - разбираем строку REL_MAIN.TRANSPNO на ТС и Прицепы}
+
+VAR ('iCustDocNum', Integer, 1);
+VAR ('XmlDoc', Integer, GETXMLDOCUMENT()); //do2r:DO2Report
+VAR ('XmlCustomsDocs', Integer); //таможенные документы
+VAR ('XmlGoods', Integer); //товары
+VAR ('XmlGoodsCustomDocsLinks', Integer); //связи товаров с там.документами
+VAR ('XmlGoodsShipment', Integer);
+VAR ('iRelTransRecordCount', Integer);
+VAR ('iCustomDocNumber', Integer);
+VAR ('iGoodNumber', Integer);
+VAR ('num', Integer);
+CONST ('sTranspNums', String, CHARSTR (CHAR(32), 255));
+CONST ('sTransps', String, '');
+CONST ('sTranspAll', String, '');
+CONST ('sTranspNo', String, '');
+CONST ('sNTrail', String, '');
+CONST('sTranspCount', String, '');
+
+OPENTABLE ('KRD_COMM_2', 'STS_DB', 'KRD_COMM');
+OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN');
+
+FUNC ('getTSinfo',
+PARAM ('separator', Integer, 0), {разделитель: 1 - ","; 2 - "/", 3 - "\"}
+  Block(
+    sTranspNo := REMOVECHAR (sTransps, ';');
+    sNTrail := '';
+    CASE (separator, ['1', Block(
+                             sTranspNo := REMOVECHAR (COPY (sTransps, 1,STRPOS (',', sTransps) ), ',');
+                             sNTrail := REMOVECHAR (DELETE (sTransps, 1,STRPOS (',', sTransps) ), ';');
+                           ),
+                      '2', Block(
+                             sTranspNo := REMOVECHAR (COPY (sTransps, 1,STRPOS ('/', sTransps) ), '/');
+                             sNTrail := REMOVECHAR (DELETE (sTransps, 1,STRPOS ('/', sTransps) ), ';');
+                           ),
+                      '3', Block(
+                             sTranspNo := REMOVECHAR (COPY (sTransps, 1,STRPOS ('\', sTransps) ), '\');
+                             sNTrail := REMOVECHAR (DELETE (sTransps, 1,STRPOS ('\', sTransps) ), ';');
+                           )],
+                      Block(
+                        //не делаем ничего
+                      )
+    ); {CASE - separator }
+    sTranspNo := TRIM (sTranspNo);
+    sNTrail := TRIM (sNTrail);
+  )
+), {FUNC - getTSinfo() }
+
+FUNC ('WriteCustomRegistration', , //заполняем раздел о регистрации документа
+  Block(
+        VAR ('XmlCustomRegistration', Integer, XmlNodeAddChild (XmlDoc, 'catWH_ru:CustomRegistration'));
+        XmlNodeSetValues (XmlCustomRegistration,'',
+                  'catWH_ru:CustomState', CASE (REL_MAIN.MC_STATUS, ['1', 'ds_Rebuilding',
+                                                                     'И', 'ds_OnInspect',
+                                                                     '3', 'ds_Registered'
+                                                                     ], 'ds_Editing')
+        );
+
+        IF (REL_MAIN.REG_RELEASE_NO <> '',
+          Block(
+            VAR ('XMLRegisterNumber', Integer, XMLNodeAddChild (XMLCustomRegistration, 'catWH_ru:RegisterNumber'));
+            VAR ('sRegDate', String, FDT('YYYY-MM-DD', REL_MAIN.REG_TIME));
+            IF (sRegDate = '', sRegDate := FDT('YYYY-MM-DD', EXCLUDEDATE (REL_MAIN.REG_RELEASE_NO)));
+            XmlNodeSetValues (XmlRegisterNumber, '',
+                   'cat_ru:CustomsCode',      CUSTOMSNOPART (REL_MAIN.REG_RELEASE_NO, 1, ''),
+                   'cat_ru:RegistrationDate', sRegDate,
+                   'cat_ru:GTDNumber',        CUSTOMSNOPART (REL_MAIN.REG_RELEASE_NO, 3, '')
+            );
+          )
+        ); {IF - REL_MAIN.REG_RELEASE_NO <> '' }
+        XmlNodeSetValues (XmlDoc, 'catWH_ru:CustomRegistration',
+                  'catWH_ru:RegisterTime', FDT ('HH:MM:SS', REL_MAIN.REG_TIME),
+        );
+
+
+        IF (REL_MAIN.FIO_INSPECTOR <> '',
+          XmlNodeSetValues (XmlCustomRegistration, 'catWH_ru:Inspector',
+                    'cat_ru:PersonSurname', EXTRACTSTR (REL_MAIN.FIO_INSPECTOR, 1, ' '),
+                    'cat_ru:PersonName', EXTRACTSTR (REL_MAIN.FIO_INSPECTOR, 2, ' '),
+                    'cat_ru:PersonMiddleName', EXTRACTSTR (REL_MAIN.FIO_INSPECTOR, 3, ' '),
+                    'cat_ru:PersonPost', REL_MAIN.POST_INSPECTOR,
+                    'catWH_ru:LNP', REL_MAIN.GD2)
+        ); {IF - REL_MAIN.FIO_INSPECTOR <> '' }
+  )
+), {FUNC - WriteCustomRegistration() }
+
+FUNC ('WriteWarehouseOwner', , //заполняем раздел СВХ
+  Block(
+        VAR ('XmlWarehouseOwner', Integer, XmlNodeAddChild (XmlDoc, 'catWH_ru:WarehouseOwner'));
+        
+        XmlNodeSetValues (XmlWarehouseOwner,'', 'cat_ru:OrganizationName', IF (KRD_MAIN.G142 <> '', KRD_MAIN.G142, STORES.NAME));
+        XmlNodeSetValues (XmlWarehouseOwner,'', 'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', STORES.G140);
+        XmlNodeSetValues (XmlWarehouseOwner,'', 'cat_ru:RFOrganizationFeatures\cat_ru:INN', STORES.G144C);
+        XmlNodeSetValues (XmlWarehouseOwner,'', 'cat_ru:RFOrganizationFeatures\cat_ru:KPP', STORES.KPP);
+        XmlNodeSetValues (XmlWarehouseOwner, 'catWH_ru:Address',
+                  'cat_ru:City', STORES.TOWN,
+                  'catWH_ru:AddressLine', IF (KRD_MAIN.G143 <> '', KRD_MAIN.G143, STORES.ADDRESS)
+        );
+        XmlNodeSetValues (XmlWarehouseOwner, 'catWH_ru:WarehouseLicense',
+                  'catWH_ru:CertificateKind', CASE (KRD_MAIN.G1440, ['1', 'lic_Certificate',
+                                                    							   '2', 'lic_Licence',
+                                                    							   '3', 'lic_Permition',
+                                                    							   '4', 'lic_PermZtk',
+                                                    							   '5', 'lic_TempZtk'
+                                                    							  ],    'lic_Certificate'),
+                  'catWH_ru:CertificateNumber', IF (KRD_MAIN.G144 <> '',  KRD_MAIN.G144, STORES.LICENCENO),
+                  'catWH_ru:CertificateDate', IF (KRD_MAIN.G145 > 0, FDT ('YYYY-MM-DD', KRD_MAIN.G145), FDT ('YYYY-MM-DD', STORES.LICENCEDATE))
+        );
+        IF (TRIM (REL_MAIN.RELEASE_GIVE) <> '',
+          Block(
+            XmlNodeSetValues (XmlWarehouseOwner, 'catWH_ru:WarehousePerson',
+                      'cat_ru:PersonSurname', EXTRACTSTR (REL_MAIN.RELEASE_GIVE, 1, ' '),
+                      'cat_ru:PersonName', EXTRACTSTR (REL_MAIN.RELEASE_GIVE, 2, ' ')
+            );
+            IF (TRIM (REL_MAIN.RELEASE_GIVE_POST) <> '',
+              XmlNodeSetValues (XmlWarehouseOwner, 'catWH_ru:WarehousePerson', 'cat_ru:PersonPost', REL_MAIN.RELEASE_GIVE_POST)
+            );// IF - TRIM (REL_MAIN.RELEASE_GIVE_POST) <> '' //
+          )
+        ); // TRIM (REL_MAIN.RELEASE_GIVE) <> '' //
+  )
+), {FUNC - WriteWarehouseOwner() }
+
+FUNC ('WriteCarrier', ,  //заполняем раздел перевозчика
+  Block(
+        VAR ('XmlCarrier', Integer, XmlNodeAddChild (XmlDoc, 'Carrier'));
+        XmlNodeSetValues (XmlCarrier, '',
+                  'cat_ru:OrganizationName', IF (REL_MAIN.G042 <> '', REL_MAIN.G042, KRD_MAIN.G042));
+        XmlNodeSetValues (XmlCarrier, '',
+                  'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', IF (REL_MAIN.G04_OGRN <> '', REL_MAIN.G04_OGRN, KRD_MAIN.G04_OGRN));
+        XmlNodeSetValues (XmlCarrier, '',
+                  'cat_ru:RFOrganizationFeatures\cat_ru:INN', IF (REL_MAIN.G044C <> '', REL_MAIN.G044C, KRD_MAIN.G044C));
+        XmlNodeSetValues (XmlCarrier, '',
+                  'cat_ru:RFOrganizationFeatures\cat_ru:KPP', IF (REL_MAIN.G04_KPP <> '', REL_MAIN.G04_KPP, KRD_MAIN.G04_KPP));
+        XmlNodeSetValues (XmlCarrier, '',
+                  'catWH_ru:CountryCode', IF (REL_MAIN.G04_COUNTRY <> '', REL_MAIN.G04_COUNTRY, KRD_MAIN.G04_COUNTRY));
+        XmlNodeSetValues (XmlCarrier, 'catWH_ru:Address',
+                  'catWH_ru:AddressLine', IF (REL_MAIN.G043 <> '', REL_MAIN.G043, KRD_MAIN.G043)
+        );
+        XmlNodeSetValues (XmlCarrier, 'catWH_ru:CarrierPerson',
+                  'cat_ru:PersonSurname', EXTRACTSTR (IF (REL_MAIN.G040P <> '', REL_MAIN.G040P, KRD_MAIN.G040P), 1, ' '),
+                  'cat_ru:PersonName', EXTRACTSTR (IF (REL_MAIN.G040P <> '', REL_MAIN.G040P, KRD_MAIN.G040P), 2, ' '),
+                  'cat_ru:PersonPost', IF (REL_MAIN.G040 <> '', REL_MAIN.G040, KRD_MAIN.G040)
+        );
+  )
+), {FUNC - WriteCarrier() }
+
+FUNC('do2rTransports', ,
+  Block(
+    XmlDOTransports := XmlNodeAddChild (XmlDoc, 'DOTransports');
+    XmlNodeSetValues (XmlDOTransports, '',
+                                       'catWH_ru:TransportModeCode', sTranspCode);
+    XmlNodeSetValues (XmlDOTransports, '',
+                                       'catWH_ru:TransportIdentifier', sTranspNo);
+
+    //ветка catWH_ru:Avia, авиатранспорт
+    IF (STRPOS (sTranspCode, '40') <> 0,
+      XmlNodeSetValues (XmlDOTransports, 'catWH_ru:Avia',
+                                         'catWH_ru:FlightNumber', sNTrail
+      )
+    ); {IF - STRPOS(sTranspCode, '40') <> 0 }
+
+    //ветка catWH_ru:Avto, автотранспорт
+    IF (STRPOS (sTranspCode, '16|23|30|31|39|43|55')<>0,
+      XmlNodeSetValues (XmlDOTransports, 'catWH_ru:Avto',
+                                         'catWH_ru:TrailerIdentifier', sNTrail
+      )
+    ); {IF - STRPOS(sTranspCode, '16|23|30|31|39|43|55')<>0 }
+
+    //ветка catWH_ru:RailRoad, железнодорожный транспорт
+    IF (STRPOS (sTranspCode, '12|20') <> 0,
+       XmlNodeSetValues (XmlDOTransports, 'catWH_ru:RailRoad',
+                                          'catWH_ru:RailStation', sNTrail,
+       )
+    ); {IF - STRPOS(sTranspCode, '12|20') <> 0 }
+
+    //ветка catWH_ru:Sea, морской транспорт
+    IF (STRPOS (sTranspCode, '10|80|18'),
+      XmlNodeSetValues (XmlDOTransports, 'catWH_ru:Sea',
+                                         'catWH_ru:EntryNumber', sNTrail,
+                                         'catWH_ru:CountryCode', sTranspCount,
+                                         'catWH_ru:Captain\cat_ru:PersonSurname', EXTRACTSTR (REL_MAIN.G040, 1, ' '),
+                   		                   'catWH_ru:Captain\cat_ru:PersonName', EXTRACTSTR (REL_MAIN.G040, 2, ' '),
+         )
+    ); {IF - STRPOS(sTranspCode, '10|80|81') }
+  )
+), { FUNC - do2rTransports()}
+
+FUNC ('WriteDOTransports', ,  //заполняем раздел транспорта
+  Block(
+        VAR ('XmlDOTransports', Integer);
+        VAR ('sTranspCode', String);
+        IF ((sTranspNums <> '') & (RECORDCOUNT ('RELTRANS')>0),
+          Block(
+            FIRST ('RELTRANS');
+            WHILE (EOF ('RELTRANS')=0,
+              Block(
+                sTranspCode := IF (RELTRANS.TRANSP_CODE <> '', RELTRANS.TRANSP_CODE, REL_MAIN.TRANSPTYPE);
+                IF (STRPOS (sTranspCode + RELTRANS.TRANSPNO + RELTRANS.TRANSP_NTRAILER, sTransps) = 0,
+                  Block(
+                    IF (sTransps <> '', sTransps := sTransps + '|'); {IF - sTransps <> '' }
+                    sTransps := sTransps + sTranspCode + RELTRANS.TRANSPNO + RELTRANS.TRANSP_NTRAILER;
+                    sTranspNo := RELTRANS.TRANSPNO;
+                    sNTrail := RELTRANS.TRANSP_NTRAILER;
+                    sTranspCount := IF (RELTRANS.TRANSP_COUNTRY <> '', RELTRANS.TRANSP_COUNTRY, REL_MAIN.TRANSPCOUNTRY);
+                    do2rTransports();
+                  )
+                ); {IF - STRPOS (sTranspCode + RELTRANS.TRANSPNO + RELTRANS.TRANSP_NTRAILER, sTransps) = 0 }
+                NEXT ('RELTRANS');
+              )
+            ); {WHILE - EOF ('RELTRANS') = 0 }
+          ),
+          Block(       
+            sTranspCode :=  REL_MAIN.TRANSPTYPE;
+            sTranspALL := REL_MAIN.TRANSPNO ;
+            bHaveTS := True;
+            WHILE (bHaveTS = True,
+              Block(
+                sTransps := sTranspALL;
+                IF (LENGTH (sTranspALL) <> 0,
+                  Block(
+                    IF (STRPOS (';', sTranspALL) <> 0,
+                      Block(
+                        sTransps := COPY (sTransps, 1, STRPOS (';', sTransps));
+                        IF (STRPOS (',', sTransps) <> 0, getTSinfo(1)); {IF - }
+                        IF (STRPOS ('/', sTransps) <> 0, getTSinfo(2)); {IF - }
+                        IF (STRPOS ('\', sTransps) <> 0, getTSinfo(3)); {IF - }
+                        IF (((STRPOS ('/', sTransps) = 0)&(STRPOS ('\', sTransps) = 0)&(STRPOS (',', sTransps) = 0)), getTSinfo(0)); {IF - }
+                        sTranspALL := DELETE (sTranspALL, 1, STRPOS (';', sTranspALL));
+                      ),
+                      Block(
+                        IF (STRPOS (',', sTransps) <> 0, getTSinfo(1)); {IF - }
+                        IF (STRPOS ('/', sTransps) <> 0, getTSinfo(2)); {IF - }
+                        IF (STRPOS ('\', sTransps) <> 0, getTSinfo(3)); {IF - }
+                        IF ((STRPOS ('/', sTransps) = 0)&(STRPOS ('\', sTransps) = 0)&(STRPOS (',', sTransps) = 0), getTSinfo(0)); {IF - }
+                        bHaveTS := False;
+                      )
+                    ); {IF - STRPOS (';', sTranspALL) <> 0 }
+                  ),
+                  Block(
+                    bHaveTS := False;
+                  )
+                ); {IF - LENGTH (sTranspALL) <> 0 }
+                do2rTransports();
+              )
+            ); {WHILE - bHaveTS = True}
+          ) 
+        ); {IF - (sTranspNums <> '')&(RECORDCOUNT('RELTRANS')>0) }
+	);
+), {FUNC - WriteDOTransports() }
+
+FUNC ('WriteCustomsDocs', , //заполняем раздел таможенных документов
+  Block(
+      XmlCustomsDocs := XmlNodeAddChild (XmlGoodsShipment, 'CustomsDocs');
+      XmlNodeSetValues (XmlCustomsDocs, '', 'cat_ru:PrDocumentName', FIELDVALUE ('RMain', 'DOC_TYPE'));
+      XmlNodeSetValues (XmlCustomsDocs, '', 'cat_ru:PrDocumentNumber', FIELDVALUE ('RMain', 'DOC_NO'));
+      XmlNodeSetValues (XmlCustomsDocs, '', 'cat_ru:PrDocumentDate', FDT ('YYYY-MM-DD', FIELDVALUE ('RMain', 'RELEASE_DATE')));
+      XmlNodeSetValues (XmlCustomsDocs, '', 'catWH_ru:DocumentCode', FIELDVALUE ('RMain', 'DOC_CODE'));
+
+  )
+), {FUNC - WriteCustomsDocs }
+
+VAR ('XmlGoods', Integer);
+FUNC ('WriteGoods', , // заполняем раздел товаров
+  Block(
+    XmlGoods := XmlNodeAddChild (XmlGoodsShipment, 'Goods');
+    XmlNodeSetValues (XmlGoods, '', 'catWH_ru:GoodsNumber', iGoodNumber);
+    XmlNodeSetValues (XmlGoods, '', 'catWH_ru:GoodsTNVEDCode', IF (TRIM (FIELDVALUE ('RComm', 'RELEASE_G33')) <> '', FIELDVALUE ('RComm', 'RELEASE_G33'), KRD_COMM_2.G33));
+
+    // ВЫГРУЖАЕМ ОПИСАНИЕ ТОВАРА В ДВА БЛОКА, ЕСЛИ ДЛИНА ОПИСАНИЯ БОЛЬШЕ 150 СИМВОЛОВ
+    VAR ('sGoodsDescr', Memo, IF (TRIM (FIELDVALUE ('RComm', 'RELEASE_G312')) <> '', FIELDVALUE ('RComm', 'RELEASE_G312'), KRD_COMM_2.G312));
+    XmlNodeSetValues (XmlGoods, '',
+              'catWH_ru:GoodsDescription', IF (LENGTH (sGoodsDescr) <= 150, sGoodsDescr, COPY (sGoodsDescr, 1, 150));
+    );
+    IF (LENGTH (sGoodsDescr) > 150,
+      Block(
+        XmlNodeSetValue (XMLNODEADDCHILD (XmlGoods, 'catWH_ru:GoodsDescription'), DELETE (sGoodsDescr, 1, 150));
+      )
+    ); // IF - LENGTH (sGoodsDescr) > 150 //
+    //XmlNodeSetValues (XmlGoods, '', 'catWH_ru:GoodsDescription', IF (TRIM (FIELDVALUE ('RComm', 'RELEASE_G312')) <> '', FIELDVALUE ('RComm', 'RELEASE_G312'), KRD_COMM_2.G312));
+    
+    VAR ('XmlCargoPlace', Integer, XmlNodeAddChild(XmlGoods, 'catWH_ru:CargoPlace'));
+    IF (FIELDVALUE('RComm', 'RELEASE_G311') > 0, XmlNodeSetValues (XmlCargoPlace, '', 'catWH_ru:PlaceNumber', FIELDVALUE('RComm', 'RELEASE_G311')));
+    XmlNodeSetValues (XmlCargoPlace, '', 'catWH_ru:PlaceDescription', KRD_COMM_2.G313);
+    IF (FIELDVALUE ('RComm', 'RELEASE_G42') > 0, XmlNodeSetValues (XmlGoods, '', 'catWH_ru:InvoiceCost',  FIELDVALUE ('RComm', 'RELEASE_G42')));
+    XmlNodeSetValues (XmlGoods, '', 'catWH_ru:CurrencyCode', CURRENCYABBR (FDT ('HH:MM:SS', IF (FIELDVALUE ('RComm', 'RELEASE_OUT_DATE'), FIELDVALUE ('RComm', 'RELEASE_OUT_DATE'), REL_MAIN.OUT_DATE))));
+    //выгружаем основные единицы измерения количества товара (ВЕС или ОБЪЕМ)
+    VAR ('XmlBruttoVolQuant', Integer, XmlNodeAddChild (XmlGoods, 'catWH_ru:BruttoVolQuant'));
+    XmlNodeSetValues (XmlBruttoVolQuant, '', 'catWH_ru:GoodsQuantity', IF (FIELDVALUE ('RComm', 'RELEASE_G35') > 0, FIELDVALUE ('RComm', 'RELEASE_G35'), ''));
+    XmlNodeSetValues (XmlBruttoVolQuant, '', 'catWH_ru:MeasureUnitQualifierName', IF (FIELDVALUE ('RComm', 'RELEASE_G35') > 0, 'КГ', ''));
+    XmlNodeSetValues (XmlBruttoVolQuant, '', 'catWH_ru:MeasureUnitQualifierCode', IF (FIELDVALUE ('RComm', 'RELEASE_G35') > 0, '166', ''));
+    // это правильно - но в КПСе есть только вес и доп единицы, объема нет !!! поэтому(выше) выгрузили только вес
+    {XmlNodeSetValues(XmlBruttoVolQuant, '', 'catWH_ru:GoodsQuantity', IF(FIELDVALUE('RComm', 'RELEASE_G35') > 0, FIELDVALUE('RComm', 'RELEASE_G35'), FIELDVALUE('RComm', 'RELEASE_G315C')));
+    XmlNodeSetValues(XmlBruttoVolQuant, '', 'catWH_ru:MeasureUnitQualifierName', IF(FIELDVALUE('RComm', 'RELEASE_G35') > 0, 'КГ', 'М3'));
+    XmlNodeSetValues(XmlBruttoVolQuant, '', 'catWH_ru:MeasureUnitQualifierCode', IF(FIELDVALUE('RComm', 'RELEASE_G35') > 0, '166', '113'));}
+
+    //выгружаем дополнительные единицы измерения
+    IF ((FIELDVALUE ('RComm', 'RELEASE_G315A') > 0) & (FIELDVALUE ('RComm', 'RELEASE_G315') <> ''),
+      Block(
+        VAR ('XmlMeasureQuantity', Integer, XmlNodeAddChild (XmlGoods, 'catWH_ru:MeasureQuantity'));
+        XmlNodeSetValues (XmlMeasureQuantity, '', 'catWH_ru:GoodsQuantity', FIELDVALUE ('RComm', 'RELEASE_G315A'));
+        XmlNodeSetValues (XmlMeasureQuantity, '', 'catWH_ru:MeasureUnitQualifierName', IF (FIELDVALUE ('RComm', 'RELEASE_G315') <> '',
+                                                                                           FIELDVALUE ('RComm', 'RELEASE_G315'),
+                                                                                           'ШТ'
+                                                                                       )
+        );
+        XmlNodeSetValues (XmlMeasureQuantity, '', 'catWH_ru:MeasureUnitQualifierCode', REFERENCE ('UNITS', 'UNITNAME', FIELDVALUE ('RComm', 'RELEASE_G315'), 'UNITCODE'));
+      )
+    ); // IF - (FIELDVALUE ('RComm', 'RELEASE_G315A') > 0) & (FIELDVALUE ('RComm', 'RELEASE_G315') <> '') //
+
+    XmlNodeSetValues (XmlGoods, '', 'catWH_ru:OutputDate', FDT ('YYYY-MM-DD', IF (FIELDVALUE ('RComm', 'RELEASE_OUT_DATE'), FIELDVALUE ('RComm', 'RELEASE_OUT_DATE'), REL_MAIN.OUT_DATE)));
+    XmlNodeSetValues (XmlGoods, '', 'catWH_ru:OutputTime', FDT ('HH:MM:SS', IF (FIELDVALUE ('RComm', 'RELEASE_OUT_DATE'), FIELDVALUE ('RComm', 'RELEASE_OUT_DATE'), REL_MAIN.OUT_DATE)));
+
+    // Делаем Locate (для SQL-сервера) и Findkey в других случаях по KRD_MAIN_3
+    IF (INIFILE ('Database', 'DbmsType', 'PARADOX') = 'SQL Server',
+      Block(
+      // Если используется SQL-сервер - делаем LOCATE
+        IF (LOCATE ('KRD_MAIN_3', 'PLACEID;ID;', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID')]) = 1,
+          XmlNodeSetValues (XmlGoods, 'catWH_ru:DO1GoodLink',
+                                    'DO1Number',     CUSTOMSNOPART (KRD_MAIN_3.NBD, 3, RIGHT (KRD_MAIN_3.NBD, 7)),
+                                    'DO1GoodNumber', IF (FIELDVALUE ('KRD_COMM_2', 'GN'), KRD_COMM_2.GN, KRD_COMM_2.G32),
+                                    'DO1Date',       FDT ('YYYY-MM-DD', KRD_MAIN_3.BD_DATE)
+          )
+        );
+      ),
+      Block(
+      // если что-то другое (PARADOX, ORACLE) - делаем FINDKEY
+        IF (LOCATE ('KRD_MAIN_3', 'PLACEID;ID;', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID')]) = 1,
+          XmlNodeSetValues (XmlGoods, 'catWH_ru:DO1GoodLink',
+                                    'DO1Number',     CUSTOMSNOPART (KRD_MAIN_3.NBD, 3, RIGHT (KRD_MAIN_3.NBD, 7)),
+                                    'DO1GoodNumber', IF (FIELDVALUE ('KRD_COMM_2', 'GN'), KRD_COMM_2.GN, KRD_COMM_2.G32),
+                                    'DO1Date',       FDT ('YYYY-MM-DD', KRD_MAIN_3.BD_DATE)
+          )
+        );
+      )
+    ); // IF - INIFILE
+    
+  )
+), {FUNC - WriteGoods }
+
+FUNC ('WriteGoodsCustomDocsLinks', , // проставляем связи товаров с документами
+  Block(
+    XmlGoodsCustomDocsLinks := XmlNodeAddChild (XmlGoodsShipment, 'GoodsCustomDocsLinks');
+    XmlNodeSetValues (XmlGoodsCustomDocsLinks, '', 'GoodNumber', iGoodNumber);
+    XmlNodeSetValues (XmlGoodsCustomDocsLinks, '', 'CustomDocNumber', iCustomDocNumber);
+  )
+), {FUNC - WriteGoodsCustomDocsLinks() }
+
+FUNC ('WriteGoodsShipment', ,
+  Block(
+    CONST ('sDriverName', String, UPPERSTR(INIFILE ('Database', 'DbmsType', 'PARADOX')));
+    VAR ('XmlGoodsShipment', Integer, XmlNodeAddChild (XmlDoc, 'GoodsShipment'));
+    VAR ('XmlConsignee', Integer, XmlNodeAddChild (XmlGoodsShipment, 'Consignee')); //получатель
+    XmlNodeSetValues (XmlConsignee, '', 'cat_ru:OrganizationName', IF (REL_MAIN.G082 <> '', REL_MAIN.G082, KRD_MAIN.G082));
+    XmlNodeSetValues (XmlConsignee, '', 'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', IF (REL_MAIN.G082 <> '', REL_MAIN.G08_OGRN, KRD_MAIN.G08_OGRN));
+    XmlNodeSetValues (XmlConsignee, '', 'cat_ru:RFOrganizationFeatures\cat_ru:INN', IF (REL_MAIN.G082 <> '', REL_MAIN.G084C, KRD_MAIN.G084C));
+    XmlNodeSetValues (XmlConsignee, '', 'cat_ru:RFOrganizationFeatures\cat_ru:KPP', IF (REL_MAIN.G082 <> '', REL_MAIN.G08_KPP, KRD_MAIN.G08_KPP));
+    XmlNodeSetValues (XmlConsignee, 'catWH_ru:Address',
+              'catWH_ru:AddressLine', IF (REL_MAIN.G082 <> '', REL_MAIN.G083, KRD_MAIN.G083),
+    );
+    XmlNodeSetValues (XmlConsignee, 'catWH_ru:IdentityCard',
+              'cat_ru:IdentityCardCode',   KRD_MAIN.G08_DOC_KIND,
+              'cat_ru:IdentityCardName',   REFERENCE ('NS_DUL', 'KOD', KRD_MAIN.G08_DOC_KIND, 'NAME'),
+              'cat_ru:IdentityCardSeries', KRD_MAIN.G08_DOC_SERIES,
+              'cat_ru:IdentityCardNumber', KRD_MAIN.G08_DOC_NUMBER
+    );
+    IF (TRIM (REL_MAIN.RELEASE_RECEIVE) <> '',
+      Block(
+        XmlNodeSetValues (XmlConsignee, 'ConsigneePerson',
+                  'cat_ru:PersonSurname', EXTRACTSTR (REL_MAIN.RELEASE_RECEIVE, 1, ' '),
+                  'cat_ru:PersonName', EXTRACTSTR (REL_MAIN.RELEASE_RECEIVE, 2, ' '),
+                  'cat_ru:PersonPost', REL_MAIN.RELEASE_RECEIVE_POST
+        );
+        IF (TRIM (REL_MAIN.RELEASE_RECEIVE_POST) <> '',
+            XmlNodeSetValues (XmlConsignee, 'ConsigneePerson', 'cat_ru:PersonPost', REL_MAIN.RELEASE_RECEIVE_POST)
+        ); // IF - TRIM (REL_MAIN.RELEASE_RECEIVE_POST) <> '' //
+      )
+    );
+    IF (sDriverName = 'INTRBASE',
+      OPENQUERY ('RMain', 'STS_DB', 'SELECT PLACEID, ID, DOC_TYPE, DOC_NO, RELEASE_DATE, DOC_CODE, COUNTER FROM RELEASE_ WHERE PLACEID='+CHAR(39)+REL_MAIN_3.PLACEID+CHAR(39)+' AND MAIN_ID='+CHAR(39)+REL_MAIN_3.MAIN_ID+CHAR(39)+' AND MAIN_COUNTER='+CHAR(39)+REL_MAIN_3.MAIN_COUNTER+CHAR(39)),
+      OPENQUERY ('RMain', 'STS_DB', 'SELECT PLACEID, ID, DOC_TYPE, DOC_NO, RELEASE_DATE, DOC_CODE, COUNTER FROM RELEASE WHERE PLACEID='+CHAR(39)+REL_MAIN_3.PLACEID+CHAR(39)+' AND MAIN_ID='+CHAR(39)+REL_MAIN_3.MAIN_ID+CHAR(39)+' AND MAIN_COUNTER='+CHAR(39)+REL_MAIN_3.MAIN_COUNTER+CHAR(39))
+    );
+    FIRST ('RMain');
+    WHILE (EOF ('RMain')=0,
+      Block(
+        WriteCustomsDocs();
+        NEXT ('RMain');
+      )
+    ); {WHILE - EOF('RMain')=0 }
+    iGoodNumber := 1;
+    FIRST ('RMain');
+    WHILE (EOF('RMain')=0,
+      Block(
+        OPENQUERY ('RComm', 'STS_DB', 'SELECT * FROM REL_COMM WHERE PLACEID='+CHAR(39)+FIELDVALUE('RMain', 'PLACEID')+CHAR(39)+' AND ID='+CHAR(39)+FIELDVALUE('RMain', 'ID')+CHAR(39)+' AND COUNTER='+FIELDVALUE('RMain', 'COUNTER'));
+        FIRST ('RComm');
+        WHILE (EOF ('RComm')=0,
+          Block(
+            IF (sDriverName = 'SQL Server',
+              Block(
+              // Если используется SQL-сервер - делаем LOCATE
+                IF (LOCATE ('KRD_COMM_2', 'PLACEID;ID;G32', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID'), FIELDVALUE('RComm', 'G32')]) = 1,
+                  WriteGoods();
+                ); // IF - LOCATE ('KRD_COMM_2', 'PLACEID;ID;G32', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID'), FIELDVALUE('RComm', 'G32')]) = 1 //
+              ),
+              Block(
+              // если что-то другое (PARADOX, ORACLE) делаем FINDKEY
+                IF (FINDKEY ('KRD_COMM_2', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID'), FIELDVALUE('RComm', 'G32')]),
+                  WriteGoods();
+                ); // IF - FINDKEY ('KRD_COMM', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID'), FIELDVALUE('RComm', 'G32')]) //
+              )
+            ); // IF - INIFILE ('Database', 'DbmsType', 'Значение по умолчанию') = 'SQL Server' //
+            NEXT('RComm');
+            iGoodNumber := iGoodNumber + 1;
+          )
+        ); //WHILE - EOF ('RComm')=0 //
+        NEXT ('RMain');
+      )
+    ); // WHILE - EOF('RMain')=0 //
+    iCustomDocNumber := 1;
+    iGoodNumber := 1;
+    FIRST ('RMain');
+    WHILE (EOF('RMain')=0,
+      Block(
+        OPENQUERY ('RComm', 'STS_DB', 'SELECT * FROM REL_COMM WHERE PLACEID='+CHAR(39)+FIELDVALUE('RMain', 'PLACEID')+CHAR(39)+' AND ID='+CHAR(39)+FIELDVALUE('RMain', 'ID')+CHAR(39)+' AND COUNTER='+FIELDVALUE('RMain', 'COUNTER'));
+        FIRST ('RComm');
+        WHILE (EOF ('RComm')=0,
+          Block(
+
+            IF (sDriverName = 'SQL Server',
+              Block(
+              // Если используется SQL-сервер - делаем LOCATE
+                IF (LOCATE ('KRD_COMM_2', 'PLACEID;ID;G32', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID'), FIELDVALUE('RComm', 'G32')]) = 1,
+                  WriteGoodsCustomDocsLinks();
+                ); // IF - LOCATE () //
+              ),
+              Block(
+              // если что-то другое (PARADOX, ORACLE) делаем FINDKEY
+                IF (FINDKEY ('KRD_COMM_2', [FIELDVALUE('RComm', 'PLACEID'), FIELDVALUE('RComm', 'ID'), FIELDVALUE('RComm', 'G32')]),
+                  WriteGoodsCustomDocsLinks();
+                ); // IF - FINDKEY () //
+              )
+            ); // IF - INIFILE () //
+            NEXT('RComm');
+            iGoodNumber := iGoodNumber + 1;
+          )
+        ); {WHILE - EOF ('RComm')=0 }
+        NEXT ('RMain');
+        iCustomDocNumber := iCustomDocNumber + 1;
+      )
+    ); {WHILE - EOF('RMain')=0 }
+  )
+), {FUNC - WriteGoodsShipment() }
+
+IF (XmlNodeChildCount (XmlDoc) < 1,
+  Block (
+    XmlDoc := XmlNodeAddChild (XmlDoc, 'ED_Container');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.3');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:edc', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.0.3');
+    XmlNodeSetAttribute (XmlDoc, 'DocumentModeID', '1006058E'); 
+    XmlNodeSetValues (XmlDoc, '', 'cat_ru:DocumentID', GENERATEUUID ());
+    XmlDoc := XmlNodeAddChild (XmlDoc, 'ContainerDoc');
+    XmlDoc := XmlNodeAddChild (XmlDoc, 'DocBody');
+    XmlDoc := XmlNodeAddChild (XmlDoc, 'DO2Report');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.0.3');
+    XmlNodeSetAttribute (XmlDoc, 'xmlns:do2r', 'urn:customs.ru:Information:WarehouseDocuments:DO2Report:5.0.3');
+    XmlNodeSetAttribute (XmlDoc, 'DocumentModeID', '1008009E');
+    XmlNodeSetValues (XmlDoc, '', 'cat_ru:DocumentID', GENERATEUUID ());
+    XmlNodeSetValues (XmlDoc, '', 'catWH_ru:MainTransportModeCode', REL_MAIN.TRANSPTYPE);
+    XmlNodeSetValues (XmlDoc, '', 'catWH_ru:ReportNumber', LEFTPAD (CUSTOMSNOPART (REL_MAIN.RELEASE_NO, 3, RIGHT (REL_MAIN.RELEASE_NO, 7)), 7, '0'));
+    XmlNodeSetValues (XmlDoc, '', 'catWH_ru:ReportDate', FDT ('YYYY-MM-DD', REL_MAIN.OUT_DATE));
+    XmlNodeSetValues (XmlDoc, '', 'catWH_ru:ReportTime', FDT ('HH:MM:SS', REL_MAIN.OUT_DATE));
+  ),
+  XmlDoc := XmlNodeChild (XmlDoc, 0);
+); {IF - XmlNodeChildCount (XmlDoc) < 1 }
+
+WriteCustomRegistration();
+WriteWareHouseOwner();
+XmlNodeSetValues(XmlDoc, '', 'Kind', 'act_Delivery'); //!!"Вид отчета выдача\списание" - возможно надо менять значение по условию
+WriteCarrier();
+
+IF (REL_MAIN.MAIN_ID = 0,
+  Block(
+    WriteDOTransports();
+  ),
+  Block(
+    SETRANGE ('REL_MAIN_2', [REL_MAIN_3.PLACEID, REL_MAIN_3.ID, REL_MAIN_3.COUNTER]);
+    //SETFILTER ('REL_MAIN_2', '');
+    //SETFILTER ('REL_MAIN_2', 'PLACEID=' + REL_MAIN_3.PLACEID + ' AND MAIN_ID=' + REL_MAIN_3.MAIN_ID + ' AND MAIN_COUNTER=' + REL_MAIN_3.MAIN_COUNTER);
+    FIRST ('REL_MAIN_2');
+    WHILE (EOF ('REL_MAIN_2') = 0,
+      Block(
+        WriteDOTransports();
+        NEXT ('REL_MAIN_2');
+      )
+    ); {WHILE - EOF('REL_MAIN_2') = 0 }
+  )
+); {IF - REL_MAIN.MAIN_ID = 0 }
+
+WriteGoodsShipment();
+//SETFILTER ('REL_MAIN_2', '');
+

@@ -1,0 +1,143 @@
+// *****************************************************************************
+// Название: Загрузка описи документов
+// Описание: Загрузка описи документов
+// Кнопка вызова: 1
+// Подпись кнопки: Загрузить опись
+// *****************************************************************************
+//
+VAR ('sPath', String, '');
+VAR ('iJMID', Integer, 0);
+
+//IF (SELECTDIRECTORY ('sPath') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+//sPath := INCLUDETRAILINGBACKSLASH (sPath);
+
+{
+IF (SELECTFILE ('sPath', 'Выбор описи', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+}
+
+VAR ('XmlInventory', Integer, XMLNODECHILD (XmlRoot, 0));
+
+VAR ('iChildIndex', Integer, 0);
+VAR ('iChildCount', Integer, XMLNODECHILDCOUNT (XmlInventory));
+VAR ('XmlInventDocument', Integer);
+
+OPENTABLE ('INVENTORY_2', 'INVENTORY', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+OPENTABLE ('DOCS_2', 'DOCS', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+
+
+VAR ('sFilter', String, 'DOCUMENTID = ' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlInventory, 'cat_ru:DocumentID')) +char(39) );
+
+OPENQUERY ('qryInv', 'SELECT * FROM INVENTORY WHERE ' + sFilter, 'dbJournals');
+
+VAR ('iRecCount', Integer, RECORDCOUNT ('qryInv', 1));
+
+IF (iRecCount <= 0,
+  Block(
+
+    OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM INVENTORY', 'dbJournals');
+    VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+  
+    APPENDRECORD ('INVENTORY_2');
+    EDIT ('INVENTORY_2');
+    SETFIELDVALUE ('INVENTORY_2',
+                   'JOURNAL_MASTER_ID', iJMID,
+                   'DOCUMENTID',    XMLNODEVALUE (XMLNODEFIND (XmlInventory, 'cat_ru:DocumentID')),
+                   'InstanceDate', FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODECHILD (XmlInventory, 'whdi:InventoryInstanceDate'))),
+    );
+    POST ('INVENTORY_2');
+
+    WHILE (iChildIndex <= iChildCount,
+      Block(
+        CASE (XMLNODENAME (XMLNODECHILD (XmlInventory, iChildIndex)),
+             ['whdi:InventDocument', Block(
+                                       XmlInventDocument := XMLNODECHILD (XmlInventory, iChildIndex);
+
+                                       OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID FROM DOCS WHERE JOURNAL_MASTER_ID=' + iJMID, 'dbJournals');
+                                       VAR('iJCID', Integer, qryMAXID.MAX_ID + 1);
+
+                                       APPENDRECORD ('DOCS_2');
+                                       EDIT ('DOCS_2');
+                                       SETFIELDVALUE ('DOCS_2',
+                                                      'JOURNAL_MASTER_ID', iJMID,
+                                                      'JOURNAL_CHILD_ID', iJCID,
+                                                      'JOURNAL_UUID',  GENERATEUUID (),
+                                                      'INVDOCCODE',    XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocCode')),
+                                                      'INVDOCNUMBER',  XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocNumber')),
+                                                      'INVDOCDATE',    FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODECHILD (XmlInventDocument, 'whdi:InvDocDate'))),
+                                                      'INVDOCLISTS',   IF (XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocLists')) <> '', XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocLists')), 0),
+                                                      'NOTE',          XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:Note')),
+                                                      'ARCHID',        XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:ArchID')),
+                                                      'ARCHDOCID',     XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:ArchDocID')),
+  //!                                                    'DOCUMENTID', XMLNODEVALUE (XMLNODECHILD (XmlInventDocument, 'whdi:InventDocumentID')),
+                                                      'INVENTLINEID',     XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InventLineID')),
+                                       ); // SETFIELDVALUE () //
+                                       POST ('DOCS_2');
+                                     ),
+              'whdi:Sender', Block(
+                               VAR ('XmlSender', Integer, XMLNODECHILD (XmlInventory, iChildIndex));
+                             ),
+              'whdi:Receiver', Block(
+                                 VAR ('XmlReceiver', Integer, XMLNODECHILD (XmlInventory, iChildIndex));
+                               ),
+              'whdi:RegNumberDoc', Block(
+                                     VAR ('XmlRegNumberDoc', Integer, XMLNODECHILD (XmlInventory, iChildIndex));
+                                   )],
+        ); // CASE - //
+        iChildIndex := iChildIndex + 1;
+      )
+    ); // WHILE - //
+
+    IF (XMLNODENAME (XMLNODECHILD (XmlSender, 0)) = 'whdi:Customs',
+      Block(
+        VAR ('XmlCustoms', Integer, XMLNODECHILD (XmlSender, 0));
+        EDIT ('INVENTORY_2');
+        SETFIELDVALUE ('INVENTORY_2',
+                       'CUSTOMSCODE', XMLNODEVALUE (XMLNODEFIND (XmlCustoms, 'cat_ru:Code')),
+                       'OFFICENAME',  XMLNODEVALUE (XMLNODEFIND (XmlCustoms, 'cat_ru:OfficeName'))
+        );
+        POST ('INVENTORY_2');
+        IF (XMLNODENAME (XMLNODECHILD (XmlSender, 0)) = 'whdi:Customs',
+          Block(
+            VAR ('XmlCustomsPerson', Integer, XMLNODEFIND (XmlCustoms, 'whdi:CustomsPerson'));
+            EDIT ('INVENTORY_2');
+            SETFIELDVALUE ('INVENTORY_2',
+                           'REGNUMBERDOC',   XMLNODEVALUE (XMLNODEFIND (XmlRegNumberDoc, 'CustomsCode')) + '/' + FDT ('DDMMYY', XMLNODEVALUE (XMLNODEFIND (XmlRegNumberDoc, 'RegistrationDate'))) + '/' + XMLNODEVALUE (XMLNODEFIND (XmlRegNumberDoc, 'GTDNumber')),
+                           'INSPECTOR_FIO',  XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonSurname')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonName')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonMiddleName')),
+                           'INSPECTOR_POST', XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonPost')),
+                           'INSPECTOR_LNP',  XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'catWH_ru:LNP'))
+            );
+            POST ('INVENTORY_2');
+          )
+        ); // IF - //
+
+        IF (XMLNODENAME (XMLNODECHILD (XmlReceiver, 0)) = 'whdi:SVH',
+          Block(
+            VAR ('XmlSVH', Integer, XMLNODECHILD (XmlReceiver, 0));
+            EDIT ('INVENTORY_2');
+            SETFIELDVALUE ('INVENTORY_2',
+                           'SVH_DOCMODECODE', CASE (XMLNODEVALUE (XMLNODEFIND (XmlSVH, 'whdi:DocumentModeCode')), ['lic_Certificate ', 'Свидетельство о включении в реестр владельцев СВХ',
+                                                                                                                   'lic_Licence',      'Лицензия владельца СВХ',
+                                                                                                                   'lic_Permition',    'Разрешение ТО на временное хранение в ином месте',
+                                                                                                                   'lic_PermZtk',      'Номер приказа о создании постоянной зоны таможенного контроля',
+                                                                                                                   'lic_TempZtk',      'Номер приказа о создании временной зоны таможенного контроля'
+                                                                                                                  ], 'Свидетельство о включении в реестр владельцев СВХ'
+                                              ),
+                           'SVH_DOCNUMBER', XMLNODEVALUE (XMLNODEFIND (XmlSVH, 'whdi:DocumentNumber'))
+            ); // SETFIELDVALUE - //
+            POST ('INVENTORY_2');
+          )
+        ); // IF - //
+
+      )
+    ); // IF - //
+
+    CLOSEDATASET ('DOCS_2');
+    CLOSEDATASET ('INVENTORY_2');
+  )
+);
+

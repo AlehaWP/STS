@@ -1,0 +1,517 @@
+// *****************************************************************************
+// Название: Письмо владельца СВХ о самостоятельно выявленных документах в ДО-1
+// Описание: 5.13.3
+// Кнопка вызова: 0
+// Подпись кнопки: Письмо об ошибках
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+FUNC ('GENERATEUUID_2', ,
+  Block(
+    Var('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+)), // FUNC - GENERATEUUID_2 () //
+
+VAR ('sSQL',             String,  '');
+VAR ('sMistakeValue',    String,  '');
+VAR ('sValidValue',      String,  '');
+VAR ('XmlRoot',          Integer, GETXMLDOCUMENT());
+VAR ('XmlDoc',           Integer);
+VAR ('XmlMistakeLetter', Integer);
+VAR ('sKeyInfo',      String,  '');
+VAR ('sFilter', String, '');
+
+FUNC ('GetMistakeValues',
+  Block(
+    PARAM ('pKeyInfo', String, 0);
+    PARAM ('pTableName', String, 1);
+    PARAM ('pFieldName', String, 2);
+  ),
+  Block(
+    sMistakeValue := '';
+    sValidValue   := '';
+    sSQL := 'SELECT PLACEID, MISTAKEVALUE, VALIDVALUE FROM KRD_LMD WHERE PLACEID=' + KRD_LETTER.PLACEID +
+                                                                ' AND ID='        + KRD_LETTER.ID +
+                                                                ' AND COUNTER='   + KRD_LETTER.COUNTER +
+                                                                ' AND TABLENAME=' +char(39)+ pTableName +char(39)+
+                                                                ' AND KEYINFO='   +char(39)+ pKeyInfo +char(39)+
+                                                                ' AND FIELDNAME=' +char(39)+ pFieldName +char(39);
+    OPENQUERY ('qValues', 'STS_DB', sSQL, 1);
+    IF (FIELDISNULL ('qValues', 'PLACEID') = 0, 
+      Block(
+        sMistakeValue := qValues.MISTAKEVALUE;
+        sValidValue   := qValues.VALIDVALUE;
+      )
+    ); // IF - //
+  )
+), // FUNC - GetMistakeValues () //
+
+{
+    XmlDoc := XmlNodeAddChild (XmlRoot, 'ED_Container');
+    XMLNODESETATTRIBUTE (XmlDoc, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+    XMLNODESETATTRIBUTE (XmlDoc, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XMLNODESETATTRIBUTE (XmlDoc, 'DocumentModeID', '1006058E');
+
+    //Уникальный идентификатор документа
+    VAR ('XMLNodeDocumentId', Integer, XMLNodeAddChild(XMLDoc, 'cat_ru:DocumentID'));
+
+    XMLNodeSetValue (XMLNodeDocumentId, GENERATEUUID_2 ());
+
+    VAR ('XMLContainerDoc', Integer, XMLNodeAddChild (XMLDoc, 'ContainerDoc'));
+    XMLNODESETATTRIBUTE (XMLContainerDoc, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+
+    VAR ('XMLDocBody', Integer, XMLNodeAddChild (XMLContainerDoc, 'DocBody'));
+    XMLNODESETATTRIBUTE (XMLDocBody, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+
+    XmlMistakeLetter := XMLNodeAddChild (XMLDocBody, 'ml:MistakeLetter');
+}
+    XmlMistakeLetter := XMLNodeAddChild (XMLRoot, 'ml:MistakeLetter');
+    
+    XMLNODESETATTRIBUTE (XmlMistakeLetter, 'xmlns:ml', 'urn:customs.ru:Information:WarehouseDocuments:MistakeLetter:5.13.1');
+    XMLNODESETATTRIBUTE (XmlMistakeLetter, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.13.1');
+    XMLNODESETATTRIBUTE (XmlMistakeLetter, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XMLNODESETATTRIBUTE (XmlMistakeLetter, 'DocumentModeID', '1008029E');
+    
+    // Уникальный идентификатор документа
+    VAR ('sDocumentId', String, GENERATEUUID_2());
+    IF (LENGTH (KRD_LETTER.DOCUMENTID) = 0,
+      Block(
+        sSQL := 'UPDATE KRD_LETTER ' +
+                ' SET DOCUMENTID=' +char(39)+ sDocumentId +char(39)+
+                ' WHERE PLACEID=' + KRD_LETTER.PLACEID +
+                ' AND ID=' + KRD_LETTER.ID +
+                ' AND COUNTER=' + KRD_LETTER.COUNTER;
+        EXECUTESQL ('STS_DB', sSQL);
+        REFRESH ('KRD_LETTER');
+      ),
+      Block(
+        sDocumentId := KRD_LETTER.DOCUMENTID;
+      )
+    ); // IF
+    XMLNODESETVALUE (XMLNODEADDCHILD (XmlMistakeLetter, 'cat_ru:DocumentID'), sDocumentId);
+    
+    // Сведения о письме
+    XMLNODESETVALUES (XmlMistakeLetter, 'ml:LetterDetails',
+                                        'ml:LetterName',        KRD_LETTER.LETTER_NAME,
+                                        'ml:LetterNumber',      KRD_LETTER.LETTER_NO,
+                                        'ml:LetterDate',        FDT ('YYYY-MM-DD', KRD_LETTER.LETTER_DATETIME),
+                                        'ml:LetterOrderNumber', IF (KRD_LETTER.LETTER_ORDER_NUMBER > 0, KRD_LETTER.LETTER_ORDER_NUMBER, 1),
+    );
+    
+    // Сведения об отчете о принятии по форме ДО-1, в отношении которого составлено настоящее Письмо
+    XMLNODESETVALUES (XmlMistakeLetter, 'ml:DO1Report',
+                                        'catWH_ru:ReportDate',   FDT ('YYYY-MM-DD', KRD_MAIN.BD_DATE),
+                                        'catWH_ru:ReportNumber', CUSTOMSNOPART (KRD_MAIN.NBD, 3, RIGHT (KRD_MAIN.NBD, 7)),
+    );
+    
+    // Данные о владельце склада
+    VAR ('XmlWarehouseOwner', Integer, XMLNODEADDCHILD (XmlMistakeLetter, 'ml:WarehouseOwner'));
+    XMLNODESETVALUES (XmlWarehouseOwner, '',
+                                         'cat_ru:OrganizationName', IF(KRD_MAIN.G142 <> '', KRD_MAIN.G142, STORES.NAME),
+    );
+    XMLNODESETVALUES (XmlWarehouseOwner, 'cat_ru:RFOrganizationFeatures',
+                                         'cat_ru:OGRN', STORES.G140,
+                                         'cat_ru:INN',  STORES.G144C,
+                                         'cat_ru:KPP',  STORES.KPP,
+    );
+
+    // Адрес места хранения
+    XMLNODEADDCHILD (XmlWarehouseOwner, 'catWH_ru:Address');
+    XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:Address',
+                                         'catWH_ru:AddressLine',  IF (KRD_MAIN.G143 <> '', KRD_MAIN.G143, STORES.ADDRESS),
+    );
+    
+    // Документ, на основании которого разрешено временное хранение
+    XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:WarehouseLicense',
+                                         'catWH_ru:CertificateKind', CASE (KRD_MAIN.G1440, ['1', 'lic_Certificate',
+                                                                                            '2', 'lic_Licence',
+                                                                                            '3', 'lic_Permition',
+                                                                                            '4', 'lic_PermZtk',
+                                                                                            '5', 'lic_TempZtk'
+                                                                                            ], 'lic_Certificate'),
+                                         'catWH_ru:CertificateNumber', IF (KRD_MAIN.G144 <> '',  KRD_MAIN.G144, STORES.LICENCENO),
+                                         'catWH_ru:CertificateDate', IF (KRD_MAIN.G145 > 0, FDT ('YYYY-MM-DD', KRD_MAIN.G145), FDT ('YYYY-MM-DD', STORES.LICENCEDATE)),
+    );
+
+{ //ПОКА ЗАКОММЕНТИРУЕМ, ЕСЛИ БУДУТ ИДЕИ ОТКУДА ЗАПОЛНЯТЬ ИНФОРМАЦИЮ - ВЕРНЁМ
+    // Представитель СВХ (по-видимому, из свойств лицензии)
+    XMLNODESETVALUES (XmlWarehouseOwner, 'catWH_ru:WarehousePerson',
+                                         'cat_ru:PersonSurname', '',
+                                         'cat_ru:PersonName', '',
+                                         'cat_ru:PersonMiddleName', '',
+                                         'cat_ru:PersonPost', '',
+    );
+}
+    
+    // СВЕДЕНИЯ О ВЫЯВЛЕННЫХ ОШИБКАХ
+    VAR ('XmlMistakesInfo', Integer, XMLNODEADDCHILD (XmlMistakeLetter, 'ml:MistakesInfo'));
+    
+    XMLNODESETVALUES (XmlMistakesInfo, '',
+                                       'ml:Date',    FDT ('YYYY-MM-DD', KRD_LETTER.MISTAKESINFO_DATETIME),
+                                       'ml:Time',    FDT ('HH:NN:SS', KRD_LETTER.MISTAKESINFO_DATETIME),
+    );
+    
+    // Разбиваем описание на много строк по 250 символов
+    VAR ('sReasons', Memo, KRD_LETTER.MISTAKESINFO_REASONS);
+    sReasons := TRIM(sReasons);
+    IF (LENGTH (sReasons) > 250,
+      Block(
+        XMLNODESETVALUE (XMLNODEADDCHILD (XmlMistakesInfo, 'ml:Reasons'), IF (LENGTH (sReasons) <= 250, sReasons, COPY (sReasons, 1, 250)));
+        While( Length(sReasons) > 0,
+          Block(
+            sReasons := DELETE (sReasons, 1, 250);
+            IF (LENGTH (sReasons) > 0,
+              XMLNODESETVALUE (XMLNODEADDCHILD (XmlMistakesInfo, 'ml:Reasons'),  IF (LENGTH (sReasons) <= 250, sReasons, COPY (sReasons, 1, 250)))
+            ); // IF - //
+          )
+        ); // WHILE - //
+      ),
+      Block(
+        XMLNODESETVALUE (XMLNODEADDCHILD (XmlMistakesInfo, 'ml:Reasons'), sReasons); 
+      )
+    ); // IF - //
+
+    VAR ('XmlMistakesDescription',    Integer, XMLNODEADDCHILD (XmlMistakesInfo, 'ml:MistakesDescription'));
+    VAR ('XmlCustomsDocsMistakes',    Integer);
+    VAR ('XmlCommercialDocsMistakes', Integer);
+    VAR ('XmlTransportDocsMistakes',  Integer);
+    VAR ('iTransportDocOrderNo',  Integer);
+    VAR ('iPart_NO', integer);
+    VAR ('iCustomsDocsOrderNumber', Integer, 1);
+
+    FIRST ('KRD_DCD');
+    WHILE ((EOF ('KRD_DCD') = 0),
+      Block(
+        // определяем нужно ли создавать раздел CustomsDocsMistakes для текущего документа KRD_DCD
+        sFilter := 'TABLENAME=' +char(39)+ 'KRD_DCD' +char(39)+
+                   ' AND KEYINFO=' +char(39)+ KRD_DCD.ID + ';' + KRD_MAIN.PART_NO + ';' + KRD_DCD.COUNTER +char(39);
+        SETFILTER ('KRD_LMD', sFilter);
+        IF (FIELDISNULL ('KRD_LMD', 'PLACEID') = 0,
+          Block(
+            SETFILTER ('KRD_LMD', '');
+            XmlCustomsDocsMistakes := XMLNODEADDCHILD (XmlMistakesDescription, 'ml:CustomsDocsMistakes');
+            XMLNODESETVALUE (XMLNODEADDCHILD (XmlCustomsDocsMistakes, 'ml:PrDocumentOrderNumber'), iCustomsDocsOrderNumber);
+
+            // порядок следования имён полей важен, он соответствует XSD-схеме
+            VAR ('sFieldsList', String, 'PAPERCODE|PAPERNAME|PAPERNO|PAPERCLOSE');
+            VAR ('iFieldIndex', Integer, 1);
+            VAR ('iFieldsCount', Integer, SPLITSTR (sFieldsList, '|', 'sSQL'));
+            VAR ('sFieldName', String);
+            WHILE (iFieldIndex <= iFieldsCount,
+              Block(
+                sFieldName := EXTRACTSTR (sFieldsList, iFieldIndex, '|');
+                sFilter := 'TABLENAME=' +char(39)+ 'KRD_DCD' +char(39)+
+                           ' AND FIELDNAME=' +char(39)+ sFieldName +char(39)+
+                           ' AND KEYINFO=' +char(39)+ KRD_DCD.ID + ';' + KRD_MAIN.PART_NO + ';' + KRD_DCD.COUNTER +char(39);
+                SETFILTER ('KRD_LMD', sFilter);
+                IF (FIELDISNULL ('KRD_LMD', 'ID') = 0,
+                  Block(
+                    CASE (sFieldName, [
+                         'PAPERCODE', Block(
+                            XMLNODESETVALUES (XmlCustomsDocsMistakes, 'ml:DocModeCodeMistake',
+                                                                      'ml:CodeMistakeValue', KRD_LMD.MISTAKEVALUE,
+                                                                      'ml:CodeValidValue',   KRD_LMD.VALIDVALUE,
+                            ); // XMLNODESETVALUES
+                         ),
+                         'PAPERNAME', Block(
+                            XMLNODESETVALUES (XmlCustomsDocsMistakes, 'ml:DocNameMistake',
+                                                                      'ml:NameMistakeValue', KRD_LMD.MISTAKEVALUE,
+                                                                      'ml:NameValidValue',   KRD_LMD.VALIDVALUE,
+                            ); // XMLNODESETVALUES
+                         ),
+                         'PAPERNO', Block(
+                            XMLNODESETVALUES (XmlCustomsDocsMistakes, 'ml:DocNumberMistake',
+                                                                      'ml:NumberMistakeValue', KRD_LMD.MISTAKEVALUE,
+                                                                      'ml:NumberValidValue',   KRD_LMD.VALIDVALUE,
+                            ); // XMLNODESETVALUES
+                         ),
+                         'PAPERCLOSE', Block(
+                            XMLNODESETVALUES (XmlCustomsDocsMistakes, 'ml:DocDateMistake',
+                                                                      'ml:DateMistakeValue', FDT ('YYYY-MM-DD', KRD_LMD.MISTAKEVALUE),
+                                                                      'ml:DateValidValue',   FDT ('YYYY-MM-DD', KRD_LMD.VALIDVALUE),
+                            ); // XMLNODESETVALUES
+                         ),]
+                    ); // CASE
+                  )
+                ); // IF
+                iFieldIndex := iFieldIndex + 1;
+                SETFILTER ('KRD_LMD', '');
+              )
+            );  // WHILE
+          ),
+          Block(
+            SETFILTER ('KRD_LMD', '');
+          )
+        ); // IF
+
+        NEXT ('KRD_DCD');
+        iCustomsDocsOrderNumber := iCustomsDocsOrderNumber + 1;
+      )
+    ); // WHILE
+
+
+    // ОШИБКИ В РЕКВИЗИТАХ КОММЕРЧЕСКИХ ДОКУМЕНТОВ
+    // Поскольку Коммерческие и Транспортные\Товаросопроводительные документы
+    // У нас хранятся в одной таблице, приходится делать так:
+    // Аналогично циклу в экспорте ДО-1 проходим по всем документам,
+    // проверяем коммерческий это документ или накладная
+    // Если коммеческий документ, то проверяем есть ли конкретно по нему ошибки в письме
+    
+    VAR ('iCommerceDocOrderNumber', Integer, 1);
+    VAR ('iFirstPaper', Integer, 1);
+    VAR ('iPaperWayBill', Integer, 0);
+    VAR ('XmlCommercialDocsMistakes', Integer, 0);
+
+    sSQL := 'SELECT' +
+         ' KP.ID, PART_NO, COUNTER, PAPERNAME ,PAPERCODE' +
+         ' FROM KR_PAPER KP, KRD_MAIN KM' +
+         ' WHERE' +
+         ' (KM.PLACEID=KP.PLACEID AND KM.ID=KP.ID)' +
+         ' AND KP.ID IN (SELECT ID FROM KRD_MAIN WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND MAIN_ID=' + KRD_MAIN.MAIN_ID +  ')';
+    OPENQUERY ('qKPapers', 'STS_DB', sSQL);
+    //ShowMessage(sSQL);
+    FIRST ('qKPapers');
+    WHILE ((EOF ('qKPapers') = 0),
+      Block(
+        // Проверяем признак товаросопроводительного документа
+//        iPaperWayBill := REFERENCE('PAPERS', 'PAPERNAME', qKPapers.PAPERNAME, 'PAPER_IS_WAYBILL');
+          iPaperWayBill := ( if (REFERENCE ('PAPERS', 'PAPERNAME', qKPapers.PAPERNAME, 'PAPER_IS_WAYBILL')='',0,REFERENCE ('PAPERS', 'PAPERNAME', qKPapers.PAPERNAME, 'PAPER_IS_WAYBILL')) 
+                     | if (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', qKPapers.PAPERCODE, 'PAPER_IS_WAYBILL')='',0,REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', qKPapers.PAPERCODE, 'PAPER_IS_WAYBILL')));
+
+        sSQL := 'SELECT PLACEID, N_TTN FROM KRD_COMM WHERE N_TTN=' +char(39)+ qKPapers.COUNTER +char(39)+ ' AND PLACEID = ' + KRD_MAIN.PLACEID +' AND ID = ' + qKPapers.ID;
+        OPENQUERY ('qKComm', 'STS_DB', sSQL, 1);
+        IF (iPaperWayBill * ((FIELDISNULL ('qKComm', 'PLACEID') = 0) | iFirstPaper),
+          Block(
+            // Это товаросопроводительный документ привязанный к товарам
+            // Или это просто первый товаросопроводительный документ без привязки к товарам
+            iFirstPaper := 0;
+          ),
+          Block(
+            // Это коммерческий документ или вторая (и более) накладная не привязанная к товарам
+            // её тоже считаем коммерческим документом
+            //IF (qKPapers.ID = KRD_MAIN.ID,
+            IF (qKPapers.ID = qKPapers.ID,
+              Block(
+                sKeyInfo:= ''+qKPapers.ID+';'+ qKPapers.PART_NO+';'+qKPapers.COUNTER;
+                // Проверяем есть ли по данному документу ошибка в письме
+                sSQL := 'SELECT PLACEID, SUBID FROM KRD_LMD WHERE PLACEID=' + KRD_LETTER.PLACEID +
+                                                         ' AND ID='        + KRD_LETTER.ID +
+                                                         ' AND COUNTER='   + KRD_LETTER.COUNTER +
+                                                         ' AND TABLENAME=' +char(39)+ 'KR_PAPER' +char(39)+
+                                                         ' AND KEYINFO='   +char(39)+ sKeyInfo +char(39);
+                OPENQUERY ('qHasError', 'STS_DB', sSQL, 1);
+                //ShowMessage(sSQL);
+                IF (FIELDISNULL ('qHasError', 'PLACEID') = 0, 
+                  Block(
+                    XmlCommercialDocsMistakes := XMLNODEADDCHILD (XmlMistakesDescription, 'ml:CommercialDocsMistakes');
+                    XMLNODESETVALUE (XMLNODEADDCHILD (XmlCommercialDocsMistakes, 'ml:PrDocumentOrderNumber'), iCommerceDocOrderNumber);
+
+                    // Ошибка в коде вида документа
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERCODE');
+                    IF ((TRIM (sMistakeValue) <> '') | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlCommercialDocsMistakes, 'ml:DocModeCodeMistake',
+                                                                     'ml:CodeMistakeValue', sMistakeValue,
+                                                                     'ml:CodeValidValue',   sValidValue,
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в наименовании документа
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERNAME');
+                    IF ((TRIM (sMistakeValue) <> '') | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlCommercialDocsMistakes, 'ml:DocNameMistake',
+    //                                                                 'ml:NameMistakeValue', sMistakeValue,
+    //                                                                 'ml:NameValidValue',   sValidValue,
+                                                                     'ml:NameMistakeValue', REFERENCE ('PAPERS', 'PAPERNAME', sMistakeValue, 'PAPERFULLNAME'),
+                                                                     'ml:NameValidValue',   REFERENCE ('PAPERS', 'PAPERNAME', sValidValue, 'PAPERFULLNAME'),
+
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в номере документа
+                    // Если ваидное значение пустое, то ветка не выгружается совсем
+                    // т.к. по схемам элемент не может быть пустым
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERNO');
+                    IF (((TRIM (sMistakeValue) <> '') * (TRIM (sValidValue) <> '')) | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlCommercialDocsMistakes, 'ml:DocNumberMistake',
+                                                                     'ml:NumberMistakeValue', sMistakeValue,
+                                                                     'ml:NumberValidValue',   sValidValue,
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в дате документа
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERDATE');
+                    IF ((TRIM (sMistakeValue) <> '') | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlCommercialDocsMistakes, 'ml:DocDateMistake',
+                                                                     'ml:DateMistakeValue', FDT ('YYYY-MM-DD', sMistakeValue),
+                                                                     'ml:DateValidValue',   FDT ('YYYY-MM-DD', sValidValue),
+                        ); //
+                      )
+                    ); // IF - //
+                  )
+                ); // IF - FIELDISNULL ('qHasError', 'PLACEID') = 0 //
+              )
+            );
+
+            iCommerceDocOrderNumber := iCommerceDocOrderNumber + 1;
+          )
+        ); // IF - //
+        
+        NEXT ('qKPapers');
+      )
+    ); // WHILE - //
+
+    // ОШИБКИ В РЕКВИЗИТАХ ТРАНСПОРТНЫХ ДОКУМЕНТОВ (В НАКЛАДНЫХ)
+    // Поскольку Коммерческие и Транспортные\Товаросопроводительные документы
+    // у нас хранятся в одной таблице, приходится делать так:
+    // Аналогично циклу в экспорте ДО-1 проходим по всем документам,
+    // проверяем коммерческий это документ или накладная
+    // Если накладная, то проверяем есть ли конкретно по нему ошибки в письме
+
+    VAR ('iTransportDocOrderNumber', Integer, 1);
+    VAR ('iFirstPaper', Integer, 1);
+    VAR ('iPaperWayBill', Integer, 0);
+    VAR ('XmlTransportDocsMistakes', Integer, 0);
+    
+    FIRST ('qKPapers');
+    WHILE ((EOF ('qKPapers') = 0),
+      Block(
+        // Проверяем признак товаросопроводительного документа
+//        iPaperWayBill := REFERENCE('PAPERS', 'PAPERNAME', qKPapers.PAPERNAME, 'PAPER_IS_WAYBILL');
+        iPaperWayBill := ( if (REFERENCE ('PAPERS', 'PAPERNAME', qKPapers.PAPERNAME, 'PAPER_IS_WAYBILL')='',0,REFERENCE ('PAPERS', 'PAPERNAME', qKPapers.PAPERNAME, 'PAPER_IS_WAYBILL')) 
+                       | if (REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', qKPapers.PAPERCODE, 'PAPER_IS_WAYBILL')='',0,REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', qKPapers.PAPERCODE, 'PAPER_IS_WAYBILL')));
+
+        sSQL := 'SELECT PLACEID, N_TTN FROM KRD_COMM WHERE N_TTN=' +char(39)+ qKPapers.COUNTER +char(39)+ ' AND PLACEID = ' + KRD_MAIN.PLACEID +' AND ID = ' + qKPapers.ID;
+        //sSQL := 'SELECT PLACEID, N_TTN FROM KRD_COMM KC, KRD_MAIN KM WHERE N_TTN=' +char(39)+ qKPapers.COUNTER +char(39)+ ' AND (KM.PLACEID=KC.PLACEID AND KM.ID=KC.ID) AND KC.ID IN (SELECT ID FROM KRD_MAIN WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND MAIN_ID=' + KRD_MAIN.MAIN_ID +  ')';
+        OPENQUERY ('qKComm', 'STS_DB', sSQL, 1);
+        //ShowMessage(sSQL);
+        sKeyInfo:= ''+qKPapers.ID+';'+ qKPapers.PART_NO+';'+qKPapers.COUNTER;
+        IF (iPaperWayBill * ((FIELDISNULL ('qKComm', 'PLACEID') = 0) | iFirstPaper),
+          Block(
+          // Это товаросопроводительный документ привязанный к товарам
+          // Или это просто первый товаросопроводительный документ без привязки к товарам
+          //IF (qKPapers.ID = KRD_MAIN.ID,
+          IF (qKPapers.ID = qKPapers.ID ,
+            Block(
+                // Проверяем есть ли по данному документу ошибка в письме
+                sSQL := 'SELECT PLACEID, SUBID FROM KRD_LMD WHERE PLACEID=' + KRD_LETTER.PLACEID +
+                                                         ' AND ID='        + KRD_LETTER.ID +
+                                                         ' AND COUNTER='   + KRD_LETTER.COUNTER +
+                                                         ' AND TABLENAME=' +char(39)+ 'KR_PAPER' +char(39)+
+                                                         ' AND KEYINFO='   +char(39)+ sKeyInfo +char(39);
+
+                OPENQUERY ('qHasError', 'STS_DB', sSQL, 1);
+                //ShowMessage(sSQL);
+                IF (FIELDISNULL ('qHasError', 'PLACEID') = 0,
+                  Block(
+                    XmlTransportDocsMistakes := XMLNODEADDCHILD (XmlMistakesDescription, 'ml:TransportDocsMistakes');
+                    XMLNODESETVALUE (XMLNODEADDCHILD (XmlTransportDocsMistakes, 'ml:PrDocumentOrderNumber'), iTransportDocOrderNumber);
+
+                    // Ошибка в коде вида документа
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERCODE');
+                    IF ((TRIM (sMistakeValue) <> '') | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlTransportDocsMistakes, 'ml:DocModeCodeMistake',
+                                                                     'ml:CodeMistakeValue', sMistakeValue,
+                                                                     'ml:CodeValidValue',   sValidValue,
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в наименовании документа
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERNAME');
+                    IF ((TRIM (sMistakeValue) <> '') | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlTransportDocsMistakes, 'ml:DocNameMistake',
+    //                                                                'ml:NameMistakeValue', sMistakeValue,
+    //                                                                'ml:NameValidValue',   sValidValue,
+                                                                    'ml:NameMistakeValue', REFERENCE ('PAPERS', 'PAPERNAME', sMistakeValue, 'PAPERFULLNAME'),
+                                                                    'ml:NameValidValue',   REFERENCE ('PAPERS', 'PAPERNAME', sValidValue, 'PAPERFULLNAME'),
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в номере документа
+                    // Если ваидное значение пустое, то ветка не выгружается совсем
+                    // т.к. по схемам элемент не может быть пустым
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERNO');
+                    IF (((TRIM (sMistakeValue) <> '') * (TRIM (sValidValue) <> '')) | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlTransportDocsMistakes, 'ml:DocNumberMistake',
+                                                                     'ml:NumberMistakeValue', sMistakeValue,
+                                                                     'ml:NumberValidValue',   sValidValue,
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в дате документа
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPERDATE');
+                    IF ((TRIM (sMistakeValue) <> '') | (TRIM (sValidValue) <> ''),
+                      Block(
+                        XMLNODESETVALUES (XmlTransportDocsMistakes, 'ml:DocDateMistake',
+                                                                     'ml:DateMistakeValue', FDT ('YYYY-MM-DD', sMistakeValue),
+                                                                     'ml:DateValidValue',   FDT ('YYYY-MM-DD', sValidValue),
+                        ); //
+                      )
+                    ); // IF - //
+
+                    // Ошибка в регистрационном номере накладной
+                    GetMistakeValues (sKeyInfo, 'KR_PAPER', 'PAPER_REG_NO');
+                    IF (TRIM (sMistakeValue) <> '',
+                      Block(
+                        XMLNODESETVALUES (XmlTransportDocsMistakes, 'ml:WaybillRegNumberMistake\ml:MistakeValue',
+                                                                    'cat_ru:CustomsCode',      CUSTOMSNOPART (sMistakeValue, 1),
+                                                                    'cat_ru:RegistrationDate', FDT ('YYYY-MM-DD', EXCLUDEDATE (sMistakeValue, '')),
+                                                                    'cat_ru:GTDNumber',        CUSTOMSNOPART (sMistakeValue, 3),
+                                                                    'catWH_ru:WaybillNumPP',   EXTRACTSTR (sMistakeValue, 4, '/'),
+                        );
+                      )
+                    ); // IF - //
+                    IF (TRIM (sValidValue) <> '',
+                      Block(
+                        XMLNODESETVALUES (XmlTransportDocsMistakes, 'ml:WaybillRegNumberMistake\ml:ValidValue',
+                                                                    'cat_ru:CustomsCode',      CUSTOMSNOPART (sValidValue, 1),
+                                                                    'cat_ru:RegistrationDate', FDT ('YYYY-MM-DD', EXCLUDEDATE (sValidValue, '')),
+                                                                    'cat_ru:GTDNumber',        CUSTOMSNOPART (sValidValue, 3),
+                                                                    'catWH_ru:WaybillNumPP',   EXTRACTSTR (sValidValue, 4, '/'),
+                        );
+                      )
+                    ); // IF - //
+
+                  )
+                ); // IF - FIELDISNULL ('qHasError', 'PLACEID') = 0 //
+              )
+            );
+            iTransportDocOrderNumber := iTransportDocOrderNumber + 1;
+            iFirstPaper := 0;
+          )
+        ); // IF - //
+
+        NEXT ('qKPapers');
+      )
+    ); // WHILE - //
+
+    // Уполномоченный сотрудник склада, подписавший настоящее Письмо
+    XMLNODESETVALUES (XmlMistakeLetter, 'ml:WareHousePerson',
+                                        'cat_ru:PersonSurname',    KRD_LETTER.WAREHOUSEPERSON_SURNAME,
+                                        'cat_ru:PersonName',       KRD_LETTER.WAREHOUSEPERSON_NAME,
+                                        'cat_ru:PersonMiddleName', KRD_LETTER.WAREHOUSEPERSON_MDLNAME,
+                                        'cat_ru:PersonPost',       KRD_LETTER.WAREHOUSEPERSON_POST,
+    );
+
+
+
+
+
+

@@ -1,0 +1,136 @@
+// *****************************************************************************
+// Название: RejectReqOperation
+// Описание: RejectReqOperation
+// Кнопка вызова: 0
+// Подпись кнопки: RejectReqOperation
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('sRelease', String, IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE', 'RELEASE_', 'RELEASE'));
+
+VAR ('XmlDoc', Integer, XMLNODEFIND (XmlRoot, 'rrqo:RejectReqOperation'));
+VAR ('vWHId',  String,  XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+VAR ('vDO1Id',  String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+VAR ('vDO2Id',  String, XMLNODEATTRIBUTE (XmlDoc, 'do2id'));
+
+//переменные для записи в лог ЭПС
+VAR ('vPlaceID', String);
+VAR ('vID', String);
+VAR ('vCounter', String);
+VAR ('DocId', String);
+VAR ('DoType', String);
+VAR ('DoNo', String);
+VAR ('DoDate', DateTime);
+VAR ('strStatus', String);
+VAR ('dRegDate', DateTime);
+VAR ('sSubStatus', String);
+
+
+  IF (XMLNODEHASATTRIBUTE (XmlDoc, 'doctype') = 1,
+    Block(
+      VAR ('vDocType', String,  XMLNODEATTRIBUTE (XmlDoc, 'doctype'));
+      VAR ('sSQL', String, '');
+      CASE (vDocType, ['1', Block(
+                            // Отказ в регистрации формы ДО-1
+                              sSQL := 'SELECT ID, NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vWHID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+                              OPENQUERY ('qID', 'STS_DB', sSQL);
+                              IF (FIELDISNULL ('qID', 'PLACEID') = 0, 
+                                Block(
+                                  sSQL := 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vWHId + ' AND DOCUMENTID=' +char(39)+ vDO1Id +char(39);
+                                  EXECUTESQL ('STS_DB', sSQL);
+                                  vPlaceID   := vWHId;
+                                  vID        := qID.ID;
+                                  vCounter   := vDO2Id;
+                                  DocId      := vDO1Id;
+                                  Dotype     := 'ДО-1';
+                                  DoNo       := qID.NBD;
+                                  DoDate     := qID.BD_DATE;
+                                  strStatus  := 'Отказ в регистрации ДО-1';
+                                  dRegDate   := Date() + Time(1);
+                                  sSubStatus := XMLNODEVALUE (XMLNODECHILD (XmlDoc, 'rrqo:RejectReason'));
+                                )
+                              ); // IF - //
+                            ),
+                       '2', Block(
+                            // Отказ в регистрации доб. листа к ДО-1
+                              sSQL := 'SELECT PLACEID, ID, NBD, BD_DATE FROM KRD_MAIN WHERE PLACEID=' + vWHID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+                              OPENQUERY ('qID', 'STS_DB', sSQL);
+
+                              VAR ('sDocumentId', String, IF (XmlNodeHasAttribute (XmlDoc, 'initEnvelopeId'),  XmlNodeAttribute (XmlDoc, 'initEnvelopeId'), ''));
+                              IF (LENGTH (sDocumentId) > 0,
+                                Block(
+                                  sSQL := 'SELECT PLACEID, ID, DOC_NO, DOC_DATETIME WHERE PLACEID=' + vWhId + ' AND DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+                                  OPENQUERY ('qKD', 'STS_DB', sSQL);
+                                  IF (FIELDISNULL ('qKD', 'PLACEID') = 0,
+                                    Block(
+                                      sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vWhId + ' AND DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+                                      //showmessage (sSQL);
+                                      EXECUTESQL ('STS_DB', sSQL);
+                                      vPlaceID   := vWHId;
+                                      vID        := qID.ID;
+                                      vCounter   := vDO2Id;
+                                      DocId      := vDO1Id;
+                                      Dotype     := 'ДО-1';
+                                      DoNo       := qID.NBD;
+                                      DoDate     := qID.BD_DATE;
+                                      strStatus  := 'Получен отказ в регистрации доб. листа к ДО-1';
+                                      dRegDate   := Date() + Time(1);
+                                      sSubStatus := 'KA: ' + qKD.DOC_NO + ' от ' + FDT ('DD.MM.YYYY, ', qKD.DOC_DATETIME);
+                                      IF (LENGTH (XMLNODEVALUE (XMLNODECHILD (XmlDoc, 'rrqo:RejectReason'))) > 0,
+                                        sSubStatus := sSubStatus + XMLNODEVALUE (XMLNODECHILD (XmlDoc, 'rrqo:RejectReason'))
+                                      ); // IF
+                                    )
+                                  ); // IF - //
+                                  CLOSEDATASET ('qKD');
+                                ),
+                                Block(
+                              IF (FIELDISNULL ('qID', 'PLACEID') = 0, 
+                                Block(
+                                  sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vWHId + ' AND ID=' + qID.ID + ' AND (DOC_REG_STATUS <> ' +char(39)+ '3' +char(39)+ ' OR DOC_REG_STATUS IS NULL)';
+                                  EXECUTESQL ('STS_DB', sSQL);
+                                  vPlaceID   := vWHId;
+                                  vID        := qID.ID;
+                                  vCounter   := vDO2Id;
+                                  DocId      := vDO1Id;
+                                  Dotype     := 'ДО-1';
+                                  DoNo       := qID.NBD;
+                                  DoDate     := qID.BD_DATE;
+                                  strStatus  := 'Получен отказ в регистрации доб. листа к ДО-1';
+                                  dRegDate   := Date() + Time(1);
+                                  sSubStatus := XMLNODEVALUE (XMLNODECHILD (XmlDoc, 'rrqo:RejectReason'));
+                                )
+                              ); // IF - //
+                                )
+                              ); // IF
+                              CLOSEDATASET ('qID');
+                            ),
+                       '3', Block(
+                            // Отказ в регистрации ДО-2
+                              // ДОБАВИТЬ ОБРАБОТКУ ДЛЯ ДРАЙВЕРА INTBASE ("RELEASE", "_RELEASE")
+                              sSQL := 'SELECT PLACEID, ID, RELEASE_NO, OUT_DATE FROM ' + sRelease +' WHERE PLACEID=' + vWHId + ' AND DOCUMENTID=' +char(39)+ vDO1Id +char(39)+ ' AND COUNTER=' + vDO2Id;
+                              OPENQUERY ('qID', 'STS_DB', sSQL);
+                              IF (FIELDISNULL ('qID', 'PLACEID') = 0, 
+                                Block(
+                                  // ДОБАВИТЬ ОБРАБОТКУ ДЛЯ ДРАЙВЕРА INTBASE ("RELEASE", "_RELEASE")
+                                  sSQL := 'UPDATE ' + sRelease + ' SET MC_STATUS=' +char(39)+ '1' +char(39)+ ' WHERE PLACEID=' + vWHId + ' AND DOCUMENTID=' +char(39)+ vDO1Id +char(39)+ ' AND COUNTER=' + vDO2Id;
+                                  EXECUTESQL ('STS_DB', sSQL);
+                                  vPlaceID   := vWHId;
+                                  vID        := qID.ID;
+                                  vCounter   := vDO2Id;
+                                  DocId      := vDO1Id;
+                                  Dotype     := 'ДО-2';
+                                  DoNo       := qID.RELEASE_NO;
+                                  DoDate     := qID.OUT_DATE;
+                                  strStatus  := 'Отказ в регистрации ДО-2';
+                                  dRegDate   := Date() + Time(1);
+                                  sSubStatus := XMLNODEVALUE (XMLNODECHILD (XmlDoc, 'rrqo:RejectReason'));
+                                )
+                              ); // IF - //
+                            )
+                      ], Block( )
+      ); // CASE - //
+    )
+  );
+
+

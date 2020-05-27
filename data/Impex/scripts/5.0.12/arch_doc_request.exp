@@ -1,0 +1,47 @@
+// *****************************************************************************
+// Название: Запрос документов из архива
+// Описание: Запрос документов из архива
+// Кнопка вызова: 0
+// Подпись кнопки: Запросить документы
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR('Counter', integer, 0);
+VAR ('sPathToSave', string, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+VAR ('sSQL', String, '');
+
+IF (USERINFO ('', 'UserUUID') <> '', sPathToSave := sPathToSave + USERINFO ('', 'UserUUID'));
+
+sSQL := 'SELECT ARCHID, ARCHDOCID, SVH_DOCNUMBER FROM INVENTORY INV INNER JOIN DOCS ON (INV.JOURNAL_MASTER_ID=DOCS.JOURNAL_MASTER_ID) WHERE DOCS.GETDOC=' +char(39)+ '1' +char(39);
+
+OPENQUERY ('NeedDoc', sSQL,'dbJournals');
+
+sSQL := 'SELECT EPS_ID FROM STORES WHERE LICENCENO=' +char(39)+ NeedDoc.SVH_DOCNUMBER +char(39);
+
+OPENQUERY ('qStores', 'STS_DB', sSQL);
+
+FIRST('NeedDoc');
+WHILE(EOF('NeedDoc')= 0,
+      BLOCK(
+        counter:= counter + 1;
+        VAR ('XMLDoc', Integer, XMLDocumentCreate());
+        VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+        VAR ('XMLArchDocRequest', Integer, XMLNodeAddChild(XMLDocRoot, 'adr:ArchDocRequest'));
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'DocumentModeID', '1005006E');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xsi:schemaLocation', 'urn:customs.ru:Information:EArchDocuments:ArchDocRequest:5.0.7 ArchDocRequest.xsd');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:adr', 'urn:customs.ru:Information:EArchDocuments:ArchDocRequest:5.0.7');
+        XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:catArch_ru', 'urn:customs.ru:Information:ElectronicArchiveDocumentsDocuments:ElectronicArchiveCommonAggregateTypes:5.0.7');
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'cat_ru:DocumentID'), GENERATEUUID());
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchDeclID'), qStores.EPS_ID);
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchID'), NeedDoc.ArchID);
+        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchDocID'), NeedDoc.ArchDocID);
+//        XMLNODESETVALUE (XMLNodeAddChild(XMLArchDocRequest, 'catArch_ru:ArchDocumentID'), NeedDoc.InventDocumentID);//??????????????????????
+        
+        XMLDOCUMENTSAVE(XMLDoc, sPathToSave + '\ARCHDOCREQUEST_'+Counter+'.xml');
+        NEXT('NeedDoc');
+      )
+);
+
+CLOSEDATASET('NeedDoc');

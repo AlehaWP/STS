@@ -1,0 +1,263 @@
+// *****************************************************************************
+// Íàçâàíèå: Èìïîðò ÄÎ2 â ôîðìàòå ÑÂÕ.Àëüáîì (5.8.0)
+// Îïèñàíèå: Èìïîðò ÄÎ2 â ôîðìàòå ÑÂÕ.Àëüáîì (5.8.0)
+// Êíîïêà âûçîâà: 1
+// Ïîäïèñü êíîïêè: ÄÎ2.Àëüáîì(èì)
+// ßçûê: FuncScript
+// Âûçîâ ïî ñîáûòèþ: 
+// Áåç ïîäòâåðæäåíèÿ: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\WriteLog.prd');
+
+VAR ('iPlaceId', Integer, DocPlaceID());
+VAR ('iId', Integer);
+VAR ('iCounter', Integer);
+VAR ('iMainId', Integer, 0);
+VAR ('sSQL', String, '');
+VAR ('sReleaseNo', String, '');
+
+VAR ('Report', Integer, GetCurrentReportNode());
+VAR ('XmlGoodsShipment', Integer, Report.GoodsShipment);
+
+// WriteLog ('do2_seaport', 'ÍÀ×ÀËÎ ÎÁÐÀÁÎÒÊÈ ÄÎ-2 ¹ ' + Report.ReportNumber +
+//           ' îò ' + StrToDate (Report.ReportDate, 'YYYY-MM-DD', '-') +
+//           ' ' + Report.ReportTime + ' =');
+
+VAR ('iGoodsShipmentIndex', Integer, 1);
+VAR ('iGoodsShipmentCount', Integer, XMLNODECHILDCOUNT (XmlGoodsShipment));
+VAR ('iFirstCustomDocs', Integer, -1);
+VAR ('iLastCustomDocs', Integer, -1);
+VAR ('iFirstGoodsCustomDocsLinks', Integer, -1);
+VAR ('iLastGoodsCustomDocsLinks', Integer, -1);
+VAR ('iFirstGoodsIndex', Integer, 0);
+VAR ('XmlGoods', Integer, 0);
+
+VAR ('XmlWHLicence', Integer, Report.WarehouseOwner.WarehouseLicense);
+IF (XMLNODEFIND (Report.WarehouseOwner, 'catWH_ru:ActualWarehouseLicense'),
+    XmlWHLicence := Report.WarehouseOwner.ActualWarehouseLicense
+); // IF
+sSQL := 'SELECT PLACEID, NAME, ADDRESS, LICENCEDATE, LICENCENO, LICENCETYPE FROM STORES' +
+        ' WHERE LICENCENO=' +char(39)+ XmlWHLicence.CertificateNumber +char(39);
+IF (LENGTH (XmlWHLicence.CertificateDate) > 0,
+  sSQL := sSQL + ' AND LICENCEDATE=' +char(39)+ StrToDate (XmlWHLicence.CertificateDate, 'YYYY-MM-DD', '-') +char(39);
+);
+OPENQUERY ('qStore', 'STS_DB', sSQL, 1);
+IF (FIELDISNULL ('qStore', 'PLACEID'),
+  Block(
+    CLOSEDATASET ('qStore');
+    sSQL := 'SELECT PLACEID, NAME, ADDRESS, LICENCEDATE, LICENCENO, LICENCETYPE FROM STORES' +
+            ' WHERE PLACEID=' + iPlaceId;
+    OPENQUERY ('qStore', 'STS_DB', sSQL, 1);
+  )
+); // IF
+
+WHILE (iGoodsShipmentIndex <= iGoodsShipmentCount,
+  Block(
+    CASE (XMLNODENAME (XMLNODECHILD (XmlGoodsShipment, iGoodsShipmentIndex)),
+      ['do2r:Goods', Block(
+        IF (iFirstGoodsIndex = 1, iFirstGoodsIndex := iGoodChildIndex - 1);
+        XmlGoods := XMLNODECHILD (XmlGoodsShipment, iGoodsShipmentIndex);
+
+        VAR ('iGoodsCustomDocsLinksIndex', Integer, iFirstGoodsCustomDocsLinks);
+        VAR ('XmlGoodsCustomDocsLinks', Integer);
+
+        WHILE (iGoodsCustomDocsLinksIndex <= iLastGoodsCustomDocsLinks,
+          Block(
+            XmlGoodsCustomDocsLinks := XMLNODECHILD (XmlGoodsShipment, iGoodsCustomDocsLinksIndex);
+            IF (XmlGoodsCustomDocsLinks.GoodNumber = XmlGoods.Input.GoodsNumber,
+              Block(
+                VAR ('XmlCustomsDocs', Integer);
+                XmlCustomsDocs := XMLNODECHILD (XmlGoodsShipment, (iFirstCustomDocs + XmlGoodsCustomDocsLinks.CustomDocNumber));
+                // WriteLog ('do2_seaport', 'Òîâàð ¹ ' + XmlGoods.Input.DO1GoodLink.DO1GoodNumber +
+                //                           ' ñâÿçàí ñ ' + XmlCustomsDocs.PrDocumentName + ' ¹ ' + XmlCustomsDocs.PrDocumentNumber + ' îò ' + StrToDate (XmlCustomsDocs.PrDocumentDate, 'YYYY-MM-DD', '-')
+                // ); // WriteLog
+
+                // TODO: ÍÀÉÒÈ ID ÇÀÏÈÑÈ Ê ÊÎÒÎÐÎÉ ÎÒÍÎÑÈÒÑß ÒÅÊÓÙÈÉ ÒÎÂÀÐ
+                // TODO: ÏÐÎÂÅÐÈÒÜ ÅÑÒÜ ËÈ Â ÒÀÁËÈÖÅ RELEASE ÇÀÏÈÑÜ Ñ ÒÀÊÈÌ ÍÎÌÅÐÎÌ ÄÒ ÍÀ ÍÀÉÄÅÍÍÛÉ ID
+                sSQL := 'SELECT KM.PLACEID, KM.ID, KM.NBD, KC.G32' +
+                        ' FROM KRD_MAIN KM' +
+                        ' INNER JOIN KRD_COMM KC ON KC.PLACEID=KM.PLACEID' +
+                        '  AND KC.ID=KM.ID' +
+                        ' WHERE ' +
+                        '  KM.PLACEID=' + iPlaceId +
+                        '  AND KC.GTD_G32=' + XmlGoods.Input.DO1GoodLink.DO1GoodNumber +
+                        '  AND KM.NBD LIKE ' +char(39)+ '%' + XmlGoods.Input.DO1GoodLink.DO1Number +char(39)+
+                        '  AND KM.BD_DATE BETWEEN ' +char(39)+ StrToDate(XmlGoods.Input.DO1GoodLink.DO1Date, 'YYYY-MM-DD', '-') + ' 00:00' +char(39)+ ' AND ' +char(39)+ StrToDate(XmlGoods.Input.DO1GoodLink.DO1Date, 'YYYY-MM-DD', '-') + ' 23:59' +char(39);
+                //WriteLog ('do2_seaport', sSQL);
+                OPENQUERY ('qG32', 'STS_DB', sSQL, 1);
+
+                // TODO: ÅÑËÈ ÍÀÉÄÅÍÀ, ÒÎ ÄÎÁÀÂËßÅÌ ÒÎÂÀÐ ÒÓÄÀ, ÅÑËÈ ÍÀ ÍÀÉÄÅÍÀ, ÒÎ ÄÎÁÀÂËßÅÌ ÑÍÀ×ÀËÀ ÇÀÏÈÑÜ Â RELEASE
+                IF (FIELDISNULL ('qG32', 'PLACEID') = 0,
+                  Block(
+                    sReleaseNo := COPY (qG32.NBD, 1, 2) + LEFTPAD (Report.ReportNumber, 5, '0');
+                    iId := qG32.ID;
+                    
+                    sSQL := 'SELECT MAIN_ID, COUNTER FROM ' + DBQUOTENAME ('RELEASE', GETDATABASETYPE ('STS_DB')) +
+                            ' WHERE PLACEID=' + iPlaceId +
+                            ' AND DOC_NO=' +char(39)+ XmlCustomsDocs.PrDocumentNumber +char(39)+
+                            ' AND RELEASE_DATE=' +char(39)+ StrToDate (XmlCustomsDocs.PrDocumentDate, 'YYYY-MM-DD', '-') +char(39)+
+                            ' AND RELEASE_NO=' +char(39)+ sReleaseNo +char(39)+
+                            ' AND ID=' + iId;
+                    OPENQUERY ('qRelease', 'STS_DB', sSQL, 1);
+                    IF (FIELDISNULL ('qRelease', 'COUNTER'),
+                      Block(
+                        IF (iMainId = 0, iMainId := iId);
+                        // TODO: äîáàâëÿåì íîâóþ çàïèñü â RELEASE
+                        VAR ('iMainCounter', Integer, 1);
+                        
+                        sSQL := 'SELECT MAX(COUNTER) AS C FROM ' + DBQUOTENAME ('RELEASE', GETDATABASETYPE ('STS_DB')) +
+                                ' WHERE PLACEID=' + iPlaceId + ' AND ID=' + iId;
+                        OPENQUERY ('qMaxCounter', 'STS_DB', sSQL, 1);
+                        iCounter := qMaxCounter.C + 1;
+                        CLOSEDATASET ('qMaxCounter');
+
+                        sSQL := 'SELECT MAIN_COUNTER FROM ' + DBQUOTENAME ('RELEASE', GETDATABASETYPE ('STS_DB')) +
+                                ' WHERE PLACEID=' + iPlaceId +
+//                                ' AND RELEASE_NO=' +char(39)+ sReleaseNo +char(39)+
+                                ' AND MAIN_ID=' + iMainId +
+                                ' AND OUT_DATE=' +char(39)+ StrToDate(Report.ReportDate, 'YYYY-MM-DD', '-') + IF (LENGTH (Report.ReportTime) > 0, ' ' + Report.ReportTime) +char(39);
+                        // WriteLog('do2_seaport', sSQL);
+                        OPENQUERY ('qMainCounter', 'STS_DB', sSQL, 1);
+                        FIRST ('qMainCounter');
+                        IF (FIELDISNULL ('qMainCounter', 'MAIN_COUNTER'),
+                          iMainCounter := iCounter,
+                          iMainCounter := CONVERT (qMainCounter.MAIN_COUNTER, Integer);
+                        ); // IF
+                        CLOSEDATASET ('qMainCounter');
+
+                        sSQL := 'INSERT INTO ' + DBQUOTENAME ('RELEASE', GETDATABASETYPE ('STS_DB')) +
+                                ' (PLACEID,ID,COUNTER,DOC_NO,RELEASE_DATE,' +
+                                'MAIN_ID,MAIN_COUNTER,MAIN_NO,' +
+                                'RELEASE_NO,OUT_DATE,DOC_TYPE,RELEASE_RECEIVE_POST,RELEASE_RECEIVE,' +
+                                'RELEASE_GIVE_POST,RELEASE_GIVE,G042,G043,G044C,' +
+                                'G04_KPP,G04_OGRN,G04_COUNTRY,G040P,G040,' +
+                                'G082,G083,G084C,G08_KPP,G08_OGRN,' +
+                                'TRANSPTYPE,' +
+                                'G142,G143,G1440,G144,G145' +
+                                ')' +
+                                ' VALUES (' +
+                                iPlaceId +
+                                ',' + iId +
+                                ',' + iCounter +
+                                ',' +char(39)+ XmlCustomsDocs.PrDocumentNumber +char(39)+
+                                ',' +char(39)+ StrToDate (XmlCustomsDocs.PrDocumentDate, 'YYYY-MM-DD', '-') +char(39)+
+                                ',' + iMainId +
+                                ',' + iMainCounter +
+                                ',' + GetNewReleaseMainNo(iPlaceId, iMainId, iMainCounter) +
+                                ',' +char(39)+ sReleaseNo +char(39)+
+                                ',' +char(39)+ StrToDate(Report.ReportDate, 'YYYY-MM-DD', '-') + IF (LENGTH (Report.ReportTime) > 0, ' ' + Report.ReportTime) +char(39)+
+                                ',' +char(39)+ XmlCustomsDocs.PrDocumentName +char(39)+
+                                ',' +char(39)+ Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonPost +char(39)+
+                                ',' +char(39)+ TRIM(Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonSurname + ' ' + Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonName + ' ' + Report.GoodsShipment.Goods.Output.Consignee.ConsigneePerson.PersonMiddleName) +char(39)+
+                                ',' +char(39)+ Report.WarehouseOwner.WarehousePerson.PersonPost +char(39)+
+                                ',' +char(39)+ TRIM(Report.WarehouseOwner.WarehousePerson.PersonSurname + ' ' + Report.WarehouseOwner.WarehousePerson.PersonName + ' ' + Report.WarehouseOwner.WarehousePerson.PersonMiddleName) +char(39)+
+                                ',' +char(39)+ Report.Carrier.OrganizationName +char(39)+
+                                ',' +char(39)+ Report.Carrier.Address.AddressLine +char(39)+
+                                ',' +char(39)+ Report.Carrier.RFOrganizationFeatures.INN +char(39)+
+                                ',' +char(39)+ Report.Carrier.RFOrganizationFeatures.KPP +char(39)+
+                                ',' +char(39)+ Report.Carrier.RFOrganizationFeatures.OGRN +char(39)+
+                                ',' +char(39)+ Report.Carrier.CountryCode +char(39)+
+                                ',' +char(39)+ Report.Carrier.CarrierPerson.PersonPost +char(39)+
+                                ',' +char(39)+ TRIM(Report.Carrier.CarrierPerson.PersonSurname + ' ' + Report.Carrier.CarrierPerson.PersonName + ' ' + Report.Carrier.CarrierPerson.PersonMiddleName) +char(39)+
+                                ',' +char(39)+ Report.GoodsShipment.Goods.Output.Consignee.OrganizationName +char(39)+
+                                ',' +char(39)+ Report.GoodsShipment.Goods.Output.Consignee.Address.AddressLine +char(39)+
+                                ',' +char(39)+ Report.GoodsShipment.Goods.Output.Consignee.RFOrganizationFeatures.INN +char(39)+
+                                ',' +char(39)+ Report.GoodsShipment.Goods.Output.Consignee.RFOrganizationFeatures.KPP +char(39)+
+                                ',' +char(39)+ Report.GoodsShipment.Goods.Output.Consignee.RFOrganizationFeatures.OGRN +char(39)+
+                                ',' +char(39)+ Report.MainTransportModeCode +char(39)+
+                                ',' +char(39)+ qStore.NAME +char(39)+
+                                ',' +char(39)+ qStore.ADDRESS +char(39)+
+                                ',' +char(39)+ qStore.LICENCETYPE +char(39)+
+                                ',' +char(39)+ qStore.LICENCENO +char(39)+
+                                ',' +char(39)+ qStore.LICENCEDATE +char(39)+
+                                ')';
+                        // WriteLog ('do2_seaport', sSQL);
+                        EXECUTESQL ('STS_DB', sSQL);
+                        SetIsNewDoc();
+                      ),
+                      Block(
+                        // TODO: èñïîëüçóåì COUNTER íàéäåíîé çàïèñè
+                        iCounter := qRelease.COUNTER;
+                      )
+                    );
+                    CLOSEDATASET ('qRelease');
+
+                    VAR ('iReleaseGtdG32', Integer, 1);
+                    sSQL := 'SELECT MAX(RELEASE_GTD_G32) AS M FROM REL_COMM' +
+                            ' WHERE PLACEID=' + iPlaceId +
+                            ' AND ID=' + iId +
+                            ' AND COUNTER=' + iCounter;
+                    OPENQUERY ('qReleaseGtdG32', 'STS_DB', sSQL, 1);
+                    iReleaseGtdG32 := (qReleaseGtdG32.M + 1);
+                    CLOSEDATASET ('qReleaseGtdG32');
+
+                    VAR ('sOutputDate', String, IF (LENGTH (XmlGoods.Output.OutputDate) > 0, StrToDate (XmlGoods.Output.OutputDate, 'YYYY-MM-DD', '-')));
+                    IF (LENGTH (XmlGoods.Output.OutputTime) > 0, sOutputDate := sOutputDate + ' ' + XmlGoods.Output.OutputTime);
+                    // WriteLog ('do2_seaport', 'sOutputDate: ' + sOutputDate + ', ' + DBFORMATDATETIME (sOutputDate) + ', ' + DBFORMATDATETIME (sOutputDate, GETDATABASETYPE ('STS_DB'), 1, 0) + ', ' + DBFORMATDATETIME (sOutputDate, GETDATABASETYPE ('STS_DB'), 0, 1));
+
+                    sSQL := 'INSERT INTO REL_COMM' +
+                            ' (PLACEID,ID,COUNTER,G32,RELEASE_G33' +
+                            // ',RELEASE_G311,RELEASE_G35,RELEASE_G38,RELEASE_G42,RELEASE_G313' +
+                            ',RELEASE_G311,RELEASE_G35,RELEASE_G42,RELEASE_G313' +
+                            ',RELEASE_G315,RELEASE_G315A,RELEASE_OUT_DATE,RELEASE_GTD_G32' +
+                            ') VALUES (' +
+                            iPlaceId +
+                            ',' + iId +
+                            ',' + iCounter +
+                            ',' + qG32.G32 +
+                            ',' +char(39)+ XmlGoods.Input.GoodsTNVEDCode +char(39)+
+                            ',' + CONVERT (XmlGoods.Output.CargoPlace.PlaceNumber, Integer) +
+                            ',' + CONVERT (XmlGoods.Output.BruttoVolQuant.GoodsQuantity, Float) +
+                            ',' + CONVERT (XmlGoods.Output.Cost, Float) +
+                            ',' +char(39)+ XmlGoods.Output.CargoPlace.PlaceDescription +char(39)+
+                            ',' +char(39)+ IF (LENGTH (XmlGoods.Output.MeasureQuantity.MeasureUnitQualifierName) > 0, XmlGoods.Output.MeasureQuantity.MeasureUnitQualifierName, IF (LENGTH (XmlGoods.Output.MeasureQuantity.MeasureUnitQualifierCode) > 0, REFERENCE ('UNITS', 'UNITCODE', XmlGoods.Output.MeasureQuantity.MeasureUnitQualifierCode, 'UNITNAME'), '')) +char(39)+
+                            ',' + CONVERT (XmlGoods.Output.MeasureQuantity.GoodsQuantity, Float) +
+                            // ',' + DBFORMATDATETIME (sOutputDate, GETDATABASETYPE ('STS_DB'), 1, 1) +
+                            ',' +char(39)+ sOutputDate +char(39)+
+                            ',' + iReleaseGtdG32 +
+                            ')';
+                    EXECUTESQL ('STS_DB', sSQL);
+                  )
+                ); // IF
+                CLOSEDATASET ('qG32');
+              )
+            ); // IF
+            iGoodsCustomDocsLinksIndex := iGoodsCustomDocsLinksIndex + 1;
+          )
+        ); // WHILE
+      ),
+      'do2r:CustomsDocs', Block(
+        IF (iFirstCustomDocs = -1, iFirstCustomDocs := iGoodsShipmentIndex - 1);
+        // WriteLog ('do2_seaport', XMLNODENAME (XMLNODECHILD (XmlGoodsShipment, iFirstCustomDocs)));
+        iLastCustomDocs := iGoodsShipmentIndex;
+      ),
+      'do2r:GoodsCustomDocsLinks', Block(
+        IF (iFirstGoodsCustomDocsLinks = -1, iFirstGoodsCustomDocsLinks := iGoodsShipmentIndex - 1);
+        iLastGoodsCustomDocsLinks := iGoodsShipmentIndex;
+      ),
+      ],
+    );
+    iGoodsShipmentIndex := iGoodsShipmentIndex + 1;
+  )
+); // WHILE
+
+CLOSEDATASET ('qStore');
+
+// WriteLog ('do2_seaport', 'ÊÎÍÅÖ ===============================================');
+
+// SHOWLOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\do2_seaport.log',
+//             'Ðåçóëüòàòû çàãðóçêè ÄÎ-2');
+
+
+
+
+
+
+
+
+
+
+
+

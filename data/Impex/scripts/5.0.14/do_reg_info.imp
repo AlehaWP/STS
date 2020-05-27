@@ -1,0 +1,194 @@
+// *****************************************************************************
+// Название: Информация о регистрации ДО (5.0.13)
+// Описание: Информация о регистрации ДО (5.0.13)
+// Кнопка вызова: 0
+// Подпись кнопки: DORegInfo
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+//Подключаем скрипт для форматирования даты в SQL-запросах
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\sqldate.prd');
+
+VAR ('sDriverName', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+VAR ('sSQL', String, '');
+
+VAR('XmlNodeDescript', integer, XMLNODECHILD (XmlRoot, 0));
+VAR('XmlCustInsp', integer, XMLNODEFIND (XmlNodeDescript, 'dori:CustomInspector'));
+VAR('XmlRegNum', integer, XMLNODEFIND (XmlNodeDescript, 'dori:RegisterNumberReport'));
+VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlNodeDescript, 'whid'));
+VAR ('vDO1ID', String, XMLNODEATTRIBUTE (XmlNodeDescript, 'do1id'));
+VAR ('DoDt', String, XMLNODEATTRIBUTE (XmlNodeDescript, 'dodt'));
+VAR ('vID', String, '0');
+VAR ('vCounter', String, '0');
+VAR ('DocId', String, '');
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('strStatus', String, '');
+VAR ('strSubStatus', String, '');
+VAR ('dRegDate', DateTime, CONVERT (StrToDate (XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:RegistrationDate')),'YYYY-MM-DD', '-'), DateTime));
+VAR ('LICENCENO', String, '');
+
+    IF (LENGTH (vPlaceID) = 0, vPlaceID := '0');
+    IF (LENGTH (vDO1ID) > 0,
+      Block(
+        IF (LENGTH (vDO1ID) > 30,
+          Block( // получили GUID
+            sSQL := 'SELECT ID FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+            OPENQUERY ('qFindDocID', 'STS_DB', sSQL);
+            IF (RECORDCOUNT ('qFindDocID') > 0,
+              Block( // найдена ДО-2
+                vID := qFindDocID.ID;
+              ),
+              Block( // ДО-2 не найдена
+                sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND DOCUMENTID=' +char(39)+ vDO1ID +char(39);
+    //showmessage (sSQL);
+    OPENQUERY ('qFindID', 'STS_DB', sSQL);
+        vID := qFindID.ID;
+      )
+    ); // IF - //
+          ),
+          Block( // получили ID
+            sSQL := 'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + vPlaceID + ' AND ID=' + vDO1ID;
+            //showmessage (sSQL);
+            OPENQUERY ('qFindID', 'STS_DB', sSQL);
+            vID := qFindID.ID;
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+
+//showmessage(XmlRegNum);
+CASE (XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'dori:FormReport')), [1, BLOCK(
+                                                                           // запись регистрации ДО-1
+                                                                           strStatus := 'ДО-1 зарегистрирована';
+                                                                           DoType := 'ДО-1';
+                                                                           DoNo := '';
+								           sSQL := 'SELECT * FROM KRD_MAIN WHERE PLACEID=' + vPlaceID +  ' AND ID=' + vID;
+                                                                           OPENQUERY ('qDO1', 'STS_DB', sSQL);
+                                                                           IF (RecordCount ('qDO1', 1) > 0,
+                                                                             Block(
+                                                                               DoNo := qDO1.NBD;
+                                                                               DoDate := qDO1.BD_DATE;
+                                                                               DocId := qDO1.DOCUMENTID;
+                                                                               dRegDate := (Date() + Time(1));
+                                                                               OPENQUERY ('qryNum', 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+                                                                               sJourGuid := qryNum.JOURGUID;
+                                                                             )
+                                                                           );
+                                                                           CLOSEDATASET ('qDO1');
+                                                                           
+                                                                           VAR ('sRegNum', String, XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:CustomsCode')) +'/'+ FDT('DDMMYY', XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:RegistrationDate'))) +'/'+ XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:GTDNumber')));
+                                                                           strSubStatus := sRegNum;
+                                                                           VAR ('tmpDate', String, SQLDate (XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'dori:RegDate')) + ' ' + XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'dori:RegTime')), GetBaseDriver(0)));
+                                                                           
+                                                                           IF (XMLNODEFIND (XmlRegNum, 'catWH_ru:CertificateNumber'), sRegNum := sRegNum +'/'+ XMLNODEVALUE (XMLNODEFIND (XmlRegNum, 'catWH_ru:CertificateNumber'))); // IF - //
+                                                                           IF (XMLNODEFIND (XmlRegNum, 'catWH_ru:OtherWHPlaceKind'), sRegNum := sRegNum +'/'+ XMLNODEVALUE (XMLNODEFIND (XmlRegNum, 'catWH_ru:OtherWHPlaceKind'))); // IF - //
+                                                                           sSQL := 'UPDATE KRD_MAIN SET REG_NBD=' +char(39)+ sRegNum +char(39)+ ', ' +
+                                                                                                 ' MC_STATUS_BD = ' +char(39)+ '3' +char(39)+ ', ' +
+                                                                                                 ' STATUS_EPS=' +char(39)+ 'ДО-1 зарегистрирована' +char(39)+ ', ' +
+                                                                                                 ' GD1= ' + tmpDate + ', '+
+                                                                                                 ' GD2= ' +char(39)+ XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'catWH_ru:LNP')) +char(39)+ ', '+
+                                                                                                 ' FIO_INSPECTOR= ' +char(39)+ XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonSurname')) + ' ' +
+                                                                                                                      XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonName'))  + ' ' +
+                                                                                                                      XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonMiddleName')) +char(39)+
+                                                                                                                      ', '+
+                                                                                                 ' POST_INSPECTOR= ' +char(39)+ XMLNODEVALUE(XMLNODEFIND(XmlCustInsp, 'cat_ru:PersonPost')) +char(39)+ ' '+
+                                                                                   ' WHERE PLACEID='   + vPlaceID +
+                                                                                   ' AND MAIN_ID='     + vID;
+
+                                                                            //showmessage (sSQL);
+
+                                                                            // запись регистрации ДО-1
+                                                                            EXECUTESQL('STS_DB', sSQL);
+                                                                           ),
+                                                                        2, BLOCK(
+                                                                             // запись регистрации ДО-2
+                                                                             strStatus := 'ДО-2 зарегистрирована';
+                                                                             DoType := 'ДО-2';
+                                                                             vCounter := XMLNODEATTRIBUTE (XmlNodeDescript, 'do2id');
+                                                                             IF (UPPERSTR (INIFILE ('Database', 'DbmsType', 'PARADOX')) = 'INTRBASE',
+                                                                                 OPENQUERY ('RMAIN_3', 'STS_DB', 'SELECT * FROM RELEASE_ WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID + ' AND MAIN_COUNTER=' + vCounter),
+                                                                                 OPENQUERY ('RMAIN_3', 'STS_DB', 'SELECT * FROM RELEASE WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID + ' AND MAIN_COUNTER=' + vCounter)
+                                                                             );
+
+                                                                             DoNo   := RMAIN_3.RELEASE_NO;
+                                                                             DoDate := RMAIN_3.OUT_DATE;
+									                                                           DocId  := RMAIN_3.DOCUMENTID;
+                                                                             dRegDate := (Date() + Time(1));
+                                                                             OPENQUERY ('qryNum', 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+                                                                             sJourGuid := qryNum.JOURGUID;
+                                                                             CLOSEDATASET ('RMAIN_3');
+                                                                             CLOSEDATASET ('qryNum');
+                                                                             
+                                                                             VAR ('sSQL', String, '');
+                                                                             VAR ('sRegNum', String, XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:CustomsCode')) +'/'+ FDT('DDMMYY', XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:RegistrationDate'))) +'/'+ XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:GTDNumber')));
+									                                                           strSubStatus := sRegNum;
+                                                                             IF (XMLNODEFIND (XmlRegNum, 'catWH_ru:CertificateNumber'), sRegNum := sRegNum +'/'+ XMLNODEVALUE (XMLNODEFIND (XmlRegNum, 'catWH_ru:CertificateNumber'))); // IF - //
+                                                                             IF (XMLNODEFIND (XmlRegNum, 'catWH_ru:OtherWHPlaceKind'), sRegNum := sRegNum +'/'+ XMLNODEVALUE (XMLNODEFIND (XmlRegNum, 'catWH_ru:OtherWHPlaceKind'))); // IF - //																			 
+                                                                             vCounter := XMLNODEATTRIBUTE (XmlNodeDescript, 'do2id');
+                                                                             VAR ('tmpDate', String, XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'dori:RegDate')));
+                                                                             IF (XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'dori:RegTime')) <> '', tmpDate := tmpDate + ' ' + XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'dori:RegTime')));
+                                                                             tmpDate := SQLDate(tmpDate, GetBaseDriver(0));
+                                                                             
+                                                                             sSQL := 'UPDATE ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' SET MC_STATUS=' +char(39)+ '3' +char(39)+ ', REG_RELEASE_NO=' +char(39)+ sRegNum +char(39)+ ', ' +
+                                                                                    ' FIO_INSPECTOR= ' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonSurname')) + ' ' +
+                                                                                                          XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonName'))  + ' ' +
+                                                                                                          XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonMiddleName')) +char(39)+
+                                                                                                          ', '+
+                                                                                    ' GD2='              +char(39)+  XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'catWH_ru:LNP')) +char(39)+ ', ' +
+                                                                                    ' POST_INSPECTOR='   +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonPost')) +char(39)+ ', ' +
+                                                                                    ' REG_TIME='         + tmpDate + ' ' +
+                                                                                    ' WHERE PLACEID='    + vPlaceID +
+                                                                                    ' AND MAIN_ID='      + vID +
+                                                                                    ' AND MAIN_COUNTER=' + vCounter;
+                                                                                    
+                                                                             //showmessage (sSQL);
+                                                                             
+                                                                             //запись регистрации ДО-2
+                                                                             EXECUTESQL ('STS_DB', sSQL);
+                                                                             OPENQUERY ('qDO2No', 'STS_DB', 'SELECT RELEASE_NO FROM ' + IF (sDriverName = 'INTRBASE', 'RELEASE_', 'RELEASE') + ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID + ' AND MAIN_COUNTER=' + vCounter);
+                                                                             EXECUTESQL ('STS_DB', 'UPDATE KRD_MAIN SET STATUS_EPS=' +char(39)+ 'ДО-2 № ' + qDO2No.RELEASE_NO + ' зарегистрирована' +char(39)+ ' WHERE PLACEID=' + vPlaceID + ' AND MAIN_ID=' + vID);
+                                                                             
+                                                                           ),
+                                                                        3, BLOCK(
+                                                                             // запись регистрации ДО-3
+                                                                             strStatus := 'Получена регистрация ДО-3';
+                                                                             DoType := 'ДО-3';
+                                                                             VAR ('sSQL', String, '');
+                                                                             VAR ('sRegNum', String, XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:CustomsCode')) +'/'+
+                                                                                                     FDT('DDMMYY', XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:RegistrationDate'))) +'/'+
+                                                                                                     XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:GTDNumber')) +'/'+
+                                                                                                     XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'catWH_ru:OtherWHPlaceKind'))
+                                                                             );
+                                                                             OPENQUERY ('Q_JR3','select * from JRDO3 where RefDocumentId = ' + char(39) + XMLNODEATTRIBUTE (XmlNodeDescript, 'do3id') +char(39), 'dbJournals');
+                                                                             DoNo   := Q_JR3.ReportNumber;
+                                                                             DoDate := Q_JR3.ReportDate;
+                                                                             sJourGuid := Q_JR3.RefDocumentId;
+
+                                                                             VAR ('tmpTime', String, XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'dori:RegTime')));
+                                                                             tmpTime := COPY (tmpTime, 0, IF (STRPOS ('.', tmpTime) > 0, (STRPOS ('.', tmpTime)) - 1), LENGTH (tmpTime));
+                                                                             tmpTime := EXTRACTSTR (tmpTime, 1, ':') + ' ' + EXTRACTSTR (tmpTime, 2, ':') + ' ' + EXTRACTSTR (tmpTime, 3, ':');
+                                                                             
+                                                                             VAR ('tmpDate', String, SQLDate(XMLNODEVALUE(XMLNODEFIND(XmlNodeDescript, 'dori:RegDate')), GetBaseDriver(1)));
+
+                                                                             sSQL := 'UPDATE JRDO3 SET ';
+                                                                             sSQL := sSQL + ' CustomState = ' + char(39) + 'Зарегистрирован' + char(39) + ' ,' ;
+                                                                             sSQL := sSQL + ' PersonSurname = ' + char(39) + XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonSurname')) + char(39) + ' ,' ;
+                                                                             sSQL := sSQL + ' PersonName = ' + char(39) + XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonName')) + char(39) + ' ,' ;
+                                                                             sSQL := sSQL + ' PersonPost = ' + char(39) + XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'cat_ru:PersonPost')) + char(39) + ' ,' ;
+                                                                             sSQL := sSQL + ' LNP = ' + char(39) + XMLNODEVALUE (XMLNODEFIND (XmlCustInsp, 'catWH_ru:LNP')) + char(39) + ' , ' ;
+                                                                             sSQL := sSQL + ' RegistrationDate = ' + tmpDate + ' , ' ;
+                                                                             sSQL := sSQL + ' GTDNumber = ' + char(39) + sRegNum + char(39) + ' ,' ;
+                                                                             sSQL := sSQL + ' CustomsCode = ' + char(39) +  XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:CustomsCode')) + char(39) + ' ,' ;
+                                                                             sSQL := sSQL + ' CustomName = ' + char(39) +  REFERENCE('KTAM.DBF', 'CODE', XMLNODEVALUE(XMLNODEFIND(XmlRegNum, 'cat_ru:CustomsCode')), 'NAMT', 'DBEGIN', 'DEND', DATE ()) + char(39) + ' ' ;
+                                                                             sSQL := sSQL + ', RegisterTime = ' + char(39) + tmpTime + char(39) + ' ' ;
+                                                                             sSQL := sSQL + ' WHERE RefDocumentId = ' + char(39) + XMLNODEATTRIBUTE (XmlNodeDescript, 'do3id') +char(39);
+                                                                             //showmessage(sSQL);
+                                                                             EXECUTESQL ('dbJournals', sSQL);
+                                                                           )
+                                                                       ]
+                                                                       
+);
+

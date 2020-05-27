@@ -1,0 +1,120 @@
+// *****************************************************************************
+// Название: Решение о продлении сроков ВХ
+// Описание: Решение о продлении сроков ВХ
+// Кнопка вызова: 0
+// Подпись кнопки: Решение о продлении
+// Вызов по событию: 
+// *****************************************************************************
+//
+VAR ('XmlDoc', integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('whid', String, XMLNODEATTRIBUTE (XmlDoc, 'whid'));
+VAR ('do1id', String, XMLNODEATTRIBUTE (XmlDoc, 'do1id'));
+VAR ('iCounter', Integer, 0);
+VAR ('iCount', Integer, 0);
+VAR ('sReason', String, '');
+VAR ('XmlGoodsDecision', Integer, XMLNODEFIND (XmlDoc, 'reswh:GoodsDecision'));
+
+
+  OPENQUERY ('qryMax', 'STS_DB', 'SELECT MAX (COUNTER) AS MC FROM KRD_PROL WhERE PLACEID=' + whid + ' AND ID=' + do1id);
+  iCounter := qryMax.MC + 1;
+  IF (XMLNODEFIND (XmlDoc, 'reswh:Reason'), sReason := XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'reswh:Reason')));
+  IF (sReason = '', sReason := XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:Reason'))); // IF - //
+
+
+  APPENDRECORD ('KRD_PROL_2');
+  EDIT ('KRD_PROL_2');
+  SETFIELDVALUE ('KRD_PROL_2',
+                 'PLACEID', whid,
+                 'ID', do1id,
+                 'COUNTER', iCounter,
+                 'DOC_TYPE',        'РПСВХ',
+                 'DOC_NO',          XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'reswh:RegNumber')),
+                 'DOC_DATE',        FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlDoc, 'reswh:SendDate')), 'YYYY-MM-DD', '-')),
+                 'DOC_STARTDATE',   '',
+                 'STORAGE_DATE',    FDT ('DD.MM.YYYY', StrToDate (XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod')), 'YYYY-MM-DD', '-')),
+                 'DOC_ARTICLE_NO',  '',
+                 'INSPECTOR_LNP',   '',
+                 'DOC_REASON',      sReason,
+// DOC_AUTHOR и DOC_AUTHOR_POST не видны из SETFIELDVALUE (), нужно обновлять SQL-Запросом
+//                'DOC_AUTHOR',      '',
+//                'DOC_AUTHOR_POST', '',
+  );
+  POST ('KRD_PROL_2');
+
+  // Цикл по поварам
+  // Для каждого товара вычисляем новое количество дней хранения (STORAGE_PERIOD)
+  // И обновляем дату истечения срока ВХ (STORAGE_DATE)
+  
+  VAR ('iGoodsCount', Integer, XMLNODECHILDCOUNT (XmlDoc));
+  VAR ('iGoodsIndex', Integer, 0);
+  VAR ('sSQL', String, '');
+  VAR ('iSP', Integer);
+  
+  WHILE (iGoodsIndex < iGoodsCount,
+    Block(
+      XmlGoodsDecision := XMLNODECHILD (XmlDoc, iGoodsIndex);
+      IF (XMLNODENAME (XmlGoodsDecision) = 'reswh:GoodsDecision',
+        Block(
+          OPENQUERY ('qryKC', 'STS_DB', 'SELECT G32, ACCEPTDATE FROM KRD_COMM WHERE PLACEID=' + whid + ' AND ID=' + do1id + ' AND G32=' + XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:GoodsNumeric')));
+          IF (RECORDCOUNT ('qryKC') > 0,
+            Block(
+              iSP := ROUND (XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod')) - qryKC.ACCEPTDATE);
+              sSQL := 'UPDATE KRD_COMM SET STORE_PERIOD=' + iSP;
+              IF (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod'),
+                Block(
+                  sSQL := sSQL + ', STORAGE_DATE=' +char(39)+ StrToDate(XMLNODEVALUE (XMLNODEFIND (XmlGoodsDecision, 'reswh:ReqPeriod')), 'YYYY-MM-DD', '-') +char(39);
+                )
+              ); // IF - //
+              sSQL := sSQL + ' WHERE PLACEID=' + whid + ' AND ID=' + do1id + ' AND G32=' + FIELDVALUE ('qryKC', 'G32');
+              EXECUTESQL ('STS_DB', sSQL);
+             )
+          ); // IF - //
+          CLOSEDATASET ('qryKC');
+        )
+      ); // IF - //
+      iGoodsIndex := iGoodsIndex + 1;
+    )
+  ); // WHILE - //
+
+{
+VAR('XmlNodeDescript', integer, XMLNODECHILD (XmlRoot, 0));
+VAR('iCounter', Integer, 0);
+VAR('iCount', Integer, 0);
+VAR('sComment', String, '');
+
+FORMCREATE (frmWHGD, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\GoodsProlongIn.cfm');
+FORMSETPROPERTY (frmWHGD, 'rtZPSH.Text',  XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'RegNumber')));
+FORMSETPROPERTY (frmWHGD, 'rtDateOUT.Text', convert (STRTODATE (XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'SendDate')), 'YYYY-MM-DD', '-'), string) + ' ' + COPY(XMLNODEVALUE (XMLNODEFIND (XmlNodeDescript, 'SendTime')), 1, 5));
+FORMSETPROPERTY (frmWHGD, 'rtEndDate.Text', convert(STRTODATE(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND(XmlNodeDescript, 'GoodsDecision'), 'ReqPeriod')), 'YYYY-MM-DD', '-'), string));
+iCounter := XMLNODECHILDCOUNT (XmlNodeDescript);
+While(  iCount < iCounter,
+      BLOCK(
+        IF(XMLNODENAME (XMLNODECHILD(XmlNodeDescript, iCount)) = 'GoodsDecision',
+          BLOCK(
+            VAR('XMLGoods', integer, XMLNODECHILD(XmlNodeDescript, iCount));
+            Var('iCounterInGood', integer, XMLNODECHILDCOUNT (XMLGoods));
+            Var('i', integer, 0);
+            WHILE( i < iCounterInGood,
+              BLOCK(
+                IF (XMLNODENAME (XMLNODECHILD(XmlGoods, i)) = 'GoodsNumeric',
+                   sComment := sComment + IF(sComment <> '',';'+ char(13)) + 'Товар №' + XMLNODEVALUE (XMLNODECHILD(XmlGoods, i)) + ': '
+                );
+                IF (XMLNODENAME (XMLNODECHILD(XmlGoods, i)) = 'Reason',
+                   sComment := sComment + XMLNODEVALUE (XMLNODECHILD(XmlGoods, i))
+                );
+                i:= i + 1;
+                
+              )
+            );
+          )
+        );
+        iCount := iCount + 1;
+      )
+);
+sComment := sComment + ';';
+//showmessage(sComment);
+FORMSETPROPERTY (frmWHGD, 'Comment.Lines',  sComment);
+FORMSHOWMODAL (frmWHGD);
+}
+                     
+

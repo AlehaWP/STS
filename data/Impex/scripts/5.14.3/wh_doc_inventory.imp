@@ -1,0 +1,131 @@
+// *****************************************************************************
+// Название: Загрузка описи документов
+// Описание: Загрузка описи документов
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузить опись
+// Язык: FuncScript
+// Вызов по событию: EpsImport
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sPath', String, '');
+VAR ('iJMID', Integer, 0);
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\sql_insert.prd');
+//IF (SELECTDIRECTORY ('sPath') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+//sPath := INCLUDETRAILINGBACKSLASH (sPath);
+
+{
+IF (SELECTFILE ('sPath', 'Выбор описи', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+}
+
+VAR ('XmlInventory', Integer, XMLNODECHILD (XmlRoot, 0));
+
+VAR ('iChildIndex', Integer, 0);
+VAR ('iChildCount', Integer, XMLNODECHILDCOUNT (XmlInventory));
+VAR ('XmlInventDocument', Integer);
+//OPENTABLE (Псевдоним набора данных, Имя таблицы, Индекс таблицы, Псевдоним базы данных[, Возможность редактирования таблицы - 1, Все записи - 1])
+//OPENTABLE (Псевдоним набора данных, Псевдоним BDE-базы данных, Имя таблицы, Индекс таблицы)
+
+
+VAR ('sFilter', String, 'DOCUMENTID = ' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlInventory, 'cat_ru:DocumentID')) +char(39) );
+
+OPENQUERY ('qryInv', 'SELECT * FROM INVENTORY WHERE ' + sFilter, 'dbJournals');
+
+IF (FIELDISNULL ('qryInv', 'JOURNAL_MASTER_ID'),
+  Block(
+
+    OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM INVENTORY', 'dbJournals');
+    VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+
+    Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+    Insert2 ('DOCUMENTID',    XMLNODEVALUE (XMLNODEFIND (XmlInventory, 'cat_ru:DocumentID')));
+    Insert2 ('InstanceDate', FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODECHILD (XmlInventory, 'whdi:InventoryInstanceDate'))), 2);
+    Insert2 ('CREATED_AT', Date()+Time(1));
+    Insert2 ('','',0,'INVENTORY');
+
+    WHILE (iChildIndex <= iChildCount,
+      Block(
+        CASE (XMLNODENAME (XMLNODECHILD (XmlInventory, iChildIndex)),
+          ['whdi:InventDocument',
+              Block(
+                XmlInventDocument := XMLNODECHILD (XmlInventory, iChildIndex);
+
+                OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID FROM DOCS WHERE JOURNAL_MASTER_ID=' + iJMID, 'dbJournals');
+                VAR('iJCID', Integer, qryMAXID.MAX_ID + 1);
+		PrepareInsert2 ();
+                Insert2 ('JOURNAL_MASTER_ID', iJMID, 1);
+                Insert2 ('JOURNAL_CHILD_ID', iJCID, 1);
+                Insert2 ('JOURNAL_UUID',  GENERATEUUID ());
+                Insert2 ('INVDOCCODE',    XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocCode')));
+                Insert2 ('INVDOCNUMBER',  XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocNumber')));
+                IF (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocDate'),
+                  Insert2 ('INVDOCDATE',  XMLNODEVALUE (XMLNODECHILD (XmlInventDocument, 'whdi:InvDocDate')), 2)
+                ); // IF
+                Insert2 ('INVDOCLISTS',   IF (XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocLists')) <> '', XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InvDocLists')), '0'));
+                Insert2 ('NOTE',          XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:Note')));
+                Insert2 ('ARCHID',        XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:ArchID')));
+                Insert2 ('ARCHDOCID',     XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:ArchDocID')));
+//!                Insert2 ('DOCUMENTID', XMLNODEVALUE (XMLNODECHILD (XmlInventDocument, 'whdi:InventDocumentID')));
+                Insert2 ('INVENTLINEID',     XMLNODEVALUE (XMLNODEFIND (XmlInventDocument, 'whdi:InventLineID')));
+                Insert2 ('', '', 0, 'DOCS'); 
+              ),
+            'whdi:Sender',
+              Block(
+                VAR ('XmlSender', Integer, XMLNODECHILD (XmlInventory, iChildIndex));
+              ),
+            'whdi:Receiver',
+              Block(
+                VAR ('XmlReceiver', Integer, XMLNODECHILD (XmlInventory, iChildIndex));
+              ),
+            'whdi:RegNumberDoc',
+              Block(
+                VAR ('XmlRegNumberDoc', Integer, XMLNODECHILD (XmlInventory, iChildIndex));
+              )
+          ],
+        ); // CASE
+        iChildIndex := iChildIndex + 1;
+      )
+    ); // WHILE
+
+    IF (XMLNODENAME (XMLNODECHILD (XmlSender, 0)) = 'whdi:Customs',
+      Block(
+        VAR ('XmlCustoms', Integer, XMLNODECHILD (XmlSender, 0));
+        Update ('CUSTOMSCODE', XMLNODEVALUE (XMLNODEFIND (XmlCustoms, 'cat_ru:Code')));
+        Update ('OFFICENAME',  XMLNODEVALUE (XMLNODEFIND (XmlCustoms, 'cat_ru:OfficeName')));
+
+        IF (XMLNODENAME (XMLNODECHILD (XmlSender, 0)) = 'whdi:Customs',
+          Block(
+            VAR ('XmlCustomsPerson', Integer, XMLNODEFIND (XmlCustoms, 'whdi:CustomsPerson'));
+
+            Update ('REGNUMBERDOC',   XMLNODEVALUE (XMLNODEFIND (XmlRegNumberDoc, 'CustomsCode')) + '/' + FDT ('DDMMYY', XMLNODEVALUE (XMLNODEFIND (XmlRegNumberDoc, 'RegistrationDate'))) + '/' + XMLNODEVALUE (XMLNODEFIND (XmlRegNumberDoc, 'GTDNumber')));
+            Update ('INSPECTOR_FIO',  XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonSurname')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonName')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonMiddleName')));
+            Update ('INSPECTOR_POST', XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonPost')));
+            Update ('INSPECTOR_LNP',  XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'catWH_ru:LNP')));
+
+          )
+        ); // IF
+        IF (XMLNODENAME (XMLNODECHILD (XmlReceiver, 0)) = 'whdi:SVH',
+          Block(
+            VAR ('XmlSVH', Integer, XMLNODECHILD (XmlReceiver, 0));
+            Update ('SVH_DOCMODECODE', CASE (XMLNODEVALUE (XMLNODEFIND (XmlSVH, 'whdi:DocumentModeCode')), ['lic_Certificate ', 'Свидетельство о включении в реестр владельцев СВХ',
+                                                                                                            'lic_Licence',      'Лицензия владельца СВХ',
+                                                                                                            'lic_Permition',    'Разрешение ТО на временное хранение в ином месте',
+                                                                                                            'lic_PermZtk',      'Номер приказа о создании постоянной зоны таможенного контроля',
+                                                                                                            'lic_TempZtk',      'Номер приказа о создании временной зоны таможенного контроля'
+                                                                                                            ], 'Свидетельство о включении в реестр владельцев СВХ'
+                                              ));
+            Update ('SVH_DOCNUMBER', XMLNODEVALUE (XMLNODEFIND (XmlSVH, 'whdi:DocumentNumber')));
+          )
+        ); // IF
+        Update ('','', 0, 'INVENTORY', 'JOURNAL_MASTER_ID='+iJMID);
+      )
+    ); // IF
+
+  )
+);

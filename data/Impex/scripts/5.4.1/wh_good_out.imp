@@ -1,0 +1,390 @@
+// *****************************************************************************
+// Название: Загрузка уведомлений о выпуске товаров
+// Описание: Загрузка уведомлений о выпуске товаров
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузка уведомления о выпуске товаров
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GOODOUT_READ', ,
+Block(
+  WHILE (iChildIndex <= iChildCount,
+    Block(
+      CASE (XMLNODENAME (XMLNODECHILD (XMLGoodOut, iChildIndex)),
+           ['whgou:DeliveryGoods',
+               Block(
+                 XmlDelivery := XMLNODECHILD (XMLGoodOut, iChildIndex);
+                 iChild2Count := XMLNODECHILDCOUNT (XmlDelivery);
+                 iChild2Index := 0;
+
+                 Delivery_READ();
+                 iChildIndex := iChildCount;
+               )],
+      ); // CASE - //
+      iChildIndex := iChildIndex + 1;
+    )
+  ); // WHILE - //
+
+
+)),
+
+FUNC ('DELIVERY_READ', ,
+Block(
+  WHILE (iChild2Index <= iChild2Count,
+    Block(
+      CASE (XMLNODENAME (XMLNODECHILD (XMLDelivery, iChild2Index)),
+           ['whgou:Transport',
+               Block(
+                 XmlTransport := XMLNODECHILD (XMLDelivery, iChild2Index);
+                 VAR('XMLTransportModeCode', String, XMLNODEVALUE (XMLNODEFIND (XmlTransport, 'catWH_ru:TransportModeCode')));
+                 
+                 OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID FROM TRANSPORT2 WHERE JOURNAL_MASTER_ID=' + iJMID, 'dbJournals');
+                 VAR('iJCID', Integer, qryMAXID.MAX_ID + 1);
+
+                 APPENDRECORD ('TRANSPORT_2');
+                 EDIT ('TRANSPORT_2');
+                 SETFIELDVALUE ('TRANSPORT_2',
+                                'JOURNAL_MASTER_ID', iJMID,
+                                'JOURNAL_CHILD_ID', iJCID,
+                                'JOURNAL_UUID',  GENERATEUUID (),
+                                'TransportModeCode',   XMLTransportModeCode,
+                                'TransportIdentifier', XMLNODEVALUE (XMLNODEFIND (XmlTransport, 'catWH_ru:TransportIdentifier')),
+                                'TrailerIdentifier',    IF (XMLTransportModeCode = '10', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlTransport, 'catWH_ru:Sea'), 'catWH_ru:EntryNumber')),
+                                                          IF (STRPOS (XMLTransportModeCode, '12|20')<>0, XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlTransport, 'catWH_ru:RailRoad'), 'catWH_ru:RailStation')),
+                                                            IF (XMLTransportModeCode = '40', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlTransport, 'catWH_ru:Avia'), 'catWH_ru:FlightNumber')),
+                                                              IF (STRPOS (XMLTransportModeCode, '16|23|30|31|39|43|55')<>0, XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlTransport, 'catWH_ru:Avto'), 'catWH_ru:TrailerIdentifier')))))),
+                                'SecondTrailerIdentifier', IF (STRPOS (XMLTransportModeCode, '16|23|30|31|39|43|55')<>0, XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlTransport, 'catWH_ru:Avto'), 'catWH_ru:SecondTrailerIdentifier')), ' '),
+                                'CountryCode',    IF (XMLTransportModeCode = '10', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlTransport, 'catWH_ru:Sea'), 'catWH_ru:CountryCode'))),
+                 ); // SETFIELDVALUE () //
+                 
+                 POST ('TRANSPORT_2');
+               ),
+            'whgou:GoodInfo',
+               Block(
+                 XmlGoodInfo := XMLNODECHILD (XMLDelivery, iChild2Index);
+                 iChild3Count := XMLNODECHILDCOUNT (XmlGoodInfo);
+                 iChild3Index := 0;
+                 VAR ('sGoodsDescr', Memo, '');
+
+                 OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID FROM GOODINFO2 WHERE JOURNAL_MASTER_ID=' + iJMID , 'dbJournals');
+                 VAR('iJCID', Integer, qryMAXID.MAX_ID + 1);
+
+                 APPENDRECORD ('GOODINFO_2');
+                 EDIT ('GOODINFO_2');
+                 vInvoiceCost :=  Convert(XMLNODEVALUE (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:InvoiceCost')), Float);
+                 vPlaceNumber :=  Convert(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceNumber')), Integer);
+		             vBruttoVolQuantity :=  Convert(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:GoodsQuantity')), Float);
+		             vMeasureQuantity :=  Convert(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:MeasureQuantity'), 'catWH_ru:GoodsQuantity')), Float);
+                 vSumInvoiceCost := vSumInvoiceCost + vInvoiceCost;
+                 vSumPlaceNumber := vSumPlaceNumber + vPlaceNumber;
+                 vSumBruttoVolQuantity := vSumBruttoVolQuantity + vBruttoVolQuantity;
+                 vSumMeasureQuantity := vSumMeasureQuantity + vMeasureQuantity;
+
+                 SETFIELDVALUE ('GOODINFO_2',
+                                'JOURNAL_MASTER_ID', iJMID,
+                                'JOURNAL_CHILD_ID', iJCID,
+                                'JOURNAL_UUID',  GENERATEUUID (),
+                                'GoodsNumber',     XMLNODEVALUE (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:GoodsNumber')),
+                                'GoodsTNVEDCode',  XMLNODEVALUE (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:GoodsTNVEDCode')),
+                                'InvoiceCost',     XMLNODEVALUE (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:InvoiceCost')),
+                                'CurrencyCode',    XMLNODEVALUE (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:CurrencyCode')),
+                                'PlaceNumber',     XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceNumber')),
+                                'PackageCode',     XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:CargoPlace'), 'catWH_ru:PackageCode')),
+                                'PlaceDescription', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:CargoPlace'), 'catWH_ru:PlaceDescription')),
+                                'BruttoVolQuantity',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:GoodsQuantity')),
+                                'BruttoVolName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:MeasureUnitQualifierName')),
+                                'BruttoVolCode',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:MeasureUnitQualifierCode')),
+                                'MeasureQuantity',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:MeasureQuantity'), 'catWH_ru:GoodsQuantity')),
+                                'MeasureName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:MeasureQuantity'), 'catWH_ru:MeasureUnitQualifierName')),
+                                'MeasureCode',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlGoodInfo, 'catWH_ru:MeasureQuantity'), 'catWH_ru:MeasureUnitQualifierCode')),
+                 ); // SETFIELDVALUE () //
+                 POST ('GOODINFO_2');
+                 
+                 GOODINFO_READ();
+                 EDIT ('GOODINFO_2');
+                 SETFIELDVALUE ('GOODINFO_2',
+                                'GoodsDescription', sGoodsDescr
+                 );
+                 POST ('GOODINFO_2');
+                 if(mGoodsDescr <> '', mGoodsDescr := mGoodsDescr + ' | ');
+                 mGoodsDescr := mGoodsDescr + sGoodsDescr;
+
+                 
+               )],
+      ); // CASE - //
+      iChild2Index := iChild2Index + 1;
+    )
+  ); // WHILE - //
+
+)),
+
+                                                          
+FUNC ('GOODINFO_READ', ,
+Block(
+  WHILE (iChild3Index <= iChild3Count,
+    Block(
+      CASE (XMLNODENAME (XMLNODECHILD (XMLGOODInfo, iChild3Index)),
+           ['catWH_ru:GoodsDescription',
+               Block(
+                 IF (sGoodsDescr = '',
+                   sGoodsDescr := XmlNodeValue (XMLNODECHILD (XMLGOODInfo, iChild3Index)),
+                   sGoodsDescr := sGoodsDescr + XmlNodeValue (XMLNODECHILD (XMLGOODInfo, iChild3Index))
+                 ); // IF - sGoodsDescr = '' //
+               ),
+            'whgou:Container',
+               Block(
+                 XmlContainer := XMLNODECHILD (XMLGoodInfo, iChild3Index);
+
+                 OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID_2) AS MAX_ID FROM CONTAINER2 WHERE JOURNAL_MASTER_ID=' + iJMID+' AND JOURNAL_CHILD_ID=' + iJCID, 'dbJournals');
+                 VAR('iJCID2', Integer, qryMAXID.MAX_ID + 1);
+                 sCont := TRIM(XMLNODEVALUE (XMLNODEFIND (XmlContainer, 'catWH_ru:ContainerNumber')));
+                 iWeight := TRIM(XMLNODEVALUE (XMLNODEFIND (XmlContainer, 'catWH_ru:GrossWeightQuantity')));
+                 APPENDRECORD ('Container_2');
+                 EDIT ('Container_2');
+                 SETFIELDVALUE ('Container_2',
+                                'JOURNAL_MASTER_ID', iJMID,
+                                'JOURNAL_CHILD_ID', iJCID,
+                                'JOURNAL_CHILD_ID_2', iJCID2,
+                                'JOURNAL_UUID',  GENERATEUUID (),
+                                'ContainerNumber', sCont,
+                                'GrossWeightQuantity', iWeight,
+                 ); // SETFIELDVALUE () //
+                 POST ('Container_2');
+                 IF(STRPOS(sCont, mCont) = 0, // не было еще такого контейнера, добавляем его в список контейнеров по ДТ
+                   Block(
+                     if(mCont <> '', mCont := mCont + ';');
+                     mCont := mCont + sCont;
+		     iKolKont := iKolKont + 1;
+                     OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID FROM DTCONT2 WHERE JOURNAL_MASTER_ID=' + iJMID, 'dbJournals');
+                     iJCID2 := qryMAXID.MAX_ID + 1;
+                     APPENDRECORD ('DTCont_2');
+                     EDIT ('DTCont_2');
+                     SETFIELDVALUE ('DTCont_2',
+                                'JOURNAL_MASTER_ID', iJMID,
+                                'JOURNAL_CHILD_ID', iJCID2,
+                                'JOURNAL_UUID',  GENERATEUUID (),
+                                'ContainerNumber', sCont,
+                                'GrossWeightQuantity', iWeight,
+                                ); // SETFIELDVALUE () //
+                     POST ('DTCont_2');
+		               )
+		             ); // закончили добавление в список по ДТ
+		             
+               ),
+            'whgou:TransportDoc',
+               Block(
+                 XmlTransportDoc := XMLNODECHILD (XMLGoodInfo, iChild3Index);
+
+                 OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID_2) AS MAX_ID FROM TRANSPORTDOC2 WHERE JOURNAL_MASTER_ID=' + iJMID+' AND JOURNAL_CHILD_ID=' + iJCID, 'dbJournals');
+                 VAR('iJCID2', Integer, qryMAXID.MAX_ID + 1);
+                 sDoc := TRIM(XMLNODEVALUE (XMLNODEFIND (XmlTransportDoc, 'cat_ru:PrDocumentName')));
+                 sDocNum := TRIM(XMLNODEVALUE (XMLNODEFIND (XmlTransportDoc, 'cat_ru:PrDocumentNumber')));
+                 sDocDate := TRIM(XMLNODEVALUE (XMLNODEFIND (XmlTransportDoc, 'cat_ru:PrDocumentDate')));
+
+                 APPENDRECORD ('TransportDoc_2');
+                 EDIT ('TransportDoc_2');
+                 SETFIELDVALUE ('TransportDoc_2',
+                                'JOURNAL_MASTER_ID', iJMID,
+                                'JOURNAL_CHILD_ID', iJCID,
+                                'JOURNAL_CHILD_ID_2', iJCID2,
+                                'JOURNAL_UUID',  GENERATEUUID (),
+                                'PrDocumentName',    sDoc,
+                                'PrDocumentNumber',  sDocNum,
+                                'PrDocumentDate',    StrToDate (sDocDate, 'YYYY-MM-DD', '-')
+
+                 ); // SETFIELDVALUE () //
+                 POST ('TransportDoc_2');
+
+                 IF(STRPOS(';' + sDoc+sDocNum+sDocDate +';', mDoc1) = 0, // не было еще такого трансп.дока, добавляем его в список трансп.доков по ДТ
+                   Block(
+                     mDoc1 := mDoc1 + ';' + sDoc+sDocNum+sDocDate + ';';
+                     if(mDoc <> '', mDoc := mDoc + ';');
+                     mDoc := mDoc + sDocNum;
+                     
+                     OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID FROM DTTRANSPDOC2 WHERE JOURNAL_MASTER_ID=' + iJMID, 'dbJournals');
+                     iJCID2 := qryMAXID.MAX_ID + 1;
+                     APPENDRECORD ('DTTDOC_2');
+                     EDIT ('DTTDOC_2');
+                     SETFIELDVALUE ('DTTDOC_2',
+                                'JOURNAL_MASTER_ID', iJMID,
+                                'JOURNAL_CHILD_ID', iJCID2,
+                                'JOURNAL_UUID',  GENERATEUUID (),
+                                'PrDocumentName',    sDoc,
+                                'PrDocumentNumber',  sDocNum,
+                                'PrDocumentDate',    StrToDate (sDocDate, 'YYYY-MM-DD', '-')
+                                ); // SETFIELDVALUE () //
+                     POST ('DTTDOC_2');
+		               )
+		             ); // закончили добавление в список по ДТ
+
+               )],
+      ); // CASE - //
+      iChild3Index := iChild3Index + 1;
+    )
+  ); // WHILE - //
+
+)),
+
+///  начало скрипта
+VAR ('sPath', String, '');
+VAR ('iJMID', Integer, 0);
+
+//IF (SELECTDIRECTORY ('sPath') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+//sPath := INCLUDETRAILINGBACKSLASH (sPath);
+
+{
+IF (SELECTFILE ('sPath', 'Выбор уведомления о выпуске', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
+XMLDOCUMENTLOAD (XmlDoc, sPath);
+
+VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
+}
+
+VAR ('XmlGoodOut', Integer, XMLNODECHILD (XmlRoot, 0));
+
+VAR ('iChildIndex', Integer, 0);
+VAR ('iChildCount', Integer, XMLNODECHILDCOUNT (XmlGoodOut));
+VAR ('iChild2Index', Integer, 0);
+VAR ('iChild2Count', Integer, 0);
+VAR ('iChild3Index', Integer, 0);
+VAR ('iChild3Count', Integer, 0);
+
+
+VAR ('XmlDelivery', Integer);
+VAR ('XmlTransport', Integer);
+VAR ('XmlTransportDoc', Integer);
+VAR ('XmlContainer', Integer);
+VAR ('XmlGoodInfo', Integer);
+
+VAR ('vSumInvoiceCost', Float);
+VAR ('vInvoiceCost', Float);
+VAR ('vSumPlaceNumber', Integer);
+VAR ('vPlaceNumber', Integer);
+VAR ('vSumBruttoVolQuantity', Float);
+VAR ('vBruttoVolQuantity', Float);
+VAR ('vSumMeasureQuantity', Float);
+VAR ('vMeasureQuantity', Float);
+
+VAR ('sDoc', String, '');
+VAR ('sDocDate', String, '');
+VAR ('sDocNum', String, '');
+
+VAR ('mDoc', Memo, '');
+VAR ('mDoc1', Memo, '');
+VAR ('mGoodsDescr', Memo, '');
+VAR ('sCont', String, '');
+VAR ('mCont', Memo, '');
+
+VAR ('iWeight', String, '');
+VAR ('sRelDate', String, '');
+
+
+OPENTABLE ('GOODOUT_2', 'JRGOODOUT2', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+//OPENTABLE ('DELIVERY_2', 'DELIVERY2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+
+OPENTABLE ('GOODINFO_2', 'GOODINFO2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+OPENTABLE ('TRANSPORT_2','TRANSPORT2','JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+
+OPENTABLE ('CONTAINER_2','CONTAINER2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID;JOURNAL_CHILD_ID_2', 'dbJournals', 1);
+OPENTABLE ('TRANSPORTDOC_2', 'TRANSPORTDOC2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID;JOURNAL_CHILD_ID_2', 'dbJournals', 1);
+
+OPENTABLE ('DTCONT_2','DTCONT2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+OPENTABLE ('DTTDOC_2', 'DTTRANSPDOC2', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals', 1);
+
+
+
+VAR ('sFilter', String, 'DOCUMENTID = ' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLGoodOut, 'cat_ru:DocumentID')) +char(39) );
+
+OPENQUERY ('qryInv', 'SELECT * FROM JRGOODOUT2 WHERE ' + sFilter, 'dbJournals');
+
+VAR ('iRecCount', Integer, RECORDCOUNT ('qryInv', 1));
+
+IF (iRecCount <= 0,
+  Block(
+
+
+    OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_MASTER_ID) AS MAX_ID FROM JRGOODOUT2', 'dbJournals');
+    VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+    VAR('iDT', String,  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:ProduceDocuments'), 'cat_ru:PrDocumentNumber')));
+
+    sRelDate := Trim(XMLNODEVALUE (XMLNODEFIND (XMLGoodOut, 'whgou:ReleaseDate')));
+    If(sRelDate <> '', sRelDate := Copy(sRelDate, 9, 2)+'.'+ Copy(sRelDate, 6, 2)+'.'+Copy(sRelDate, 1, 4));
+
+    XmlDelivery := XMLNODEFIND (XMLGoodOut, 'whgou:DeliveryGoods');
+    VAR ('XmlConsignee', Integer, XMLNODEFIND (XMLDelivery, 'whgou:Consignee'));
+
+
+    APPENDRECORD ('GoodOut_2');
+    EDIT ('GoodOut_2');
+    SETFIELDVALUE ('GoodOut_2',
+                   'JOURNAL_MASTER_ID', iJMID,
+                   'DOCUMENTID',    XMLNODEVALUE (XMLNODEFIND (XMLGoodOut, 'cat_ru:DocumentID')),
+                   'SendDate', StrToDate (XMLNODEVALUE (XMLNODECHILD (XMLGoodOut, 'whgou:SendDate')), 'YYYY-MM-DD', '-'),
+                   'SendTime', XMLNODEVALUE (XMLNODEFIND (XMLGoodOut, 'whgou:SendTime')),
+                   'ReleaseDate', sRelDate,
+                   'Comments', XMLNODEVALUE (XMLNODEFIND (XMLGoodOut, 'whgou:Comments')),
+                   'CustomsCode', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:Customs'), 'cat_ru:Code')),
+                   'CustomsName', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:Customs'), 'cat_ru:OfficeName')),
+                   'CustomsPerson', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:CustomsPerson'), 'cat_ru:PersonName')),
+                   'LNP', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:CustomsPerson'), 'cat_ru:LNP')),
+                   'PrDocumentName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:ProduceDocuments'), 'cat_ru:PrDocumentName')),
+                   'PrDocumentNumber',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:ProduceDocuments'), 'cat_ru:PrDocumentNumber')),
+
+
+                   'DT1', Copy(iDT,1,8),
+                   'DT2', Copy(iDT,10,6),
+                   'DT3', Copy(iDT,17,7),
+                   'KolKont', 0,
+
+                   'OrganizationName', XMLNODEVALUE (XMLNODEFIND (XmlConsignee, 'cat_ru:OrganizationName')),
+                   'OGRN', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'cat_ru:RFOrganizationFeatures'), 'cat_ru:OGRN')),
+                   'INN',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'cat_ru:RFOrganizationFeatures'), 'cat_ru:INN')),
+                   'KPP',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'cat_ru:RFOrganizationFeatures'), 'cat_ru:KPP')),
+                   'PostalCode',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:Address'), 'cat_ru:PostalCode')),
+                   'CountryCode',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:Address'), 'cat_ru:CountryCode')),
+                   'CounryName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:Address'), 'cat_ru:CounryName')),
+                   'AddressLine',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:Address'), 'catWH_ru:AddressLine')),
+                   'IdentityCardName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:IdentityCard'), 'cat_ru:IdentityCardName')),
+                   'IdentityCardSeries',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:IdentityCard'), 'cat_ru:IdentityCardSeries')),
+                   'IdentityCardNumber',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:IdentityCard'), 'cat_ru:IdentityCardNumber')),
+                   'IdentityCardDate',    StrToDate (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:IdentityCard'), 'cat_ru:IdentityCardDate')), 'YYYY-MM-DD', '-'),
+                   'CardOrganizationName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XmlConsignee, 'catWH_ru:IdentityCard'), 'cat_ru:OrganizationName')),
+
+                   'PrDocumentDate',    StrToDate (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:ProduceDocuments'), 'cat_ru:PrDocumentDate')), 'YYYY-MM-DD', '-'),
+                   'SVHDocName',    XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:SVHLicenceNumber'), 'cat_ru:PrDocumentName')),
+                   'SVHDocNumber',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:SVHLicenceNumber'), 'cat_ru:PrDocumentNumber')),
+                   'SVHDocDate',    StrToDate (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:SVHLicenceNumber'), 'cat_ru:PrDocumentDate')), 'YYYY-MM-DD', '-'),
+                   'SVHDocModeCode',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (XMLGoodOut, 'whgou:SVHLicenceNumber'), 'whgou:DocumentModeCode')),
+    );
+    
+
+    POST ('GoodOut_2');
+    VAR('iKolKont', Integer, 0);
+
+    GOODOUT_READ();
+    EDIT ('GoodOut_2');
+    SETFIELDVALUE ('GoodOut_2',
+                   'SumInvoiceCost', vSumInvoiceCost,
+		   'SumPlaceNumber', vSumPlaceNumber,
+		   'SumBruttoVolQuantity', vSumBruttoVolQuantity,
+                   'KolKont', iKolKont,
+		   'SumMeasureQuantity', vSumMeasureQuantity,
+		   'TXT_CONT', mCont,
+		   'TXT_TDOC', mDoc,
+		   'TXT_G312', mGoodsDescr
+
+    );
+    POST ('GoodOut_2');
+
+  )
+);
+
+CLOSEDATASET ('CONTAINER_2');
+CLOSEDATASET ('TRANSPORTDOC_2');
+CLOSEDATASET ('TRANSPORT_2');
+CLOSEDATASET ('GoodInfo_2');
+//CLOSEDATASET ('DELIVERY_2');
+CLOSEDATASET ('GoodOut_2');
+

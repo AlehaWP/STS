@@ -1,0 +1,163 @@
+// *****************************************************************************
+// Название: Отправка ЗПСХ
+// Описание: GoodsProlong
+// Кнопка вызова: 1
+// Подпись кнопки: ЗПСХ
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GENERATEUUID_2', ,
+  Block(
+    Var('sGuid', String);
+    sGuid := GENERATEUUID ();
+    sGuid := COPY (sGuid, 1, 8) + '-' + COPY (sGuid, 9, 4) + '-' + COPY (sGuid, 13, 4) + '-' + COPY (sGuid, 17, 4) + '-' + COPY (sGuid, 21, 12);
+    sGuid
+)),
+
+FUNC ('FormDialog',
+        param('First', integer, 0),
+      BLOCK(
+          Var('sPaperNo', string, '');
+          if((First = 0)*(iFormodal <> 2),
+             BLOCK(
+               IF(YESNO ('Вы не указали ЗПСХ. Продолжить редактирование?')=0, RAISEEXCEPTION ('Выполнение отменено'));
+               sReason := FORMGETPROPERTY (frmDialog, 'Reason.Lines');
+               //showmessage(sReason);
+             );
+          );
+          CASE(iformodal, [3, Block(
+                                                sReason := FORMGETPROPERTY (frmDialog, 'Reason.Lines');
+                                                OPENQUERY('ZPSH','STS_DB', 'SELECT DISTINCT ' +
+                                                                           ' KP.PAPERDEND, KP.PAPERNAME, KP.PAPERNO, KP.PAPERDATE '+
+                                                                           ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KCP.PLACEID = KP.PLACEID) AND (KCP.ID = KP.ID) AND (KCP.DOC_COUNTER = KP.COUNTER))'+
+                                                                           'WHERE '+
+                                                                           ' KCP.PLACEID = ' + KRD_MAIN.PLACEID + ' AND KCP.ID = '  + KRD_MAIN.ID +
+                                                                           ' AND KCP.DOC_TYPE = 13' +
+                                                                           ' AND KP.PAPERNAME = "ЗПСХ" '+
+                                                                           'ORDER BY ' +
+                                                                           ' KP.PAPERDATE '
+                                                );
+                                                
+                                                SELECTVALUES ('Выбирите ЗПСХ', 'ZPSH', [['PAPERNO', 'Номер заявления', 15],
+                                                                                        ['PAPERDATE', 'Дата заявления', 15]],
+                                                                                       [['PAPERNO', 'sPaperNo']],
+                                                                                       'PaperNO', 'STS_DB');
+                                                FORMSETPROPERTY (frmDialog, 'ZPSHName.Text', sPaperNo);
+                                                FORMSETPROPERTY (frmDialog, 'Reason.Lines', sReason);
+                                                                                            ),
+                                          2, RAISEEXCEPTION('Выполнение отменено')]
+
+          );
+          iFormodal := FORMSHOWMODAL(frmDialog);
+          sPaperNo := FORMGETPROPERTY (frmDialog, 'ZPSHName.Text');
+          CLOSEDATASET ('ZPSH');
+      )
+),
+
+Var('sPaperNo', string, '');
+Var('sPathToSave', string, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+Var('sReason', memo, '');
+Var('iFormodal', integer, 0);
+//! SELECTDIRECTORY ('sPathToSave');
+
+FORMCREATE(frmDialog, INCLUDETRAILINGBACKSLASH(PROGRAMPATH()) + 'FORMS\GoodsProlong.cfm');
+OPENQUERY('ZPSH','STS_DB', 'SELECT DISTINCT ' +
+                           ' KP.PAPERDEND, KP.PAPERNAME, KP.PAPERNO, KP.PAPERDATE '+
+                           ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KCP.PLACEID = KP.PLACEID) AND (KCP.ID = KP.ID) AND (KCP.DOC_COUNTER = KP.COUNTER))'+
+                           'WHERE '+
+                           ' KCP.PLACEID = ' + KRD_MAIN.PLACEID + ' AND KCP.ID = '  + KRD_MAIN.ID +
+                           ' AND KCP.DOC_TYPE = 13' +
+                           ' AND KP.PAPERNAME = "ЗПСХ" '+
+                           'ORDER BY ' +
+                           ' KP.PAPERDATE '
+);
+IF(RECORDCOUNT ('ZPSH') = 0,
+   RAISEEXCEPTION('В выбранном ДО ЗПСХ отсутствуют'),
+   IF(RECORDCOUNT ('ZPSH') = 1,
+      BLOCK(
+        FORMSETPROPERTY (frmDialog, 'ZPSHName.Text', ZPSH.PAPERNO);
+      ),
+      BLOCK(
+        SELECTVALUES ('Выбирите ЗПСХ', 'ZPSH', [['PAPERNO', 'Номер заявления', 15],
+                                                ['PAPERDATE', 'Дата заявления', 15]],
+                                               [['PAPERNO', 'sPaperNo']],
+                                               'PaperNO', 'STS_DB');
+        FORMSETPROPERTY (frmDialog, 'ZPSHName.Text', sPaperNo);
+      )
+   )
+);
+CLOSEDATASET ('ZPSH');
+
+FormDialog(1);
+
+WHILE( (sPaperNo = '')|(iFormodal = 3)|(iFormodal = 2),
+       IF(iFormodal = 3,
+         FormDialog(1),
+         FormDialog(0)
+       )
+);
+
+
+OPENQUERY('ZPSH','STS_DB', 'SELECT ' +
+                           ' KP.PAPERDEND, KP.PAPERNAME, KP.PAPERNO, KP.PAPERDATE, KCP.G32 '+
+                           ' FROM KR_C_P KCP LEFT JOIN KR_PAPER KP ON ((KCP.PLACEID = KP.PLACEID) AND (KCP.ID = KP.ID) AND (KCP.DOC_COUNTER = KP.COUNTER))'+
+                           'WHERE '+
+                           ' KCP.PLACEID = ' + KRD_MAIN.PLACEID + ' AND KCP.ID = '  + KRD_MAIN.ID +
+                           ' AND KCP.DOC_TYPE = 13' +
+                           ' AND KP.PAPERNAME = "ЗПСХ" '+
+                           ' AND KP.PAPERNO = "' + sPaperNO + '" '+
+                           'ORDER BY ' +
+                           ' KP.PAPERDATE '
+);
+FIRST('ZPSH');
+
+VAR ('XMLDoc', Integer, XMLDocumentCreate());
+VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
+VAR ('XMLProlongDoc', Integer, XMLNodeAddChild(XMLDocRoot, 'reqwh:ReqWHGoodsProlong'));
+XMLNODESETATTRIBUTE (XMLProlongDoc, 'DocumentModeID', '1008022E');
+XMLNODESETATTRIBUTE (XMLProlongDoc, 'xsi:schemaLocation', 'urn:customs.ru:Information:WarehouseDocuments:ReqWHGoodsProlong:5.0.7 ReqWHGoodsProlong.xsd');
+XMLNODESETATTRIBUTE (XMLProlongDoc, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+XMLNODESETATTRIBUTE (XMLProlongDoc, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+XMLNODESETATTRIBUTE (XMLProlongDoc, 'xmlns:reqwh', 'urn:customs.ru:Information:WarehouseDocuments:ReqWHGoodsProlong:5.0.7');
+
+XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'cat_ru:DocumentID'), GENERATEUUID_2 ());
+//XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'cat_ru:RefDocumentID'), '33686C02-35E1-4DC5-9190-6435305FDF23');
+
+XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'reqwh:SendDate'), FDT ('YYYY-MM-DD', ZPSH.PAPERDATE));
+
+XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'reqwh:SendTime'), FDT ('HH:NN:SS', TIME()));
+
+XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'reqwh:RegNumber'), ZPSH.PAPERNO);
+sReason:= FORMGETPROPERTY (frmDialog, 'Reason.Lines');
+IF(LENGTH (sReason) > 250,
+   While(Length(sReason) > 0,
+         BLOCK(
+           XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'reqwh:Reason'), COPY (sReason, 1, 250));
+           sReason:= DELETE (sReason, 1, 250);
+         )
+   ),
+   XMLNODESETVALUE (XMLNodeAddChild(XMLProlongDoc, 'reqwh:Reason'), COPY (sReason, 1, 250));
+);
+
+WHILE(EOF('ZPSH')=0,
+  BLOCK(
+    VAR ('XMLGoodsReason', Integer, XMLNodeAddChild(XMLProlongDoc, 'reqwh:GoodsReason'));
+    XMLNODESETVALUE (XMLNodeAddChild(XMLGoodsReason, 'reqwh:GoodsNumeric'), ZPSH.G32);
+    XMLNODESETVALUE (XMLNodeAddChild(XMLGoodsReason, 'reqwh:ReqPeriod'), FDT ('YYYY-MM-DD', ZPSH.PAPERDEND));
+    sReason:= FORMGETPROPERTY (frmDialog, 'Reason.Lines');
+    IF(LENGTH (sReason) > 250,
+       While(Length(sReason) > 0,
+             BLOCK(
+               XMLNODESETVALUE (XMLNodeAddChild(XMLGoodsReason, 'reqwh:Reason'), COPY (sReason, 1, 250));
+               sReason:= DELETE (sReason, 1, 250);
+             )
+       ),
+       XMLNODESETVALUE (XMLNodeAddChild(XMLGoodsReason, 'reqwh:Reason'), COPY (sReason, 1, 250));
+    );
+    NEXT('ZPSH');
+  )
+);
+CLOSEDATASET ('ZPSH');
+
+XMLDOCUMENTSAVE(XMLDoc, sPathToSave + 'DO1ProlongRequest_'+KRD_MAIN.PLACEID +'_'+KRD_MAIN.ID+'.xml');

@@ -1,0 +1,967 @@
+// *****************************************************************************
+// Õ‡Á‚‡ÌËÂ: ƒŒ1.¿Î¸·ÓÏ(› ) 5.14.2
+// ŒÔËÒ‡ÌËÂ: ƒŒ1.¿Î¸·ÓÏ(› ) 5.14.2
+//  ÌÓÔÍ‡ ‚˚ÁÓ‚‡: 0
+// œÓ‰ÔËÒ¸ ÍÌÓÔÍË: ƒŒ1.¿Î¸·ÓÏ(› )
+// ﬂÁ˚Í: FuncScript
+// ¬˚ÁÓ‚ ÔÓ ÒÓ·˚ÚË˛:
+// ¡ÂÁ ÔÓ‰Ú‚ÂÊ‰ÂÌËˇ: 0
+// *****************************************************************************
+//
+{
+//
+// DEBUG /*
+VAR ('dbg', String, 'Debug.log');
+VAR ('timerStart', DateTime, Date() + Time(1));
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\writelog.prd');
+// DEBUG */
+//
+}
+
+FUNC ('NotNull',
+  Block(
+    PARAM ('pDataset', String, 0);
+    PARAM ('pColumn', String, 1);
+  ),
+  Block(
+    VAR ('bRetValue', Boolean);
+    IF (FIELDISNULL (pDataset, pColumn),
+      Block(
+        bRetValue := 0;
+      ),
+      Block(
+        IF (LENGTH (TRIM (FIELDVALUE (pDataset, pColumn))) > 0,
+      Block(
+        bRetValue := 1;
+      ),
+      Block(
+        bRetValue := 0;
+      )
+    ); // IF
+      )
+    ); // IF
+    bRetValue
+  )
+), // FUNC - NotNull
+
+
+VAR ('sSQL', String, '');
+VAR ('XmlRoot', Integer, GETXMLDOCUMENT ());
+VAR ('XmlDO1Report', Integer);
+
+
+VAR ('sBoxNo', String, '');
+VAR ('sAllConts', String, '');
+VAR ('bQContsOpened', Integer, 0);
+
+// ÔÓÎÛ˜‡ÂÏ ÒÔËÒÓÍ ÍÓÌÚÂÈÌÂÓ‚ ÔË‚ˇÁ‡ÌÌ˚ı Í ÚÓ‚‡‡Ï
+FUNC ('OpenQConts',
+  Block(
+    PARAM (pPlaceId, Integer, 0);
+    PARAM (pId, Integer, 1);
+  ),
+  Block(
+    sSQL := 'SELECT KCP.G32, KC.CONTNO, KC.CONTTYPE, KC.CONTSIZE FROM KRD_CONT KC ' +
+            ' INNER JOIN KR_C_P KCP ON KCP.PLACEID=KC.PLACEID AND KCP.ID=KC.ID AND KCP.DOC_COUNTER=KC.COUNTER ' +
+            ' WHERE KCP.PLACEID=' + pPlaceId +
+            ' AND KCP.ID=' + pId +
+            ' AND KCP.DOC_TYPE=' +char(39)+ '11' +char(39);
+    OPENQUERY ('qConts', 'STS_DB', sSQL, 1);
+    bQContsOpened := 1;
+  )
+), // FUNC -  OpenQConts() //
+
+// ‚˚˜ËÒÎÂÌËÂ ÒÍÎ‡‰ÒÍÓ„Ó ÌÓÏÂ‡
+Func('WriteBoxNo', '',
+  Block(
+    VAR ('sConstStore', String);
+    sConstStore := '';
+    sBoxNo := '';
+
+    IF ((TRIM (qGoods.BOXNO) <> '') * (FIELDISNULL ('qGoods','BOXNO')=0),
+      sBoxNo := qGoods.BOXNO,
+      Block(
+        IF (BOF ('qConts') = 0, FIRST ('qConts'));
+        WHILE (EOF ('qConts') = 0,
+          Block(
+            IF (qConts.G32 = qGoods.G32,
+              Block(
+                IF (LENGTH (sBoxNo) = 0,
+                  sBoxNo := qConts.CONTNO,
+                  sBoxNo := sBoxNo + ', ' + qConts.CONTNO
+                ); // IF
+
+                // œ»  ﬁ√
+                IF (CONVERT (INIFILE ('PY01', 'BOXNO_CONTINFO', 0), Integer) = 1,
+                  IF ((LENGTH (qConts.CONTTYPE) > 0) * (LENGTH (qConts.CONTSIZE) > 0),
+                     sBoxNo := sBoxNo + ' ' + qConts.CONTSIZE + '/' + qConts.CONTTYPE
+                  ); // IF
+                ); // IF
+
+              )
+            ); // IF - //
+            NEXT ('qConts');
+          )
+        ); // WHILE - //
+
+        IF (LENGTH (sBoxNo) = 0,
+          Block(
+            // ·ÂÂÏ ‚ÒÂ ÍÓÌÚÂÈÌÂ˚
+            IF (LENGTH (sAllConts) = 0,
+              sAllConts := UNIONVALUES ('KRD_CONT', ['CONTNO'], ', ', ': ')
+            ); // IF - //
+            sBoxNo := sAllConts;
+          )
+        ); // IF - //
+      )
+    ); // IF - //
+  )
+), // FUNC - WriteBoxNo() //
+
+
+// ƒ¿ÕÕ€≈ Œ –≈√»—“–¿÷»» Œ“◊≈“¿ ¬ “¿ÃŒ∆≈ÕÕŒÃ Œ–√¿Õ≈
+FUNC ('WriteCustomRegistration',
+  Block(
+    ''
+  ),
+  Block(
+    VAR ('XmlCustomRegistration', Integer, XMLNODEADDCHILD (XmlDO1Report, 'catWH_ru:CustomRegistration'));
+    XMLNODESETVALUES (XmlCustomRegistration, '',
+        'catWH_ru:CustomState', CASE (KRD_MAIN.MC_STATUS_BD, ['1', 'ds_Rebuilding',
+                                                              '»', 'ds_OnInspect',
+                                                              '3', 'ds_Registered',],
+                                                              'ds_Editing'),
+        'catWH_ru:RegisterTime', FDT ('HH:MM:SS', KRD_MAIN.GD1),
+    ); // XMLNODESETVALUES
+
+    IF (NotNull ('KRD_MAIN', 'FIO_INSPECTOR'),
+      Block(
+        //! ƒŒ¡¿¬»“‹ –¿«¡Œ– ‘»Œ ◊≈–≈« REGEXP
+        XMLNODESETVALUES (XmlCustomRegistration, '',
+            'catWH_ru:Inspector\cat_ru:PersonSurname',     EXTRACTSTR (KRD_MAIN.FIO_INSPECTOR, 1, ' '),
+            'catWH_ru:Inspector\cat_ru:PersonName',        EXTRACTSTR (KRD_MAIN.FIO_INSPECTOR, 2, ' '),
+            'catWH_ru:Inspector\cat_ru:PersonMiddleName',  EXTRACTSTR (KRD_MAIN.FIO_INSPECTOR, 3, ' '),
+            'catWH_ru:Inspector\cat_ru:PersonPost',        KRD_MAIN.POST_INSPECTOR,
+            'catWH_ru:Inspector\catWH_ru:LNP',             KRD_MAIN.GD2,
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    IF (NotNull ('KRD_MAIN', 'REG_NBD'),
+      Block(
+        XMLNODESETVALUES (XmlCustomRegistration, '',
+            'catWH_ru:RegisterNumber\cat_ru:CustomsCode',      CUSTOMSNOPART (KRD_MAIN.REG_NBD, 1, ''),
+            'catWH_ru:RegisterNumber\cat_ru:RegistrationDate', FDT('YYYY-MM-DD', EXCLUDEDATE (KRD_MAIN.REG_NBD)),
+            'catWH_ru:RegisterNumber\cat_ru:GTDNumber',        CUSTOMSNOPART (KRD_MAIN.REG_NBD, 3, ''),
+        ); // XMLNODESETVALUES
+
+        IF (SPLITSTR (KRD_MAIN.REG_NBD, '/', sSQL) >= 4,
+          Block(
+            sSQL := KRD_MAIN.REG_NBD;
+            sSQL := DELETE (sSQL, 1, STRPOS ('/', sSQL));
+            sSQL := DELETE (sSQL, 1, STRPOS ('/', sSQL));
+            sSQL := DELETE (sSQL, 1, STRPOS ('/', sSQL));
+            IF (LENGTH (sSQL) = 1,
+              XMLNODESETVALUES (XmlCustomRegistration, '', 'catWH_ru:RegisterNumber\catWH_ru:OtherWHPlaceKind', EXTRACTSTR (KRD_MAIN.REG_NBD, 4, '/')),
+              XMLNODESETVALUES (XmlCustomRegistration, '', 'catWH_ru:RegisterNumber\catWH_ru:CertificateNumber', IF (NotNull ('KRD_MAIN', 'G144'),  KRD_MAIN.G144, STORES.LICENCENO))
+            ); // IF
+          ),
+          Block(
+            XMLNODESETVALUES (XmlCustomRegistration, '',
+                'catWH_ru:RegisterNumber\catWH_ru:CertificateNumber', IF (NotNull ('KRD_MAIN', 'G144'),  KRD_MAIN.G144, STORES.LICENCENO),
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+      )
+    ); // IF
+  )
+), // WriteCustomRegistration
+
+
+// ƒ¿ÕÕ€≈ Œ ¬À¿ƒ≈À‹÷≈ — À¿ƒ¿
+FUNC ('WriteWarehouseOwner',
+  Block(
+    ''
+  ),
+  Block(
+    VAR ('XmlWarehouseOwner', Integer, XMLNODEADDCHILD (XmlDO1Report, 'catWH_ru:WarehouseOwner'));
+
+    XMLNODESETVALUES (XmlWarehouseOwner, '',
+        'cat_ru:OrganizationName', IF (NotNull ('KRD_MAIN', 'G142'), KRD_MAIN.G142, STORES.NAME),
+        'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', STORES.G140,
+        'cat_ru:RFOrganizationFeatures\cat_ru:INN',  STORES.G144C,
+        'cat_ru:RFOrganizationFeatures\cat_ru:KPP',  STORES.KPP,
+    ); // XMLNODESETVALUES
+
+    VAR ('XmlWarehouseOwnerAddress', Integer, XMLNODEADDCHILD (XmlWarehouseOwner, 'catWH_ru:Address'));
+
+    XMLNODESETVALUES (XmlWarehouseOwnerAddress, '',
+        'catWH_ru:AddressLine', IF (NotNull ('KRD_MAIN', 'G143'), KRD_MAIN.G143, STORES.ADDRESS),
+    ); // XMLNODESETVALUES
+
+    VAR ('XmlWarehouseOwnerWarehouseLicense', Integer, XMLNODEADDCHILD (XmlWarehouseOwner, 'catWH_ru:WarehouseLicense'));
+
+    XMLNODESETVALUES (XmlWarehouseOwnerWarehouseLicense, '',
+        'catWH_ru:CertificateKind', CASE (KRD_MAIN.G1440, ['1', 'lic_Certificate',
+                                                           '2', 'lic_Licence',
+                                                           '3', 'lic_Permition',
+                                                           '4', 'lic_PermZtk',
+                                                           '5', 'lic_TempZtk'
+                                                          ], 'lic_Certificate'), // CASE
+        'catWH_ru:CertificateNumber', IF (NotNull ('KRD_MAIN', 'G144'), KRD_MAIN.G144, STORES.LICENCENO),
+        'catWH_ru:CertificateDate',   IF (NotNull ('KRD_MAIN', 'G145'), FDT ('YYYY-MM-DD', KRD_MAIN.G145), FDT ('YYYY-MM-DD', STORES.LICENCEDATE))
+    ); // XMLNODESETVALUES
+
+    IF (NotNull ('KRD_MAIN', 'AUTHOR'),
+      Block(
+        //! ƒŒ¡¿¬»“‹ –¿«¡Œ– ‘»Œ ◊≈–≈« REGEXP
+        XMLNODESETVALUES (XmlWarehouseOwner, '',
+            'catWH_ru:WarehousePerson\cat_ru:PersonSurname', EXTRACTSTR (KRD_MAIN.AUTHOR, 1, ' '),
+            'catWH_ru:WarehousePerson\cat_ru:PersonName', EXTRACTSTR (KRD_MAIN.AUTHOR, 2, ' '),
+            'catWH_ru:WarehousePerson\cat_ru:PersonMiddleName', EXTRACTSTR (KRD_MAIN.AUTHOR, 3, ' '),
+            'catWH_ru:WarehousePerson\cat_ru:PersonPost', KRD_MAIN.AUTHOR_POST,
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+  )
+), // WriteWarehouseOwner
+
+
+// œ≈–≈¬Œ«◊» 
+FUNC ('WriteCarrier', '',
+  Block(
+    VAR ('XmlCarrier', Integer, XMLNODEADDCHILD (XmlDO1Report, 'do1r:Carrier'));
+
+    XMLNODESETVALUES (XmlCarrier, '',
+        'cat_ru:OrganizationName', KRD_MAIN.G042,
+    ); // XMLNODESETVALUES
+
+    IF (KRD_MAIN.G04_COUNTRY = '643',
+      Block(
+        XMLNODESETVALUES (XmlCarrier, '',
+            'cat_ru:RFOrganizationFeatures\cat_ru:OGRN',  KRD_MAIN.G04_OGRN,
+            'cat_ru:RFOrganizationFeatures\cat_ru:INN',   KRD_MAIN.G044C,
+            'cat_ru:RFOrganizationFeatures\cat_ru:KPP',   KRD_MAIN.G04_KPP,
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    IF (NotNull ('KRD_MAIN', 'G04_COUNTRY'),
+      XMLNODESETVALUES (XmlCarrier, '', 'catWH_ru:CountryCode', KRD_MAIN.G04_COUNTRY), // XMLNODESETVALUES
+      XMLNODEADDCHILD (XmlCarrier, 'catWH_ru:CountryCode');
+    ); // IF
+
+    VAR ('XmlCarrierAddress', Integer, XMLNODEADDCHILD (XmlCarrier, 'catWH_ru:Address'));
+
+    XMLNODESETVALUES (XmlCarrierAddress, '',
+        'catWH_ru:AddressLine', KRD_MAIN.G043,
+    ); // XMLNODESETVALUES
+
+    IF (NotNull ('KRD_MAIN', 'G040'),
+      Block(
+        //! ƒŒ¡¿¬»“‹ –¿«¡Œ– ‘»Œ ◊≈–≈« REGEXP
+        VAR ('sPersonSurname',    String, EXTRACTSTR (KRD_MAIN.G040, 1, ' '));
+        VAR ('sPersonName',       String, EXTRACTSTR (KRD_MAIN.G040, 2, ' '));
+        IF (LENGTH (TRIM (sPersonName)) = 0, sPersonName := '-');
+        VAR ('sPersonMiddleName', String, EXTRACTSTR (KRD_MAIN.G040, 3, ' '));
+
+        XMLNODESETVALUES (XmlCarrier, '',
+            'catWH_ru:CarrierPerson\cat_ru:PersonSurname',     sPersonSurname,
+            'catWH_ru:CarrierPerson\cat_ru:PersonName',        sPersonName,
+            'catWH_ru:CarrierPerson\cat_ru:PersonMiddleName',  sPersonMiddleName,
+            'catWH_ru:CarrierPerson\cat_ru:PersonPost',        KRD_MAIN.G040P,
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+  )
+), // WriteCarrier
+
+
+// Œœ»—¿Õ»≈ “–¿Õ—œŒ–“Õ€’ —–≈ƒ—“¬
+FUNC ('WriteTransports', '',
+  Block(
+    VAR ('XmlTransports', Integer, XMLNODEADDCHILD (XmlDO1Report, 'do1r:Transports'));
+    VAR ('sTransportModeCode', String, IF (NotNull ('KRD_TRANSP', 'TRANSP_CODE'), KRD_TRANSP.TRANSP_CODE, KRD_MAIN.G261));
+
+    IF (LENGTH (TRIM (sTransportModeCode)) > 0,
+      XMLNODESETVALUES (XmlTransports, '', 'catWH_ru:TransportModeCode', sTransportModeCode),
+      XMLNODEADDCHILD (XmlTransports, 'catWH_ru:TransportModeCode')
+    ); // IF
+
+    IF (NotNull ('KRD_TRANSP', 'CARNO'),
+      XMLNODESETVALUES (XmlTransports, '', 'catWH_ru:TransportIdentifier', KRD_TRANSP.CARNO),
+      XMLNODEADDCHILD (XmlTransports, 'catWH_ru:TransportIdentifier')
+    ); // IF
+
+    // œŒƒ–Œ¡ÕŒ—“»
+    IF (NotNull ('KRD_TRANSP', 'NTRAILER'),
+      Block(
+        // œŒƒ–Œ¡ÕŒ—“» ƒÀﬂ ¿¬»¿
+        IF ((sTransportModeCode = '40'),
+          XMLNODESETVALUES (XmlTransports, 'catWH_ru:Avia',
+              'catWH_ru:FlightNumber', KRD_TRANSP.NTRAILER,
+              'catWH_ru:FlightDate',   FDT ('YYYY-MM-DD', KRD_MAIN.ARR_DATE),
+          ); // XMLNODESETVALUES
+        ); // IF
+
+        // œŒƒ–Œ¡ÕŒ—“» ƒÀﬂ ¿¬“Œ
+        IF ((STRPOS (sTransportModeCode, '16|23|30|31|32|39|43|55') <> 0),
+          Block(
+            //! –≤—ã–≥—Ä—É–∂–∞—Ç—å –Ω–æ–º–µ—Ä –≤—Ç–æ—Ä–æ–≥–æ –ø—Ä–∏—Ü–µ–ø–∞ SecondTrailerIdentifier
+            XMLNODESETVALUES (XmlTransports, 'catWH_ru:Avto',
+                'catWH_ru:TrailerIdentifier',       KRD_TRANSP.NTRAILER,
+                'catWH_ru:SecondTrailerIdentifier', '',
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+
+        // œŒƒ–Œ¡ÕŒ—“» ƒÀﬂ ∆ƒ
+        IF ((STRPOS (sTransportModeCode, '12|20') <> 0),
+          Block(
+            XMLNODESETVALUES (XmlTransports, 'catWH_ru:RailRoad',
+                'catWH_ru:RailStation', COPY (KRD_TRANSP.NTRAILER, 1, 6),
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+
+        // œŒƒ–Œ¡ÕŒ—“» ƒÀﬂ ÃŒ–ﬂ
+        IF ((STRPOS (sTransportModeCode, '10|80|81') <> 0),
+          Block(
+            XMLNODESETVALUES (XmlTransports, 'catWH_ru:Sea',
+                'catWH_ru:EntryNumber', KRD_TRANSP.NTRAILER,
+                'catWH_ru:CountryCode', IF (NotNull ('KRD_TRANSP', 'TRANSP_COUNTRY'), KRD_TRANSP.TRANSP_COUNTRY, KRD_MAIN.TRANSP_COUNTRY),
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+      )
+    ); // IF
+  )
+), // WriteTransports
+
+{
+FUNC ('GetTotalPackageNumber', '',
+  Block(
+    VAR ('dTotalPackageNumber', Float, 0);
+
+    sSQL := 'SELECT SUM (G311) AS SUMG311' +
+            ' FROM KRD_COMM' +
+            ' WHERE PLACEID=' + KRD_MAIN.PLACEID +
+            ' AND ID IN (' +
+              'SELECT ID FROM KRD_MAIN WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND MAIN_ID=' + KRD_MAIN.ID +
+            ')';
+    OPENQUERY ('qTotalPackageNumber', 'STS_DB', sSQL, 1);
+    dTotalPackageNumber := qTotalPackageNumber.SUMG311;
+    CLOSEDATASET ('qTotalPackageNumber');
+    dTotalPackageNumber
+  )
+), // GetTotalPackageNumber
+}
+
+// Œ“œ–¿¬»“≈À‹
+FUNC ('WriteConsignor', '',
+  Block(
+    IF (NotNull ('qTransportDocs', 'G15A') | NotNull ('qTransportDocs', 'G022') | NotNull ('qTransportDocs', 'G023'),
+      Block(
+        VAR ('XmlConsignor', Integer, XMLNODEADDCHILD (XmlTransportDocs, 'catWH_ru:Consignor'));
+        XMLNODESETVALUES (XmlConsignor, '',
+            'catWH_ru:CountryCode',                   qTransportDocs.G15A,
+            'catWH_ru:OrganizationName',              REMOVECHAR (qTransportDocs.G022, char(39)),
+            'catWH_ru:Address\catWH_ru:AddressLine',  qTransportDocs.G023,
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+  )
+), // WriteConsignor
+
+
+// œŒÀ”◊¿“≈À‹
+FUNC ('WriteConsignee', '',
+  Block(
+    VAR ('XmlConsignee', Integer, XMLNODEADDCHILD (XmlTransportDocs, 'catWH_ru:Consignee'));
+
+    //! —Œ’–¿Õﬂ“‹ ¬ ¡¿«” ƒ¿ÕÕ€≈ — ”ƒ¿À≈ÕÕ€Ã»  ¿¬€◊ ¿Ã»?
+    XMLNODESETVALUES (XmlConsignee, '',
+        'cat_ru:OrganizationName', REMOVECHAR (qTransportDocs.G082, char(39)),
+    ); // XMLNODESETVALUES
+
+    IF (qTransportDocs.G17A = '643',
+      Block(
+        XMLNODESETVALUES (XmlConsignee, '',
+            'cat_ru:RFOrganizationFeatures\cat_ru:OGRN', qTransportDocs.G08_OGRN,
+            'cat_ru:RFOrganizationFeatures\cat_ru:INN',  qTransportDocs.G084C,
+            'cat_ru:RFOrganizationFeatures\cat_ru:KPP',  qTransportDocs.G08_KPP,
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    XMLNODESETVALUES (XmlConsignee, 'catWH_ru:Address',
+        'catWH_ru:AddressLine', qTransportDocs.G083,
+    ); // XMLNODESETVALUES
+
+    XMLNODESETVALUES (XmlConsignee, '',
+        'catWH_ru:IdentityCard\cat_ru:IdentityCardCode',   qTransportDocs.G08_DOC_KIND,
+        'catWH_ru:IdentityCard\cat_ru:IdentityCardName',   qTransportDocs.G08_DOC_ABBR,
+        'catWH_ru:IdentityCard\cat_ru:IdentityCardSeries', qTransportDocs.G08_DOC_SERIES,
+        'catWH_ru:IdentityCard\cat_ru:IdentityCardNumber', qTransportDocs.G08_DOC_NUMBER,
+        'catWH_ru:IdentityCard\cat_ru:IdentityCardDate',   '',
+        'catWH_ru:IdentityCard\cat_ru:OrganizationName',   '',
+    ); // XMLNODESETVALUES
+  )
+), // WriteConsignee
+
+
+// —¬≈ƒ≈Õ»ﬂ Œ “Œ¬¿–¿’
+FUNC ('WriteGoods',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+    PARAM ('pNTTN', Integer, 2);
+  ),
+  Block(
+    VAR ('sCurrencyCode', String, '');
+
+    sSQL := 'SELECT * ' +
+            ' FROM KRD_COMM' +
+            ' WHERE PLACEID=' + pPlaceId +
+            ' AND ID=' + pId +
+            ' AND N_TTN=' + pNTTN;
+    OPENQUERY ('qGoods', 'STS_DB', sSQL, 1);
+
+    IF (bQContsOpened = 0,
+      OpenQConts(pPlaceId, pId)
+    );
+
+    WHILE (EOF ('qGoods') = 0,
+      Block(
+        IF (NotNull ('qGoods', 'G42_CURRENCY'),
+          Block(
+            IF (CURRENCYABBR (qGoods.G42_CURRENCY) <> '',
+              sCurrencyCode := CURRENCYABBR (qGoods.G42_CURRENCY),
+              sCurrencyCode := qGoods.G42_CURRENCY
+            ); // IF
+          ),
+          Block(
+            IF (CURRENCYABBR (qTransportDocs.G221) <> '',
+              sCurrencyCode := CURRENCYABBR (qTransportDocs.G221),
+              sCurrencyCode := qTransportDocs.G221
+            ); // IF
+          )
+        ); // IF
+
+        VAR ('XmlGoods', Integer, XMLNODEADDCHILD (XmlTransportDocs, 'catWH_ru:Goods'));
+        XMLNODEADDCHILD (XmlGoods, 'catWH_ru:GoodsNumber');
+        XMLNODESETVALUES (XmlGoods, '',
+            'catWH_ru:GoodsNumber',    qGoods.GN,
+            'catWH_ru:GoodsTNVEDCode', qGoods.G33,
+            'catWH_ru:InvoiceCost',    FORMATFLOAT ('0.##', qGoods.G42),
+            'catWH_ru:CurrencyCode',   sCurrencyCode,
+        ); // XMLNODESETVALUES
+
+        VAR ('sGoodsDescription', Memo, REPLACECR (qGoods.G312));
+        VAR ('XmlGoodsDescription', Integer, XMLNODEADDCHILD (XmlGoods, 'catWH_ru:GoodsDescription'));
+
+        XMLNODESETVALUE (XmlGoodsDescription, COPY (sGoodsDescription, 1, 250));
+        sGoodsDescription := DELETE (sGoodsDescription, 1, 250);
+        WHILE (LENGTH (sGoodsDescription) > 0,
+          Block(
+            XmlGoodsDescription := XMLNODEADDCHILD (XmlGoods, 'catWH_ru:GoodsDescription');
+            XMLNODESETVALUE (XmlGoodsDescription, COPY (sGoodsDescription, 1, 250));
+            sGoodsDescription := DELETE (sGoodsDescription, 1, 250);
+          )
+        ); // WHILE
+
+        XMLNODESETVALUES (XmlGoods, '',
+            'catWH_ru:CargoPlace\catWH_ru:PlaceNumber',       qGoods.G311,
+            'catWH_ru:CargoPlace\catWH_ru:PackageCode',       qGoods.G313_CODE,
+            'catWH_ru:CargoPlace\catWH_ru:PlaceDescription',  COPY (qGoods.G313, 1, 40),
+        );
+
+        IF (NotNull ('qGoods', 'G35'),
+          Block(
+            XMLNODEADDCHILD (XMLNODEADDCHILD (XmlGoods, 'catWH_ru:BruttoVolQuant'), 'catWH_ru:GoodsQuantity');
+            XMLNODESETVALUES (XmlGoods, 'catWH_ru:BruttoVolQuant',
+                'catWH_ru:GoodsQuantity',             FORMATFLOAT ('0.######', qGoods.G35),
+                'catWH_ru:MeasureUnitQualifierName',  ' √',
+                'catWH_ru:MeasureUnitQualifierCode',  166,
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+
+        IF (NotNull ('qGoods', 'G315A') | NotNull ('qGoods', 'G315C'),
+          Block(
+            XMLNODEADDCHILD (XMLNODEADDCHILD (XmlGoods, 'catWH_ru:MeasureQuantity'), 'catWH_ru:GoodsQuantity');
+            IF (NotNull ('qGoods', 'G315A'),
+              Block(
+                XMLNODESETVALUES (XmlGoods, 'catWH_ru:MeasureQuantity',
+                    'catWH_ru:GoodsQuantity',            FORMATFLOAT ('0.######', qGoods.G315A),
+                    'catWH_ru:MeasureUnitQualifierName', IF (NotNull ('qGoods', 'G41A'), REFERENCE ('UNITS', 'UNITCODE', qGoods.G41A, 'UNITNAME'), ''),
+                    'catWH_ru:MeasureUnitQualifierCode', qGoods.G41A,
+                );
+              ), // XMLNODESETVALUES
+              Block(
+                IF (NotNull ('qGoods', 'G315C'),
+                  Block(
+                    XMLNODESETVALUES (XmlGoods, 'catWH_ru:MeasureQuantity',
+                        'catWH_ru:GoodsQuantity',            FORMATFLOAT ('0.######', qGoods.G315C),
+                        'catWH_ru:MeasureUnitQualifierName', IF (NotNull ('qGoods', 'G31_82'), REFERENCE ('UNITS', 'UNITCODE', qGoods.G31_82, 'UNITNAME'), ''),
+                        'catWH_ru:MeasureUnitQualifierCode', qGoods.G31_82,
+                    ); // XMLNODESETVALUES
+                  )
+                ); // IF
+              )
+            ); // IF
+          )
+        ); // IF
+
+        XMLNODEADDCHILD (XmlGoods, 'catWH_ru:GoodsWHNumber');
+
+        WriteBoxNo();
+
+        XMLNODESETVALUES (XmlGoods, '',
+            'catWH_ru:GoodsWHNumber', COPY (TRIM (sBoxNo), 1, 255),
+        ); // XMLNODESETVALUES
+
+        XMLNODESETVALUES (XmlGoods, '',
+            'catWH_ru:Comments', TRIM (REPLACECR (qGoods.REMARK)),
+        ); // XMLNODESETVALUES
+
+        IF (NotNull ('qGoods', 'SVHAREA') | NotNull ('qGoods', 'SQUARE') | NotNull ('qGoods', 'SVHCOMMENT'),
+          Block(
+            XMLNODESETVALUES (XmlGoods, '',
+                'catWH_ru:KeepingPlace\catWH_ru:Area',      qGoods.SVHAREA,
+                'catWH_ru:KeepingPlace\catWH_ru:Square',    IF (NotNull ('qGoods', 'SQUARE'), qGoods.SQUARE, ''),
+                'catWH_ru:KeepingPlace\catWH_ru:Comments',  qGoods.SVHCOMMENT,
+                'catWH_ru:KeepingPlace\catWH_ru:Angar',     qGoods.SVHHANGAR,
+                'catWH_ru:KeepingPlace\catWH_ru:WHPackind', qGoods.SVHRACK,
+                'catWH_ru:KeepingPlace\catWH_ru:Cell',      qGoods.SVHCELL,
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+
+        // ƒ¿“¿ »—“≈◊≈Õ»ﬂ —–Œ ¿ ’–¿Õ≈Õ»ﬂ
+        VAR ('sDeadLineDate', String, '');
+        IF (NotNull ('qGoods', 'STORAGE_DATE'),
+          Block(
+            sDeadLineDate := qGoods.STORAGE_DATE;
+          ),
+          IF (NotNull ('qGoods', 'STORE_PERIOD'),
+            Block(
+              sDeadLineDate := qTransportDocs.BEG_KEEP + qGoods.STORE_PERIOD;
+            )
+          ) // IF
+        ); // IF
+
+        XMLNODESETVALUES (XmlGoods, 'catWH_ru:KeepingLimit',
+            'catWH_ru:AcceptDate',      FDT ('YYYY-MM-DD', qGoods.ACCEPTDATE),
+            'catWH_ru:AcceptTime',      FDT ('HH:MM:SS', qGoods.ACCEPTDATE),
+            'catWH_ru:StoringDateType', qGoods.STORAGE_TYPE,
+            'catWH_ru:DeadLineDate',    FDT ('YYYY-MM-DD', sDeadLineDate),
+        ); // XMLNODESETVALUES
+
+
+
+        NEXT ('qGoods');
+      )
+    ); // WHILE
+    CLOSEDATASET ('qGoods');
+  )
+), // WriteGoods
+
+
+//—‚ˇÁË ÚÓ‚‡Ó‚ Ò ÍÓÌÚÂÈÌÂ‡ÏË
+FUNC ('WriteGoodContLinks',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+    PARAM ('pCounter', Integer, 2);
+  ),
+  Block(
+    sSQL := 'SELECT KC.N_TTN_G32, KCP.G32, KCP.DOC_COUNTER, KCT.N_CONT' +
+            ' FROM KR_C_P KCP' +
+            ' LEFT JOIN KRD_COMM KC ON KC.PLACEID=KCP.PLACEID AND KC.ID=KCP.ID AND KC.G32=KCP.G32' +
+            ' LEFT JOIN KRD_CONT KCT ON KCT.PLACEID=KCP.PLACEID AND KCT.ID=KCP.ID AND KCT.COUNTER=KCP.DOC_COUNTER' +
+            ' WHERE ' +
+            ' KCP.PLACEID=' + pPlaceId +
+            ' AND KCP.ID=' + pId +
+            ' AND KCP.DOC_TYPE=11' +
+            ' AND KC.N_TTN=' + pCounter +
+            ' AND KCT.N_CONT IS NOT NULL' +
+            ' ORDER BY KCP.G32, KCP.DOC_COUNTER';
+    OPENQUERY ('qGoodContLinks', 'STS_DB', sSQL, 1);
+    WHILE (EOF ('qGoodContLinks') = 0,
+      Block(
+        XmlNodeSetValues (XmlNOdeAddChild (XmlTransportDocs, 'catWH_ru:GoodContLinks'), '',
+            'catWH_ru:GoodNumber',      qGoodContLinks.N_TTN_G32,
+            'catWH_ru:ContainerNumber', qGoodContLinks.N_CONT
+        ); // XMLNODESETVALUES
+        NEXT ('qGoodContLinks');
+      )
+    ); // WHILE
+    CLOSEDATASET ('qGoodContLinks');
+  )
+), // WriteGoodContLinks
+
+
+// —¬≈ƒ≈Õ»ﬂ Œ  ŒÕ“≈…Õ≈–¿’
+FUNC ('WriteContainers',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+    PARAM ('pNTTN', Integer, 2);
+  ),
+  Block(
+    sSQL := 'SELECT * ' +
+            ' FROM KRD_CONT' +
+            ' WHERE ' +
+            ' PLACEID=' + pPlaceId +
+            ' AND ID=' + pId +
+            ' AND N_TTN=' + pNTTN;
+    OPENQUERY ('qContainers', 'STS_DB', sSQL, 1);
+    WHILE (EOF ('qContainers') = 0,
+      Block(
+        VAR ('XmlContainers', Integer, XMLNODEADDCHILD (XmlTransportDocs, 'catWH_ru:Containers'));
+
+        XMLNODESETVALUES (XmlContainers, '',
+            'catWH_ru:ContainerNumber', qContainers.CONTNO,
+            'catWH_ru:GrossWeightQuantity', IF (qContainers.G35 > 0, qContainers.G35, ''),
+            'catWH_ru:KeepingPlace\catWH_ru:Area', qContainers.SVHAREA,
+            'catWH_ru:KeepingPlace\catWH_ru:Square', IF (qContainers.SVHSQR > 0, qContainers.SVHSQR, ''),
+            'catWH_ru:KeepingPlace\catWH_ru:Comments', qContainers.SVHCOMMENT,
+            'catWH_ru:KeepingPlace\catWH_ru:Parking', qContainers.SVHPARKING,
+            'catWH_ru:KeepingPlace\catWH_ru:Angar', qContainers.SVHHANGAR,
+            'catWH_ru:KeepingPlace\catWH_ru:WHPackind', '',
+            'catWH_ru:KeepingPlace\catWH_ru:Cell', '',
+        ); // XMLNDESETVALUES
+
+        NEXT ('qContainers');
+      )
+    ); // WHILE
+{
+    FIRST ('qContainers');
+    WHILE (EOF ('qContainers') = 0,
+      Block(
+        ;
+        NEXT ('qContainers');
+      )
+    ); // WHILE
+}
+    CLOSEDATASET ('qContainers');
+  )
+), // WriteContainers
+
+
+
+{
+FUNC ('WriteGoodContLinks', '',
+  Block(
+    VAR ('XmlGoodContLinks', Integer, XMLNODEADDCHILD (XmlTransportDocs, 'catWH_ru:GoodContLinks'));
+
+    XMLNODESETVALUES (XmlGoodContLinks, '',
+        'catWH_ru:GoodNumber', 1,
+        'catWH_ru:ContainerNumber', 1,
+    ); // XMLNODESETVALUES
+  )
+), // WriteGoodContLinks
+}
+
+
+// ÕŒÃ≈–¿ —¬ﬂ«¿ÕÕ€’ ““Õ
+FUNC ('WriteCompletteList',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+  ),
+  Block(
+    sSQL := 'SELECT * ' +
+            ' FROM KR_PAPER KP' +
+            ' WHERE' +
+            ' KP.PLACEID=' + pPlaceId +
+            ' AND KP.ID=' + pId +
+            ' AND (SELECT MAX(P.PAPER_IS_WAYBILL) FROM PAPERS P WHERE P.PAPER_DOCG44_CODE=KP.PAPERCODE OR P.PAPERNAME=KP.PAPERNAME) = 1' +
+            ' AND (SELECT COUNT (*) FROM KRD_COMM KC WHERE KC.PLACEID=KP.PLACEID AND KC.ID=KP.ID AND KC.N_TTN=KP.COUNTER) = 0';
+    OPENQUERY ('qCompletteList', 'STS_DB', sSQL, 1);
+    WHILE (EOF ('qCompletteList') = 0,
+      Block(
+        XMLNODESETVALUES (XmlTransportDocs, '',
+            'catWH_ru:CompletteList', qCompletteList.PAPERNO,
+        ); // XMLNODESETVALUES
+        NEXT ('qCompletteList');
+      )
+    ); // WHILE
+    CLOSEDATASET ('qCompletteList');
+  )
+), // WriteCompletteList
+
+
+// “–¿Õ—œŒ–“Õ€≈ ƒŒ ”Ã≈Õ“€ - œ¿–“»» “Œ¬¿–Œ¬, œŒÃ≈Ÿ≈ÕÕ€’ Õ¿ ¬’
+FUNC ('WriteTransportDocs', '',
+  Block(
+    sSQL := 'SELECT KM.*, KP.* ' +
+            ' FROM KR_PAPER KP, KRD_MAIN KM' +
+            ' WHERE' +
+            ' KP.ID IN' +
+            '(' +
+            ' SELECT KM2.ID' +
+            ' FROM KRD_MAIN KM2' +
+            ' WHERE' +
+            ' KM2.PLACEID=' + KRD_MAIN.PLACEID +
+            ' AND KM2.MAIN_ID=' + KRD_MAIN.MAIN_ID +
+            ')' +
+            ' AND (SELECT MAX(P.PAPER_IS_WAYBILL) FROM PAPERS P WHERE P.PAPER_DOCG44_CODE=KP.PAPERCODE OR P.PAPERNAME=KP.PAPERNAME) = 1' +
+            ' AND KM.PLACEID=KP.PLACEID AND KM.ID=KP.ID' +
+            ' AND (SELECT COUNT (*) FROM KRD_COMM KC WHERE KC.PLACEID=KP.PLACEID AND KC.ID=KP.ID AND KC.N_TTN=KP.COUNTER) > 0';
+    OPENQUERY ('qTransportDocs', 'STS_DB', sSQL, 1);
+    WHILE (EOF ('qTransportDocs') = 0,
+      Block(
+        VAR ('XmlTransportDocs', Integer, XMLNODEADDCHILD (XmlGoodsShipment, 'do1r:TransportDocs'));
+
+        IF ((qTransportDocs.PAPERCODE = '02400') *
+//            ((KRD_TRANSP.TRANSP_CODE = '40') | ((NotNull ('KRD_TRANSP', 'TRANSP_CODE') = 0) * KRD_MAIN.G261 = '40')),
+            ((KRD_TRANSP.TRANSP_CODE = '40') | (KRD_MAIN.G261 = '40')),
+          Block(
+            XMLNODESETVALUES (XmlTransportDocs, '',
+                'catWH_ru:ArrivalCargoWithoutDocsIndicator', 'true',
+            ); // XMLNODESETVALUES
+          ),
+          Block(
+            VAR('sTransportDocName', string, REFERENCE ('PAPERS', 'PAPERNAME', qTransportDocs.PAPERNAME, 'PAPERFULLNAME'));
+            IF (sTransportDocName = '', sTransportDocName := REFERENCE ('PAPERS', 'PAPER_DOCG44_CODE', qTransportDocs.PAPERCODE, 'PAPERFULLNAME'));
+            IF (sTransportDocName = '', sTransportDocName := qTransportDocs.PAPERNAME);
+            XMLNODESETVALUES (XmlTransportDocs, '',
+                'cat_ru:PrDocumentName',              sTransportDocName,
+                'cat_ru:PrDocumentNumber',            qTransportDocs.PAPERNO,
+                'cat_ru:PrDocumentDate',              FDT ('YYYY-MM-DD', qTransportDocs.PAPERDATE),
+                'catWH_ru:PresentedDocumentModeCode', qTransportDocs.PAPERCODE,
+            ); // XMLNODESETVALUES
+
+            WriteCompletteList (qTransportDocs.PLACEID, qTransportDocs.ID);
+
+            IF (NotNull ('qTransportDocs', 'PAPER_REG_NO'),
+              Block(
+                IF (SPLITSTR (qTransportDocs.PAPER_REG_NO, '/', sSQL) = 4,
+                  Block(
+                    XMLNODESETVALUES (XmlTransportDocs, 'catWH_ru:CustomNumber',
+                        'cat_ru:CustomsCode',       CUSTOMSNOPART (qTransportDocs.PAPER_REG_NO, 1),
+                        'cat_ru:RegistrationDate',  FDT ('YYYY-MM-DD', EXCLUDEDATE (qTransportDocs.PAPER_REG_NO)),
+                        'cat_ru:GTDNumber',         CUSTOMSNOPART (qTransportDocs.PAPER_REG_NO, 3),
+                        'catWH_ru:WaybillNumPP',    CUSTOMSNOPART (qTransportDocs.PAPER_REG_NO, 4),
+                    ); // XMLNODESETVALUES
+                  )
+                ); // IF
+              )
+            ); // IF
+
+            WriteConsignor ();
+            WriteConsignee ();
+          )
+        ); // IF
+
+        WriteGoods (qTransportDocs.PLACEID, qTransportDocs.ID, qTransportDocs.COUNTER);
+
+        WriteContainers (qTransportDocs.PLACEID, qTransportDocs.ID, qTransportDocs.COUNTER);
+
+        //WriteGoodContLinks ();
+        WriteGoodContLinks (qTransportDocs.PLACEID, qTransportDocs.ID, qTransportDocs.COUNTER);
+
+        XMLNODESETVALUES (XmlTransportDocs, '',
+            'catWH_ru:CustomDocLink', 1,
+        ); // XMLNODESETVALUES
+
+        NEXT ('qTransportDocs');
+      )
+    ); // WHILE
+  )
+), // WriteTransportDocs
+
+
+// “¿ÃŒ∆≈ÕÕ€≈ ƒŒ ”Ã≈Õ“€
+FUNC ('WriteCustomsDocs',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+  ),
+  Block(
+    VAR ('XmlCustomsDocs', Integer);
+
+    sSQL := 'SELECT DISTINCT' +
+            ' PAPERNO, PAPERNAME, PAPERCLOSE, CUSTOMS_CODE, PAPERCODE' +
+            ' FROM KRD_DCD' +
+            ' WHERE' +
+            ' ID IN (SELECT ID FROM KRD_MAIN WHERE MAIN_ID=' + pId + ' AND PLACEID=' + pPlaceId + ')';
+    OPENQUERY ('qCustomsDocs', 'STS_DB', sSQL, 1);
+    FIRST ('qCustomsDocs');
+    WHILE (EOF ('qCustomsDocs') = 0,
+      Block(
+        XmlCustomsDocs := XMLNODEADDCHILD (XmlGoodsShipment, 'do1r:CustomsDocs');
+        XMLNODESETVALUES (XmlCustomsDocs, '',
+            'cat_ru:PrDocumentName',    qCustomsDocs.PAPERNAME,
+            'cat_ru:PrDocumentNumber',  qCustomsDocs.PAPERNO,
+            'cat_ru:PrDocumentDate',    FDT ('YYYY-MM-DD', qCustomsDocs.PAPERCLOSE),
+            'catWH_ru:DocumentCode',    qCustomsDocs.PAPERCODE,
+            'catWH_ru:VttCustomsCode',  qCustomsDocs.CUSTOMS_CODE,
+        ); // XMLNODESETVALUES
+        NEXT ('qCustomsDocs');
+      )
+    ); // WHILE
+  )
+), // WriteCustomsDocs
+
+
+FUNC ('WriteCommerceDocs',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pId', Integer, 1);
+  ),
+  Block(
+    VAR ('XmlCommerceDocs', Integer);
+
+    sSQL := 'SELECT KP.* ' +
+            ' FROM KR_PAPER KP' +
+            ' WHERE' +
+            ' KP.ID IN' +
+            '(' +
+            ' SELECT KM2.ID' +
+            ' FROM KRD_MAIN KM2' +
+            ' WHERE' +
+            ' KM2.PLACEID=' + pPlaceId +
+            ' AND KM2.MAIN_ID=' + pId +
+            ')' +
+            ' AND' +
+            '(' +
+            '((SELECT MAX(P.PAPER_IS_WAYBILL) FROM PAPERS P WHERE P.PAPER_DOCG44_CODE=KP.PAPERCODE OR P.PAPERNAME=KP.PAPERNAME) = 1' +
+            ' AND (SELECT COUNT (*) FROM KRD_COMM KC WHERE KC.PLACEID=KP.PLACEID AND KC.ID=KP.ID AND KC.N_TTN=KP.COUNTER) = 0)' +
+            ' OR (SELECT MAX(P.PAPER_IS_WAYBILL) FROM PAPERS P WHERE P.PAPER_DOCG44_CODE=KP.PAPERCODE OR P.PAPERNAME=KP.PAPERNAME) = 0' +
+            ')' +
+            ' AND KP.PAPERNAME <> ' +char(39)+ '«œ—’' +char(39);
+    OPENQUERY ('qCommerceDocs', 'STS_DB', sSQL, 1);
+    WHILE (EOF ('qCommerceDocs') = 0,
+      Block(
+        XmlCommerceDocs := XMLNODEADDCHILD (XmlGoodsShipment, 'do1r:CommerceDocs');
+        XMLNODESETVALUES (XmlCommerceDocs, '',
+            'cat_ru:PrDocumentName',              REFERENCE ('PAPERS', 'PAPERNAME', qCommerceDocs.PAPERNAME, 'PAPERFULLNAME'),
+            'cat_ru:PrDocumentNumber',            qCommerceDocs.PAPERNO,
+            'cat_ru:PrDocumentDate',              FDT ('YYYY-MM-DD', qCommerceDocs.PAPERDATE),
+            'catWH_ru:PresentedDocumentModeCode', qCommerceDocs.PAPERCODE,
+        ); // XMLNODESETVALUES
+        NEXT ('qCommerceDocs');
+      )
+    ); // WHILE
+  )
+), // WriteCommerceDocs
+
+
+// —¬≈ƒ≈Õ»ﬂ Œ √–”«¿’, œŒÃ≈Ÿ¿≈Ã€’ Õ¿ ¬–≈Ã≈ÕÕŒ≈ ’–¿Õ≈Õ»≈
+FUNC ('WriteGoodsShipment', '',
+  Block(
+    VAR ('XmlGoodsShipment', Integer, XMLNODEADDCHILD (XmlDO1Report, 'do1r:GoodsShipment'));
+
+    XMLNODESETVALUES (XmlGoodsShipment, '',
+//        'do1r:TotalPackageNumber', GetTotalPackageNumber (),
+        'do1r:TotalPackageNumber', SUMVALUES ('KRD_COMM', 'G311'),
+        'do1r:MPOSign', 0,
+    ); // XMLNODESETVALUES
+
+    IF (KRD_MAIN.G261 = '40',
+      Block(
+        XMLNODESETVALUES (XmlGoodsShipment, 'do1r:MasterAirWayBill',
+            'cat_ru:PrDocumentName',    KRD_MAIN.MAWB_NAME,
+            'cat_ru:PrDocumentNumber',  KRD_MAIN.MAWB_NO,
+            'cat_ru:PrDocumentDate',    FDT ('YYYY-MM-DD', KRD_MAIN.MAWB_DATE),
+        ); // XMLNODESETVALUES
+      )
+    ); // IF
+
+    WriteTransportDocs ();
+    WriteCustomsDocs (KRD_MAIN.PLACEID, KRD_MAIN.ID);
+    //WriteCustomsDocs ();
+    WriteCommerceDocs (KRD_MAIN.PLACEID, KRD_MAIN.ID);
+
+    CLOSEDATASET ('qTransportDocs');
+
+    // œ–»«Õ¿  »—œŒÀ‹«Œ¬¿Õ»ﬂ Œ“◊≈“¿ œŒ ‘Œ–Ã≈ ƒŒ-1 ¬  ¿◊≈—“¬≈ ƒŒ ”Ã≈Õ“Œ¬ œ–≈ƒ—“¿¬À≈ÕÕ€’ ƒÀﬂ œŒÃ≈Ÿ≈Õ»ﬂ
+    IF (KRD_MAIN.DO1ACCOMPANYINGDOCUMENT = 1,
+      Block(
+        XMLNODESETVALUES (XmlGoodsShipment, '',
+            'do1r:DO1AccompanyingDocument', KRD_MAIN.DO1ACCOMPANYINGDOCUMENT,
+        ); // XMLNODESETVALUES
+      ),
+      Block(
+        IF (NotNull ('KRD_MAIN', 'PP'),
+          Block(
+            XMLNODESETVALUES (XmlGoodsShipment, 'do1r:PresentedDocuments',
+                'cat_ru:CustomsCode', CUSTOMSNOPART (KRD_MAIN.PP, 1, ''),
+                'cat_ru:RegistrationDate', FDT ('YYYY-MM-DD', EXCLUDEDATE (KRD_MAIN.PP)),
+                'cat_ru:GTDNumber', CUSTOMSNOPART (KRD_MAIN.PP, 3, ''),
+            ); // XMLNODESETVALUES
+          )
+        ); // IF
+      )
+    ); // IF
+  )
+), // WriteGoodsShipment
+
+
+FUNC ('WriteDO1Report',
+  Block(
+    PARAM ('pWriteEdContainer', Integer, 0);
+  ),
+  Block(
+    IF (pWriteEdContainer = 1,
+      Block(
+        XmlDO1Report := XMLNODEADDCHILD (XmlRoot, 'ED_Container');
+        XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+        XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+        XMLNODESETATTRIBUTE (XmlDO1Report, 'DocumentModeID', '1006058E');
+        XMLNODESETVALUE (XMLNODEADDCHILD (XmlDO1Report, 'cat_ru:DocumentID'), GENERATEUUID (1));
+
+        XmlDO1Report := XMLNODEADDCHILD (XmlDO1Report, 'ContainerDoc');
+        XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+
+        XmlDO1Report := XMLNODEADDCHILD (XmlDO1Report, 'DocBody');
+        XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns', 'urn:customs.ru:Information:ExchangeDocuments:ED_Container:5.13.1');
+      )
+    ); // IF
+
+    XmlDO1Report := XmlNodeADdChild (XmlDO1Report, 'do1r:DO1Report');
+    XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+    XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns:catWH_ru', 'urn:customs.ru:Information:WarehouseDocuments:WarehouseCommonAggregateTypesCust:5.13.1');
+    XMLNODESETATTRIBUTE (XmlDO1Report, 'xmlns:do1r', 'urn:customs.ru:Information:WarehouseDocuments:DO1Report:5.13.1');
+    XMLNODESETATTRIBUTE (XmlDO1Report, 'DocumentModeID', '1008001E');
+
+    XMLNODESETVALUES (XmlDO1Report, '',
+        'cat_ru:DocumentID',              GENERATEUUID (1),
+        'catWH_ru:MainTransportModeCode', KRD_MAIN.G261,
+        'catWH_ru:ReportNumber',          CUSTOMSNOPART (KRD_MAIN.NBD, 3, RIGHT (KRD_MAIN.NBD, 7)),
+        'catWH_ru:ReportDate',            FDT ('YYYY-MM-DD', KRD_MAIN.BD_DATE),
+        'catWH_ru:ReportTime',            FDT ('HH:MM:SS', KRD_MAIN.BD_DATE),
+    ); // XMLNODESETVALUES
+
+    WriteCustomRegistration ();
+    WriteWarehouseOwner ();
+    WriteCarrier ();
+
+    IF (BOF ('KRD_TRANSP') = 0, FIRST ('KRD_TRANSP'));
+    WHILE (EOF ('KRD_TRANSP') = 0,
+      Block(
+        WriteTransports ();
+        NEXT ('KRD_TRANSP');
+      )
+    ); // WHILE
+
+    WriteGoodsShipment();
+
+    // ÓÒ‚Ó·ÓÊ‰‡ÂÏ Ô‡ÏˇÚ¸
+    IF (bQContsOpened, CLOSEDATASET ('qConts'));
+  )
+), // WriteDO1Report
+
+
+  WriteDO1Report(1);
+
+{
+//
+// DEBUG /*
+WriteLog (dbg, 'do1_album.exp (end) ' + FDT ('SS', (Date()+Time(1)) - timerStart) + ' sec (' + INIFILE ('STSDB', 'Driver Name', '') + ')');
+// DEBUG */
+//
+}

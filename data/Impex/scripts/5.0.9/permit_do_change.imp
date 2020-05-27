@@ -1,0 +1,59 @@
+// *****************************************************************************
+// Название: Принятие добавочных листов к отчетности СВХ (5.0.9)
+// Описание: Принятие добавочных листов к отчетности СВХ (5.0.9)
+// Кнопка вызова: 0
+// Подпись кнопки: PermitDOChange
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('XmlPermitDOChange', Integer, XMLNODECHILD (XmlRoot, 0));
+VAR ('whid', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'whid'));
+VAR ('do1id', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'do1id'));
+VAR ('XmlCustoms',        Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:Customs'));
+VAR ('XmlCustomsPerson',  Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:CustomsPerson'));
+VAR ('XmlRegisterNumber', Integer, XMLNODEFIND (XmlPermitDOChange, 'prch:RegisterNumber'));
+
+
+VAR ('vPlaceID', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'whid'));
+VAR ('vID', String, XMLNODEATTRIBUTE (XmlPermitDOChange, 'do1id'));
+VAR ('vCounter', String, '0');
+VAR ('strStatus', String, 'Доб. лист к Форме ДО-1 зарегистрирован');
+
+VAR ('DoType', String, '');
+VAR ('DoNo', String, '');
+VAR ('DoDate', DateTime);
+VAR ('dRegDate', DateTime, (Date() + Time(1)));
+
+
+VAR ('sSQL', String, '');
+VAR ('sRegNum', String, XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:CustomsCode')) +'\'+ FDT('DDMMYY', XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:RegistrationDate'))) +'\'+ XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:GTDNumber')));
+VAR ('strSubStatus', String, sRegNum);
+  OPENQUERY ('qryMaxDOP', 'STS_DB', 'SELECT MAX(COUNTER) AS MC FROM KRD_DOP WHERE PLACEID=' +whid+ ' AND ID=' +do1id);
+
+  sSQL := 'UPDATE KRD_DOP SET DOC_REG_STATUS=' +char(39)+ '3' +char(39)+
+          ', DOC_REG_NO=' +char(39)+ sRegNum +char(39)+ 
+          ', DOC_REG_DATETIME=' +char(39)+ FDT ('DD.MM.YYYY', XMLNODEVALUE (XMLNODEFIND (XmlRegisterNumber, 'cat_ru:RegistrationDate'))) +char(39)+
+          ', DOC_INSPECTOR_FIO=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:PersonName')) +char(39)+
+          ', DOC_INSPECTOR_LNP=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XmlCustomsPerson, 'cat_ru:LNP')) +char(39)+
+          ' WHERE PLACEID=' +whid+ ' AND ID=' +do1id+ ' AND COUNTER=' +qryMaxDOP.MC;
+  //showmessage (sSQL);
+  EXECUTESQL ('STS_DB', sSQL);
+
+  sSQL := 'UPDATE KRD_MAIN SET MC_STATUS_BD=' +char(39)+ '3' +char(39)+ ' WHERE PLACEID=' +whid+ ' AND ID=' +do1id;
+  EXECUTESQL ('STS_DB', sSQL);
+
+  REFRESH ('KRD_MAIN');
+
+  OPENTABLE ('KRD_MAIN_3', 'STS_DB', 'KRD_MAIN');
+  IF (LOCATE ('KRD_MAIN_3', 'PLACEID;ID', [vPlaceID, vID]) = 1,
+    Block(
+      DoNo := KRD_MAIN_3.NBD;
+      DoDate := KRD_MAIN_3.BD_DATE;
+      DoType := 'ДО1';
+      dRegDate := Date() + Time(1);
+      OPENQUERY ('qryNUM', 'SELECT JOURGUID FROM EPS_LOG WHERE PLACEID=' + vPlaceID + ' AND ID=' + vID, 'dbJournals');
+      sJourGuid := qryNUM.JOURGUID;
+    )
+  ); // IF - //
+  CLOSEDATASET ('KRD_MAIN_3');

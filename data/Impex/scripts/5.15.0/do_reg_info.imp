@@ -1,0 +1,212 @@
+// *****************************************************************************
+// Название: do_reg_info
+// Описание: do_reg_info
+// Кнопка вызова: 0
+// Подпись кнопки: do_reg_info
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'whid'), XMLNODEATTRIBUTE (xmlMainNode, 'whid'), 0));
+VAR ('sDocumentId', String, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do1id'), XMLNODEATTRIBUTE (xmlMainNode, 'do1id'), IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do3id'), XMLNODEATTRIBUTE (xmlMainNode, 'do3id'), 0)));
+VAR ('iCounter', Integer, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do2id'), XMLNODEATTRIBUTE (xmlMainNode, 'do2id'), 0));
+VAR ('iReaded', Integer, INIFILE ('JR_EPS_LOG', 'DoRegInfo', 1));
+VAR ('sStatus', String, '');
+VAR ('sSubStatus', String, '');
+
+VAR ('sRegisterNumberReport', String, '');
+VAR ('dtRegDate', DateTime, STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'RegDate')), 'YYYY-MM-DD', '-'));
+VAR ('sRegDateTime', String, '');
+VAR ('sFioInspector', String, '');
+
+sRegisterNumberReport := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'RegisterNumberReport'), 'CustomsCode')) + '/' +
+                         FDT ('DDMMYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'RegisterNumberReport'), 'RegistrationDate')), 'YYYY-MM-DD', '-')) + '/' +
+                         XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'RegisterNumberReport'), 'GTDNumber'));
+sSubStatus := 'Рег. номер= ' + sRegisterNumberReport;
+
+IF (XMLNODEFIND (xmlMainNode, 'RegTime'),
+  Block(
+    VAR ('sRegTime', String, COPY (xmlMainNode.RegTime, 1, 8));
+    sRegDateTime := DBFORMATDATETIME (dtRegDate + sRegTime, GETDATABASETYPE ('STS_DB'), 1, 1);
+  ),
+  Block(
+    sRegDateTime := DBFORMATDATETIME (dtRegDate, GETDATABASETYPE ('STS_DB'), 0, 1);
+  )
+); // IF
+
+sFioInspector := XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonSurname')) + ' ' +
+                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonName')) + ' ' +
+                 XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonMiddleName'));
+
+
+CASE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'FormReport')),
+  [
+    1,
+    Block(
+      IF (LOCATE ('KRD_MAIN_2', 'PLACEID;DOCUMENTID', [iPlaceId, sDocumentId]),
+        Block(
+          sStatus := 'ДО-1 зарегистрирована';
+
+          sSQL := 'UPDATE' +
+                  ' KRD_MAIN' +
+                  ' SET' +
+                  ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+                  ', REG_NBD=' +char(39)+ sRegisterNumberReport +char(39)+
+                  ', MC_STATUS_BD=' +char(39)+ '3' +char(39)+
+                  ', GD1=' + sRegDateTime +
+                  ', GD2=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'LNP')) +char(39)+
+                  ', FIO_INSPECTOR=' +char(39)+ sFioInspector +char(39)+
+                  ', POST_INSPECTOR=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonPost')) +char(39)+
+                  ' WHERE' +
+                  ' PLACEID=' + KRD_MAIN_2.PLACEID +
+                  ' AND MAIN_ID=' + KRD_MAIN_2.MAIN_ID;
+          EXECUTESQL ('STS_DB', sSQL);
+
+          // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+          WriteEpsLog (
+              KRD_MAIN_2.PLACEID,
+              KRD_MAIN_2.ID,
+              0,
+              KRD_MAIN_2.DOCUMENTID,
+              'ДО-1',
+              KRD_MAIN_2.NBD,
+              KRD_MAIN_2.BD_DATE,
+              sStatus,
+              Date()+Time(1),
+              GENERATEUUID (),
+              sSubStatus,
+              sXmlFileName, // внешняя переменная из скрипта eps.imp
+              iReaded,
+              dtDoDt,
+              0
+          ); // WriteEpsLog
+        ),
+        Block(
+          WriteLog(
+              'EPSIMP',
+              '(' + sXmlFileName + '): Не найдена ДО-1 по PLACEID: ' + iPlaceId + '; DOCUMENTID: ' + sDocumentId
+          ); // WriteLog
+        )
+      ); // IF
+    ),
+    2,
+    Block(
+      IF (LOCATE ('REL_MAIN_2', 'PLACEID;DOCUMENTID;COUNTER', [iPlaceId, sDocumentId, iCounter]),
+        Block(
+          sStatus := 'ДО-2 №' + REL_MAIN_2.RELEASE_NO + ' зарегистрирована';
+
+          sSQL := 'UPDATE' +
+                  ' KRD_MAIN' +
+                  ' SET' +
+                  ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+                  ' WHERE' +
+                  ' PLACEID=' + REL_MAIN_2.PLACEID +
+                  ' AND MAIN_ID=' + REL_MAIN_2.MAIN_ID;
+          EXECUTESQL ('STS_DB', sSQL);
+
+          sSQL := 'UPDATE' +
+                  ' ' + CORRECTTABLENAME ('RELEASE') +
+                  ' SET' +
+                  ' MC_STATUS=' +char(39)+ '3' +char(39)+
+                  ', REG_RELEASE_NO=' +char(39)+ sRegisterNumberReport +char(39)+
+                  ', REG_TIME=' + sRegDateTime +
+                  ', GD2=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'LNP')) +char(39)+
+                  ', FIO_INSPECTOR=' +char(39)+ sFioInspector +char(39)+
+                  ', POST_INSPECTOR=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonPost')) +char(39)+
+                  ' WHERE' +
+                  ' PLACEID=' + REL_MAIN_2.PLACEID +
+                  ' AND MAIN_ID=' + REL_MAIN_2.MAIN_ID +
+                  ' AND MAIN_COUNTER=' + REL_MAIN_2.MAIN_COUNTER;
+          EXECUTESQL ('STS_DB', sSQL);
+
+          // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+          WriteEpsLog (
+              REL_MAIN_2.PLACEID,
+              REL_MAIN_2.MAIN_ID,
+              REL_MAIN_2.MAIN_COUNTER,
+              REL_MAIN_2.DOCUMENTID,
+              'ДО-2',
+              REL_MAIN_2.RELEASE_NO,
+              REL_MAIN_2.OUT_DATE,
+              sStatus,
+              Date()+Time(1),
+              GENERATEUUID (),
+              sSubStatus,
+              sXmlFileName, // внешняя переменная из скрипта eps.imp
+              iReaded,
+              dtDoDt,
+              0
+          ); // WriteEpsLog
+
+        ),
+        Block(
+          WriteLog(
+              'EPSIMP',
+              '(' + sXmlFileName + '): Не найдена ДО-2 по PLACEID: ' + iPlaceId + '; DOCUMENTID: ' + sDocumentId + '; COUNTER: ' + iCounter
+          ); // WriteLog
+        )
+      ); // IF
+    ),
+    3,
+    Block(
+      sSQL := 'SELECT' +
+              ' JOURNAL_MASTER_ID, PLACEID, REPORTNUMBER, REPORTDATE' +
+              ' FROM JRDO3' +
+              ' WHERE' +
+              ' UPPER(REFDOCUMENTID)=' +char(39)+ UPPERSTR(sDocumentId) +char(39);
+      OPENQUERY ('qJRDO3', 'dbJournals', sSQL, 1);
+      IF (FIELDISNULL ('qJRDO3', 'JOURNAL_MASTER_ID'),
+        Block(
+          // внешняя функция WriteLog подключена в скрипте eps.imp
+          WriteLog (
+              'EPSIMP',
+              '(' + sXmlFileName + '): Не найден отчет ДО-3 с идентификатором ' + sDocumentId
+          ); // WriteLog
+        ),
+        Block(
+          sStatus := 'ДО-3 зарегистрирована';
+          sSQL := 'UPDATE' +
+                  ' JRDO3' +
+                  ' SET' +
+                  ' CUSTOMSTATE=' +char(39)+ sStatus +char(39)+
+                  ', GTDNUMBER=' +char(39)+ sRegisterNumberReport +char(39)+
+                  ', REGISTRATIONDATE=' + DBFORMATDATETIME (dtRegDate, GETDATABASETYPE ('dbJournals'), 0, 1) +
+                  ', REGISTERTIME=' +char(39)+ COPY (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'RegTime')), 1, 8) +char(39)+
+                  ', PERSONSURNAME=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonSurname')) +char(39)+
+                  ', PERSONNAME=' +char(39)+ TRIM(XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonName')) + ' ' + XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonName'))) +char(39)+
+                  ', PERSONPOST=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'PersonName')) +char(39)+
+                  ', LNP=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'CustomInspector'), 'LNP')) +char(39)+
+                  ', CUSTOMSCODE=' +char(39)+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'RegisterNumberReport'), 'CustomsCode')) +char(39)+
+                  ', CUSTOMNAME=' +char(39)+ REFERENCE('KTAM.DBF', 'CODE', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (xmlMainNode, 'RegisterNumberReport'), 'CustomsCode')), 'NAMT', 'DBEGIN', 'DEND', Date()) +char(39)+
+                  ' WHERE' +
+                  ' JOURNAL_MASTER_ID=' + qJRDO3.JOURNAL_MASTER_ID;
+          EXECUTESQL ('dbJournals', sSQL);
+
+          // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+          WriteEpsLog (
+              qJRDO3.PLACEID,
+              0,
+              0,
+              sDocumentId,
+              'ДО-3',
+              qJRDO3.REPORTNUMBER,
+              qJRDO3.REPORTDATE,
+              sStatus,
+              Date()+Time(1),
+              GENERATEUUID (),
+              sSubStatus,
+              sXmlFileName, // внешняя переменная из скрипта eps.imp
+              iReaded,
+              dtDoDt,
+              0
+          ); // WriteEpsLog
+        )
+      ); // IF
+      CLOSEDATASET ('qJRDO3');
+    )
+  ],
+); // CASE

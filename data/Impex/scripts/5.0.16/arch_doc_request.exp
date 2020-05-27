@@ -1,0 +1,59 @@
+// *****************************************************************************
+// Название: Запрос документа из архива
+// Описание: Запрос документа из архива
+// Кнопка вызова: 0
+// Подпись кнопки: Запрос документа из архива
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('sSQL', String, '');
+VAR ('sPathToSave', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'iin\');
+
+
+  IF (USERINFO ('', 'UserUUID') <> '', sPathToSave := sPathToSave + USERINFO ('', 'UserUUID') + '\');
+  
+  sSQL := 'SELECT EPS_ID FROM STORES WHERE LICENCENO=';
+  
+  sSQL := 'SELECT * FROM DOCS WHERE JOURNAL_MASTER_ID=' + INVENTORY.JOURNAL_MASTER_ID + ' AND (GETDOC<>' +char(39)+ 'Запрошен' +char(39)+ ' OR GETDOCS<>' +char(39)+ 'Получен' +char(39)+ ')';
+
+  OPENQUERY ('qDocs', sSQL, 'dbJournals');
+  
+  IF (RECORDCOUNT ('qDocs') > 0,
+    Block(
+      SELECTRECORDS ('Выберите документы для запроса', 'qDocs', [['INVDOCCODE', 'Код документа', 30], ['INVDOCNUMBER', 'Номер документа', 30], ['INVDOCDATE', 'Дата документа', 30]], 'qResult', 'JOURNAL_MASTER_ID;JOURNAL_CHILD_ID', 'dbJournals');
+      IF (RECORDCOUNT ('qResult') > 0,
+        Block(
+          FIRST ('qResult');
+          WHILE (EOF ('qResult') = 0,
+            Block(
+              // основное тело скрипта, формирование xml=файда
+              VAR ('XMLDoc', Integer, XMLDOCUMENTCREATE ());
+              VAR ('XMLDocRoot', Integer, XMLDOCUMENTROOT (XMLDoc));
+              VAR ('XMLArchDocRequest', Integer, XMLNODEADDCHILD (XMLDocRoot, 'ard:ArchDocRequest'));
+
+              XMLNODESETATTRIBUTE (XMLArchDocRequest, 'DocumentModeID', '1005006E');
+              //XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xsi:schemaLocation', 'urn:customs.ru:Information:EArchDocuments:ArchDocRequest:5.0.7 ArchDocRequest.xsd');
+              XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
+              XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.0.7');
+              XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:adr', 'urn:customs.ru:Information:EArchDocuments:ArchDocRequest:5.0.7');
+              XMLNODESETATTRIBUTE (XMLArchDocRequest, 'xmlns:catArch_ru', 'urn:customs.ru:Information:ElectronicArchiveDocumentsDocuments:ElectronicArchiveCommonAggregateTypes:5.0.7');
+              
+              XMLNODESETVALUE (XMLNODEADDCHILD (XMLArchDocRequest, 'cat_ru:DocumentID'),         GENERATEUUID());
+              XMLNODESETVALUE (XMLNODEADDCHILD (XMLArchDocRequest, 'catArch_ru:ArchDeclID'),     qStores.EPS_ID);
+              XMLNODESETVALUE (XMLNODEADDCHILD (XMLArchDocRequest, 'catArch_ru:ArchID'),         qResult.ArchID);
+              XMLNODESETVALUE (XMLNODEADDCHILD (XMLArchDocRequest, 'catArch_ru:ArchDocID'),      qResult.ArchDocID);
+              //XMLNODESETVALUE (XMLNODEADDCHILD (XMLArchDocRequest, 'catArch_ru:ArchDocumentID'), qResult.InventDocumentID);
+
+              XMLDOCUMENTSAVE (XMLDoc, sPathToSave + 'ARCHDOCREQUEST_' + qResult.CUSTOMSCODE + '_' + INVENTORY.DOCUMENTID + '_' + qResult.ArchID + '_' + qStores.EPS_ID + '_' + qResult.DOCUMENTID + '_' + qResult.ArchDocID + '.xml');
+              
+              NEXT ('qResult');
+            )
+          ); // WHILE - //
+        )
+      ); // IF - //
+    ),
+    Block(
+      // можно выдать сообщение, что нет документов отмеченных для получения
+    )
+  ); // IF - //

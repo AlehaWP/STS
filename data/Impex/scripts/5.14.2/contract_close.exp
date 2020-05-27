@@ -1,0 +1,81 @@
+// *****************************************************************************
+// Название: WhContractCloseInfo
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (CONTRACTINFO.ISCLOSED * (LENGTH (TRIM (CONTRACTINFO.DOCUMENTID)) > 0),
+  IF (YESNO ('Передать в таможню инфомрацию о прекращении действия договора?'),
+    Block(
+      VAR ('xDoc', Integer, XMLDOCUMENTCREATE());
+      VAR ('xRoot', Integer, XMLDOCUMENTROOT (xDoc));
+      VAR ('xWhContractCloseInfo', Integer, XMLNODEADDCHILD (xRoot, 'whcci:WHContractCloseInfo'));
+
+      XMLNODESETATTRIBUTE (xWhContractCloseInfo, 'xmlns:whcci', 'urn:customs.ru:Information:WarehouseDocuments:WHContractCloseInfo:5.10.0');
+      XMLNODESETATTRIBUTE (xWhContractCloseInfo, 'xmlns:cat_ru', 'urn:customs.ru:CommonAggregateTypes:5.10.0');
+      XMLNODESETATTRIBUTE (xWhContractCloseInfo, 'DocumentModeID', '1008031E');
+
+      XMLNODESETVALUES (xWhContractCloseInfo, '',
+                                              'cat_ru:DocumentID', GENERATEUUID (1),
+                                              'cat_ru:RefDocumentID', CONTRACTINFO.DOCUMENTID,
+                                              'whcci:Number', CONTRACTINFO.DOGNUMBER,
+                                              'whcci:Date', FDT ('YYYY-MM-DD', CONTRACTINFO.DOGDATE));
+
+      // разбить на N-блоков по 250 символов
+      VAR ('mCloseInfo', Memo, TRIM (CONTRACTINFO.CLOSEINFO));
+
+      WHILE (LENGTH (mCloseInfo) > 0,
+        Block(
+          VAR ('xCloseInfo', Integer, XMLNODEADDCHILD (xWhContractCloseInfo, 'whcci:CloseInfo'));
+          IF (LENGTH (mCloseInfo) >= 250,
+            Block(
+              XMLNODESETVALUE (xCloseInfo, COPY (mCloseInfo, 1, 250));
+              mCloseInfo := DELETE (mCloseInfo, 1, 250);
+            ),
+            Block(
+              XMLNODESETVALUE (xCloseInfo, COPY (mCloseInfo, 1, LENGTH (mCloseInfo)));
+              mCloseInfo := DELETE (mCloseInfo, 1, LENGTH (mCloseInfo));
+            )
+          ); // IF - //
+        )
+      );
+
+      VAR ('sTemp', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY()) + 'STS-MED\Validate\validate');
+      FORCEDIRECTORIES (sTemp);
+
+      VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+      IF (LENGTH (TRIM (USERINFO ('', 'USERUUID'))) > 0, sDir := sDir + USERINFO ('', 'USERUUID') + '\');
+
+      VAR ('sFileName', String, 'closedcontract_' + CONTRACTINFO.DOCUMENTID);
+
+      OPENQUERY ('qStores', 'STS_DB', 'SELECT * FROM STORES WHERE PLACEID=' + CONTRACTINFO.PLACEID);
+      IF (LENGTH (TRIM (qStores.CUSTOMS_CODE)) > 0, sFileName := sFileName + '_' + qStores.CUSTOMS_CODE);
+      IF (LENGTH (TRIM (qStores.EPS_ID)) > 0, sFileName := sFileName + '_' + qStores.EPS_ID);
+      sFileName := sFileName + '.xml';
+
+      XMLDOCUMENTSAVE (xDoc, sTemp + sFileName);
+      XMLDOCUMENTSAVE (xDoc, sDir + sFileName);
+
+      EDIT ('CONTRACTINFO');
+      SETFIELDVALUE ('CONTRACTINFO', 'EPS_STATUS', 'Расторжение договра подготовлено к отправке');
+      POST ('CONTRACTINFO');
+    ),
+    Block(
+      EDIT ('CONTRACTINFO');
+      SETFIELDVALUE ('CONTRACTINFO', 'ISCLOSED', 0);
+      POST ('CONTRACTINFO');
+    )
+  ),
+  Block(
+    VAR ('sMessage', String, 'Ошибка: ');
+
+    IF (CONTRACTINFO.ISCLOSED = 0, sMessage := sMessage + char(13) + ' - не стоит отметка о прекращении договора');
+    IF (LENGTH (TRIM (CONTRACTINFO.DOCUMENTID)) = 0, sMessage := sMessage + char(13) + ' - договор не передавался в таможню');
+    showmessage (sMessage, 1);
+  )
+);

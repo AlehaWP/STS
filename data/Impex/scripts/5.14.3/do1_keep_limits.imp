@@ -1,0 +1,72 @@
+// *****************************************************************************
+// Название: do1_keep_limits
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: do1_keep_limits
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'whid'), XMLNODEATTRIBUTE (xmlMainNode, 'whid'), 0));
+VAR ('sDocumentId', String, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do1id'), XMLNODEATTRIBUTE (xmlMainNode, 'do1id'), IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do3id'), XMLNODEATTRIBUTE (xmlMainNode, 'do3id'), 0)));
+VAR ('iReaded', Integer, 1);
+VAR ('sStatus', String, 'Получены сроки хранения');
+VAR ('sSubStatus', String, '');
+
+IF (LOCATE ('KRD_MAIN_2', 'PLACEID;DOCUMENTID', [iPlaceId, sDocumentId]),
+  Block(
+
+    VAR ('sDatabaseType', String, GETDATABASETYPE ('STS_DB'));
+    VAR ('iDO1GoodKeepingLimitIndex', Integer, XMLNODEINDEX (xmlMainNode.DO1GoodKeepingLimit));
+    VAR ('xDO1GoodKeepingLimit', Integer, XMLNODECHILD (xmlMainNode, iDO1GoodKeepingLimitIndex));
+
+    IF (xDO1GoodKeepingLimit,
+      sSubStatus := 'Дата истечения срока ВХ: ' + FDT ('DD.MM.YYYY', STRTODATE (xDO1GoodKeepingLimit.KeepingLimitDate, 'YYYY-MM-DD', '-'))
+    );
+
+    WHILE (XMLNODENAME (xDO1GoodKeepingLimit, 1) = 'DO1GoodKeepingLimit',
+      Block(
+        sSQL := 'UPDATE' +
+                ' KRD_COMM' +
+                ' SET' +
+                ' STORAGE_DATE=' + DBFORMATDATETIME (STRTODATE (xDO1GoodKeepingLimit.KeepingLimitDate, 'YYYY-MM-DD', '-'), sDatabaseType, 0, 1, 1) +
+                ' WHERE' +
+                ' PLACEID=' + KRD_MAIN_2.PLACEID +
+                ' AND ID IN (SELECT ID FROM KRD_MAIN WHERE MAIN_ID=' + KRD_MAIN_2.MAIN_ID + ' AND PLACEID=' + KRD_MAIN_2.PLACEID + ')' +
+                ' AND GN=' + xDO1GoodKeepingLimit.GoodsNumber;
+        EXECUTESQL ('STS_DB', sSQL);
+        iDO1GoodKeepingLimitIndex := iDO1GoodKeepingLimitIndex + 1;
+        xDO1GoodKeepingLimit := XMLNODECHILD (xmlMainNode, iDO1GoodKeepingLimitIndex);
+      )
+    ); // WHILE
+
+    // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+    WriteEpsLog (
+        KRD_MAIN_2.PLACEID,
+        KRD_MAIN_2.ID,
+        0,
+        KRD_MAIN_2.DOCUMENTID,
+        'ДО-1',
+        KRD_MAIN_2.NBD,
+        KRD_MAIN_2.BD_DATE,
+        sStatus,
+        Date()+Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        iReaded,
+        dtDoDt,
+        0
+    ); // WriteEpsLog
+  ),
+  Block(
+    WriteLog(
+        'EPSIMP',
+        '(' + sXmlFileName + '): Не найдена ДО-1 по PLACEID: ' + iPlaceId + '; DOCUMENTID: ' + sDocumentId
+    ); // WriteLog
+  )
+); // IF
