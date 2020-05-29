@@ -191,7 +191,7 @@ FUNC ('SaveXML', ,
     VAR ('sTempDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
     IF (DIRECTORYEXISTS (sTempDir) = 0, FORCEDIRECTORIES (sTempDir));
 
-    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'NotifFinishRejectOperations_'+vPlaceID+'_'+vDocID+'.xml');
+    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'NotifFinishRejectOperations_'+sPlaceID+'_'+sDocID+'.xml');
     XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
     sTmpFileName
   )
@@ -204,8 +204,8 @@ FUNC ('GetNotifFinishExpXml',
     Param ('pDocID', string, 1);
   ),
   Block (
-    vPlaceID := pPlaceID;
-    vDocID := pDocID;
+    sPlaceID := pPlaceID;
+    sDocID := pDocID;
 
     CreateXML ();
     FillXML ();
@@ -213,6 +213,6 @@ FUNC ('GetNotifFinishExpXml',
   )    
 ),
 
-VAR ('vPlaceID', string, '');
-VAR ('vDocID', string, '');
+VAR ('sPlaceID', string, '');
+VAR ('sDocID', string, '');
 

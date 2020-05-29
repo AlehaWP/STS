@@ -22,7 +22,7 @@ FUNC ('CreateXML', ,
 
     XmlNodeSetAttribute (XMLReqOper, 'DocumentModeID', '1006135E');
     XMLNODESETVALUES (XMLReqOper, '',
-            'cat_ru:DocumentID', vDocID,
+            'cat_ru:DocumentID', sDocID,
             'reqop:ReqNumber', JR_OPERATIONS.REQNUMBER,
             'reqop:ReqDate', FDT ('YYYY-MM-DD', JR_OPERATIONS.ReqDate),
             'reqop:DocSign', 1,
@@ -108,7 +108,7 @@ FUNC ('FillXML', ,
       )
     );
     // оп. Выгрузка
-    VAR ('XMLOper5', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:UNLoading'));
+    VAR ('XMLOper5', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Unloading'));
     XmlNodeSetValues (XMLOper5, '',
               'reqop:Value', If(JR_OPERATIONS.UNLOADINGVALUE=0, 'false', 'true')
     );
@@ -188,8 +188,8 @@ FUNC ('FillXML', ,
       )
     );
 
-
-    //Данные о должностном лице таможенного органа
+    
+    //Данные о должностном лице таможенного органа 
     VAR ('XMLCustomsPerson', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CustomsPerson'));
     XmlNodeSetValues (XMLCustomsperson, '',
               'cat_ru:PersonName', JR_OPERATIONS.InspFIO,
@@ -204,7 +204,7 @@ FUNC ('SaveXML', ,
     VAR ('sTempDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
     IF (DIRECTORYEXISTS (sTempDir) = 0, FORCEDIRECTORIES (sTempDir));
 
-    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'ReqWHOperations_'+vPlaceID+'_'+vDocID+'.xml');
+    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'ReqWHOperations_'+sPlaceID+'_'+sDocID+'.xml');
     XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
     sTmpFileName
   )
@@ -216,8 +216,8 @@ FUNC ('GetReqOperationsExpXml',
     Param ('pDocID', string, 1);
   ),
   Block (
-    vPlaceID := pPlaceID;
-    vDocID := pDocID;
+    sPlaceID := pPlaceID;
+    sDocID := pDocID;
 
     CreateXML ();
     FillXML ();
@@ -225,9 +225,8 @@ FUNC ('GetReqOperationsExpXml',
   )
 ),
 
-VAR ('vPlaceID', string, '');
-VAR ('vDocID', string, '');
-
+VAR ('sPlaceID', string, '');
+VAR ('sDocID', string, '');
 
 
 

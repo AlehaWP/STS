@@ -31,7 +31,7 @@ FUNC('NotFindErrorsInFillingJrData',
       IF (FIELDISNULL ('JR_OPERATIONS','CustomsCode') = 1, IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Не заполнен код поста!', 'Не заполнен код поста!'));
       IF ((FIELDISNULL ('JR_OPERATIONS','DeclOrgName') = 1)|(FIELDISNULL ('JR_OPERATIONS','ReprOrgName') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Не заполнен декларант или представитель!', sCheck := 'Не заполнен декларант или представитель!'));
       IF (FIELDISNULL ('JR_OPERATIONS','GTDNumber') = 1, IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Не заполнен номер ДТ', sCheck := 'Не заполнен номер ДТ'));
-      IF (LENGTH (sCheckResult) = 0, 
+      IF (LENGTH (sCheck) = 0, 
         iResult := 1, 
         showmessage(sCheck)
       );
@@ -117,8 +117,19 @@ FUNC ('SendReqOperations',,
         // Получаем файл xml соответсвующий свежему альбому форматов
         EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sXMLVersion + '\ReqOperations.exp');
         sTempFileName := GetReqOperationsExpXml (vPlaceID, vDocID);
+       
+       // Записать так IF ( ValidateXml (sTempFileName)  * ShowDocumentFromXml (sTempFileName) * YESNO ('Передать Решение по требованию на проведение операций с товарами?') 
+      //  Не получилось, т.к. даже если первая 0, то проверяет остальные, чего быть не должно
+        VAR ('iSend', integer, 0);
+        IF( ValidateXml (sTempFileName), 
+          IF (ShowDocumentFromXml (sTempFileName), 
+            IF ( YESNO ('Передать Заявление о проведении операций с товарами?'),
+              iSend := 1;
+            )
+          )
+        );
 
-        IF ( ValidateXml (sTempFileName) * ShowDocumentFromXml (sTempFileName) * YESNO ('Передать Заявление о проведении операций с товарами?'), 
+        IF ( iSend, 
           Block (
             VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
             IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
@@ -136,16 +147,18 @@ FUNC ('SendReqOperations',,
 VAR ('vPlaceId', String);
 VAR ('vID', String, JR_OPERATIONS.ID);
 VAR ('mSQL', Memo, '');
-VAR ('vDocID', String, '');
+VAR ('vDocID', String, '123');
 VAR ('sTempFileName', String, '');
 VAR ('iSendResult', integer, 0);
+VAR ('sXmlVersion', String, INIFILE ('XMLFormat', 'Version', ''));
 
-mSQL := 'SELECT PLACEID, ID, DOCUMENTID FROM KRD_MAIN WHERE ID=' + vID;
+mSQL := 'SELECT PLACEID, ID, DOCUMENTID, ALBUM_VERSION FROM KRD_MAIN WHERE ID=' + vID;
 OPENQUERY ('qDO1', 'STS_DB', mSQL);
 IF (FIELDISNULL ('qDO1', 'DOCUMENTID') = 0,
   Block (
     vDocID := qDO1.DOCUMENTID;
     vPlaceId := qDO1.PLACEID;
+    IF (TRIM(qDO1.ALBUM_VERSION) <> '', sXmlVersion := qDO1.ALBUM_VERSION);
   ),
   Block (
     //RAISEEXCEPTION ();
@@ -154,7 +167,7 @@ IF (FIELDISNULL ('qDO1', 'DOCUMENTID') = 0,
 
 
 
-VAR ('sXmlVersion', String, IF (TRIM(qDO1.ALBUM_VERSION) <> '', qDO1.ALBUM_VERSION, INIFILE ('XMLFormat', 'Version', '')));
+
 
 
 IF( CheckCurrentStatus (),
