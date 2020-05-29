@@ -9,43 +9,6 @@
 // *****************************************************************************
 //
 
-FUNC ('IntToBool',
-  BLOCK(
-    PARAM ('sIntValue', Integer, 0)
-  ),
-  BLOCK(
-    IF(sIntValue = 0,
-      'false',
-      'true'
-    )
-  )
-);
-
-VAR ('sIniFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'proc.ini');
-VAR ('sIniSection', String, 'RegOperations.exp');
-VAR ('iGoodsNumber', Integer, 1);
-
-// настройка на каталог обмена
-//VAR ('sDir', String, INIFILE ('STS-MED', 'iin', ''));
-//IF (sDir = '', IF (SELECTDIRECTORY ('sDir') = 0, RAISEEXCEPTION ('Отменено пользователем')));
-VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
-
-IF (DIRECTORYEXISTS (sDir) = 0, FORCEDIRECTORIES (sDir));
-
-VAR ('sDocumentID', String, UPPERSTR(JR_OPERATIONS.DocumentID));
-VAR ('sNumber', String, JR_OPERATIONS.REQNUMBER);
-
-VAR ('mSQL', Memo, '');
-
-mSQL := 'SELECT * FROM KRD_MAIN WHERE ID=' + JR_OPERATIONS.ID;
-OPENQUERY ('qDO1', 'STS_DB', mSQL);
-VAR ('vDocID', string, '');
-IF (FIELDISNULL ('qDO1', 'PLACEID') = 0,  vDocID := qDO1.DOCUMENTID);
-
-VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'ReqWHOperations_'+qDO1.PLACEID+'_'+vDocID+'.xml');
-
-
-
 FUNC ('CreateXML', ,
   Block(
     VAR ('XMLDoc', Integer, XMLDocumentCreate());
@@ -59,14 +22,182 @@ FUNC ('CreateXML', ,
 
     XmlNodeSetAttribute (XMLReqOper, 'DocumentModeID', '1006135E');
     XMLNODESETVALUES (XMLReqOper, '',
-            'cat_ru:DocumentID', sDocumentID,
-            'reqop:ReqNumber', sNumber,
+            'cat_ru:DocumentID', vDocID,
+            'reqop:ReqNumber', JR_OPERATIONS.REQNUMBER,
             'reqop:ReqDate', FDT ('YYYY-MM-DD', JR_OPERATIONS.ReqDate),
             'reqop:DocSign', 1,
     ); // XMLNODESETVALUES - //
 
   )
 ), // FUNC - CreateXML() //
+
+FUNC ('FillXML', ,
+  Block(
+    //Данные о таможенном органе
+    VAR ('XMLCustoms', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Customs'));
+    XmlNodeSetValues (XMLCustoms, '',
+              'cat_ru:Code', JR_OPERATIONS.CustomsCode,
+              'cat_ru:OfficeName', JR_OPERATIONS.CustomsOfficeName,
+              'cat_ru:CustomsCountryCode', JR_OPERATIONS.CustomsCountryCode,
+    );
+
+    //Данные о декларанте
+    VAR ('XMLDeclarant', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Declarant'));
+
+    If((FIELDISNULL ('JR_OPERATIONS','DeclOrgName')=0)*(TRIM(JR_OPERATIONS.DeclOrgName) <> ''),
+      XmlNodeSetValues (XMLDeclarant, '',
+              'cat_ru:OrganizationName', REMOVECHAR (JR_OPERATIONS.DeclOrgName, char(39))
+      )
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','DeclINN')=0)*(TRIM(JR_OPERATIONS.DeclINN) <> ''),
+      XmlNodeSetValues (XMLDeclarant, '',
+              'cat_ru:RFOrganizationFeatures\cat_ru:INN', JR_OPERATIONS.DeclINN
+      )
+    );
+    // сведения о представителе
+    If((FIELDISNULL ('JR_OPERATIONS','ReprOrgName')=0)*(TRIM(JR_OPERATIONS.ReprOrgName) <> ''),
+      XmlNodeSetValues (XMLDeclarant, '',
+              'reqop:Representative\cat_ru:OrganizationName', REMOVECHAR (JR_OPERATIONS.ReprOrgName, char(39))
+      )
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','ReprINN')=0)*(TRIM(JR_OPERATIONS.ReprINN) <> ''),
+      XmlNodeSetValues (XMLDeclarant, '',
+              'reqop:Representative\cat_ru:RFOrganizationFeatures\cat_ru:INN', JR_OPERATIONS.ReprINN
+      )
+    );
+
+    // оп. Транспортировка
+    VAR ('XMLOper1', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Transportation'));
+    XmlNodeSetValues (XMLOper1, '',
+              'reqop:Value', IF(JR_OPERATIONS.TranspValue=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','TranspRemark')=0)*(TRIM(JR_OPERATIONS.TranspRemark) <> ''),
+      XmlNodeSetValues (XMLOper1, '',
+              'reqop:Remark', JR_OPERATIONS.TranspRemark
+      )
+    );
+
+    // оп. Взвешивание
+    VAR ('XMLOper2', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Weighing'));
+    XmlNodeSetValues (XMLOper2, '',
+              'reqop:Value', If(JR_OPERATIONS.WEIGHINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','WEIGHINGREMARK')=0)*(TRIM(JR_OPERATIONS.WEIGHINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper2, '',
+              'reqop:Remark', JR_OPERATIONS.WEIGHINGREMARK
+      )
+    );
+    // оп. Иное определение количества
+    VAR ('XMLOper3', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:DifferentDefinitionQuantity'));
+    XmlNodeSetValues (XMLOper3, '',
+              'reqop:Value', If(JR_OPERATIONS.DEFQUANTVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','DEFQUANTREMARK')=0)*(TRIM(JR_OPERATIONS.DEFQUANTREMARK) <> ''),
+      XmlNodeSetValues (XMLOper3, '',
+              'reqop:Remark', JR_OPERATIONS.DEFQUANTREMARK
+      )
+    );
+    // оп. Погрузка
+    VAR ('XMLOper4', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Loading'));
+    XmlNodeSetValues (XMLOper4, '',
+              'reqop:Value', If(JR_OPERATIONS.LOADINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','LOADINGREMARK')=0)*(TRIM(JR_OPERATIONS.LOADINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper4, '',
+              'reqop:Remark', JR_OPERATIONS.LOADINGREMARK
+      )
+    );
+    // оп. Выгрузка
+    VAR ('XMLOper5', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:UNLoading'));
+    XmlNodeSetValues (XMLOper5, '',
+              'reqop:Value', If(JR_OPERATIONS.UNLOADINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','UNLOADINGREMARK')=0)*(TRIM(JR_OPERATIONS.UNLOADINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper5, '',
+              'reqop:Remark', JR_OPERATIONS.UNLOADINGREMARK
+      )
+    );
+    // оп. перегрузка
+    VAR ('XMLOper6', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Overload'));
+    XmlNodeSetValues (XMLOper6, '',
+              'reqop:Value', If(JR_OPERATIONS.OVERLOADINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','OVERLOADINGREMARK')=0)*(TRIM(JR_OPERATIONS.OverLOADINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper6, '',
+              'reqop:Remark', JR_OPERATIONS.OverLOADINGREMARK
+      )
+    );
+    // оп. исправление повр. упаковки
+    VAR ('XMLOper7', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CorrectionPackaging'));
+    XmlNodeSetValues (XMLOper7, '',
+              'reqop:Value', If(JR_OPERATIONS.CorrPackValue=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','CorrPackRemark')=0)*(TRIM(JR_OPERATIONS.CorrPackRemark) <> ''),
+      XmlNodeSetValues (XMLOper7, '',
+              'reqop:Remark', JR_OPERATIONS.CorrPackRemark
+      )
+    );
+    // оп. вскрытие упаковки
+    VAR ('XMLOper8', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Unpacking'));
+    XmlNodeSetValues (XMLOper8, '',
+              'reqop:Value', If(JR_OPERATIONS.UNPACKINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','UNPACKINGREMARK')=0)*(TRIM(JR_OPERATIONS.UNPACKINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper8, '',
+              'reqop:Remark', JR_OPERATIONS.UNPACKINGREMARK
+      )
+    );
+    // оп. упаковка
+    VAR ('XMLOper9', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Packing'));
+    XmlNodeSetValues (XMLOper9, '',
+              'reqop:Value', If(JR_OPERATIONS.PACKINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','PACKINGREMARK')=0)*(TRIM(JR_OPERATIONS.PACKINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper9, '',
+              'reqop:Remark', JR_OPERATIONS.PACKINGREMARK
+      )
+    );
+    // оп. пееупаковка
+    VAR ('XMLOper10', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Repackaging'));
+    XmlNodeSetValues (XMLOper10, '',
+              'reqop:Value', If(JR_OPERATIONS.REPACKINGVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','REPACKINGREMARK')=0)*(TRIM(JR_OPERATIONS.REPACKINGREMARK) <> ''),
+      XmlNodeSetValues (XMLOper10, '',
+              'reqop:Remark', JR_OPERATIONS.REPACKINGREMARK
+      )
+    );
+    // оп. вскрытие помещений, и других мест где находятся товары
+    VAR ('XMLOper11', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:OpeningLocationGoods'));
+    XmlNodeSetValues (XMLOper11, '',
+              'reqop:Value', If(JR_OPERATIONS.OLG_VALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','OLG_REMARK')=0)*(TRIM(JR_OPERATIONS.OLG_REMARK) <> ''),
+      XmlNodeSetValues (XMLOper11, '',
+              'reqop:Remark', JR_OPERATIONS.OLG_REMARK
+      )
+    );
+    // оп. разделения товарной партии
+    VAR ('XMLOper12', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:DivisionConsignment'));
+    XmlNodeSetValues (XMLOper12, '',
+              'reqop:Value', If(JR_OPERATIONS.DIVISIONVALUE=0, 'false', 'true')
+    );
+    If((FIELDISNULL ('JR_OPERATIONS','DIVISIONREMARK')=0)*(TRIM(JR_OPERATIONS.DIVISIONREMARK) <> ''),
+      XmlNodeSetValues (XMLOper12, '',
+              'reqop:Remark', JR_OPERATIONS.DIVISIONREMARK
+      )
+    );
+
+
+    //Данные о должностном лице таможенного органа
+    VAR ('XMLCustomsPerson', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CustomsPerson'));
+    XmlNodeSetValues (XMLCustomsperson, '',
+              'cat_ru:PersonName', JR_OPERATIONS.InspFIO,
+              'cat_ru:LNP', JR_OPERATIONS.InspLNP
+    );
+  )
+),  // FUNC - FillXML //
+
 
 FUNC ('SaveXML', ,
   Block(
@@ -75,175 +206,24 @@ FUNC ('SaveXML', ,
 ), // FUNC - SaveTmpXML() //
 
 
+// настройка на каталог временный каталог 
+VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
+
+IF (DIRECTORYEXISTS (sDir) = 0, FORCEDIRECTORIES (sDir));
+
+VAR ('vDocID', String, '');
+
+VAR ('mSQL', Memo, '');
+
+mSQL := 'SELECT PLACEID, ID, DOCUMENTID FROM KRD_MAIN WHERE ID=' + JR_OPERATIONS.ID;
+OPENQUERY ('qDO1', 'STS_DB', mSQL);
+IF (FIELDISNULL ('qDO1', 'DOCUMENTID') = 0,  vDocID := qDO1.DOCUMENTID);
+
+VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'ReqWHOperations_'+qDO1.PLACEID+'_'+vDocID+'.xml');
 
 
 CreateXML ();
-
-//Данные о таможенном органе
-VAR ('XMLCustoms', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Customs'));
-XmlNodeSetValues (XMLCustoms, '',
-          'cat_ru:Code', JR_OPERATIONS.CustomsCode,
-          'cat_ru:OfficeName', JR_OPERATIONS.CustomsOfficeName,
-          'cat_ru:CustomsCountryCode', JR_OPERATIONS.CustomsCountryCode,
-);
-
-//Данные о декларанте
-VAR ('XMLDeclarant', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Declarant'));
-
-If((FIELDISNULL ('JR_OPERATIONS','DeclOrgName')=0)*(TRIM(JR_OPERATIONS.DeclOrgName) <> ''),
-  XmlNodeSetValues (XMLDeclarant, '',
-          'cat_ru:OrganizationName', REMOVECHAR (JR_OPERATIONS.DeclOrgName, char(39))
-  )
-);
-If((FIELDISNULL ('JR_OPERATIONS','DeclINN')=0)*(TRIM(JR_OPERATIONS.DeclINN) <> ''),
-  XmlNodeSetValues (XMLDeclarant, '',
-          'cat_ru:RFOrganizationFeatures\cat_ru:INN', JR_OPERATIONS.DeclINN
-  )
-);
-// сведения о представителе
-If((FIELDISNULL ('JR_OPERATIONS','ReprOrgName')=0)*(TRIM(JR_OPERATIONS.ReprOrgName) <> ''),
-  XmlNodeSetValues (XMLDeclarant, '',
-          'reqop:Representative\cat_ru:OrganizationName', REMOVECHAR (JR_OPERATIONS.ReprOrgName, char(39))
-  )
-);
-If((FIELDISNULL ('JR_OPERATIONS','ReprINN')=0)*(TRIM(JR_OPERATIONS.ReprINN) <> ''),
-  XmlNodeSetValues (XMLDeclarant, '',
-          'reqop:Representative\cat_ru:RFOrganizationFeatures\cat_ru:INN', JR_OPERATIONS.ReprINN
-  )
-);
-
-// оп. Транспортировка
-VAR ('XMLOper1', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Transportation'));
-XmlNodeSetValues (XMLOper1, '',
-          'reqop:Value', IF(JR_OPERATIONS.TranspValue=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','TranspRemark')=0)*(TRIM(JR_OPERATIONS.TranspRemark) <> ''),
-  XmlNodeSetValues (XMLOper1, '',
-          'reqop:Remark', JR_OPERATIONS.TranspRemark
-  )
-);
-
-// оп. Взвешивание
-VAR ('XMLOper2', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Weighing'));
-XmlNodeSetValues (XMLOper2, '',
-          'reqop:Value', If(JR_OPERATIONS.WEIGHINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','WEIGHINGREMARK')=0)*(TRIM(JR_OPERATIONS.WEIGHINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper2, '',
-          'reqop:Remark', JR_OPERATIONS.WEIGHINGREMARK
-  )
-);
-// оп. Иное определение количества
-VAR ('XMLOper3', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:DifferentDefinitionQuantity'));
-XmlNodeSetValues (XMLOper3, '',
-          'reqop:Value', If(JR_OPERATIONS.DEFQUANTVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','DEFQUANTREMARK')=0)*(TRIM(JR_OPERATIONS.DEFQUANTREMARK) <> ''),
-  XmlNodeSetValues (XMLOper3, '',
-          'reqop:Remark', JR_OPERATIONS.DEFQUANTREMARK
-  )
-);
-// оп. Погрузка
-VAR ('XMLOper4', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Loading'));
-XmlNodeSetValues (XMLOper4, '',
-          'reqop:Value', If(JR_OPERATIONS.LOADINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','LOADINGREMARK')=0)*(TRIM(JR_OPERATIONS.LOADINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper4, '',
-          'reqop:Remark', JR_OPERATIONS.LOADINGREMARK
-  )
-);
-// оп. Выгрузка
-VAR ('XMLOper5', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:UNLoading'));
-XmlNodeSetValues (XMLOper5, '',
-          'reqop:Value', If(JR_OPERATIONS.UNLOADINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','UNLOADINGREMARK')=0)*(TRIM(JR_OPERATIONS.UNLOADINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper5, '',
-          'reqop:Remark', JR_OPERATIONS.UNLOADINGREMARK
-  )
-);
-// оп. перегрузка
-VAR ('XMLOper6', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Overload'));
-XmlNodeSetValues (XMLOper6, '',
-          'reqop:Value', If(JR_OPERATIONS.OVERLOADINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','OVERLOADINGREMARK')=0)*(TRIM(JR_OPERATIONS.OverLOADINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper6, '',
-          'reqop:Remark', JR_OPERATIONS.OverLOADINGREMARK
-  )
-);
-// оп. исправление повр. упаковки
-VAR ('XMLOper7', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CorrectionPackaging'));
-XmlNodeSetValues (XMLOper7, '',
-          'reqop:Value', If(JR_OPERATIONS.CorrPackValue=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','CorrPackRemark')=0)*(TRIM(JR_OPERATIONS.CorrPackRemark) <> ''),
-  XmlNodeSetValues (XMLOper7, '',
-          'reqop:Remark', JR_OPERATIONS.CorrPackRemark
-  )
-);
-// оп. вскрытие упаковки
-VAR ('XMLOper8', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Unpacking'));
-XmlNodeSetValues (XMLOper8, '',
-          'reqop:Value', If(JR_OPERATIONS.UNPACKINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','UNPACKINGREMARK')=0)*(TRIM(JR_OPERATIONS.UNPACKINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper8, '',
-          'reqop:Remark', JR_OPERATIONS.UNPACKINGREMARK
-  )
-);
-// оп. упаковка
-VAR ('XMLOper9', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Packing'));
-XmlNodeSetValues (XMLOper9, '',
-          'reqop:Value', If(JR_OPERATIONS.PACKINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','PACKINGREMARK')=0)*(TRIM(JR_OPERATIONS.PACKINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper9, '',
-          'reqop:Remark', JR_OPERATIONS.PACKINGREMARK
-  )
-);
-// оп. пееупаковка
-VAR ('XMLOper10', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:Repackaging'));
-XmlNodeSetValues (XMLOper10, '',
-          'reqop:Value', If(JR_OPERATIONS.REPACKINGVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','REPACKINGREMARK')=0)*(TRIM(JR_OPERATIONS.REPACKINGREMARK) <> ''),
-  XmlNodeSetValues (XMLOper10, '',
-          'reqop:Remark', JR_OPERATIONS.REPACKINGREMARK
-  )
-);
-// оп. вскрытие помещений, и других мест где находятся товары
-VAR ('XMLOper11', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:OpeningLocationGoods'));
-XmlNodeSetValues (XMLOper11, '',
-          'reqop:Value', If(JR_OPERATIONS.OLG_VALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','OLG_REMARK')=0)*(TRIM(JR_OPERATIONS.OLG_REMARK) <> ''),
-  XmlNodeSetValues (XMLOper11, '',
-          'reqop:Remark', JR_OPERATIONS.OLG_REMARK
-  )
-);
-// оп. разделения товарной партии
-VAR ('XMLOper12', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:DivisionConsignment'));
-XmlNodeSetValues (XMLOper12, '',
-          'reqop:Value', If(JR_OPERATIONS.DIVISIONVALUE=0, 'false', 'true')
-);
-If((FIELDISNULL ('JR_OPERATIONS','DIVISIONREMARK')=0)*(TRIM(JR_OPERATIONS.DIVISIONREMARK) <> ''),
-  XmlNodeSetValues (XMLOper12, '',
-          'reqop:Remark', JR_OPERATIONS.DIVISIONREMARK
-  )
-);
-
-
-//Данные о должностном лице таможенного органа
-VAR ('XMLCustomsPerson', Integer, XMLNodeAddChild(XMLReqOper, 'reqop:CustomsPerson'));
-XmlNodeSetValues (XMLCustomsperson, '',
-          'cat_ru:PersonName', JR_OPERATIONS.InspFIO,
-          'cat_ru:LNP', JR_OPERATIONS.InspLNP
-);
-
-
+FillXML ();
 SaveXML ();
-WRITEINIFILE ('STS-MED', 'iin', INCLUDETRAILINGBACKSLASH (sDir));
 
 
