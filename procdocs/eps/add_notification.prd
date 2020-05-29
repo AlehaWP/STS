@@ -1,0 +1,66 @@
+// *****************************************************************************
+// Название: add_notification
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: add_notification
+// Язык: FuncScript
+// Вызов по событию: AddNotification
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+FUNC ('AddNotification', '',
+  Block(
+    IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+    VAR ('iMessagesCount', Integer, 0);
+    sSQL := 'SELECT' +
+            ' COUNT(JOURNAL_MASTER_ID) AS C' +
+            ' FROM EPS_LOG' +
+            ' WHERE' +
+            ' READED=' +char(39)+ '0' +char(39);
+    OPENQUERY ('qEpsLogRecordCount', 'dbJournals', sSQL, 1);
+    iMessagesCount := qEpsLogRecordCount.C;
+    CLOSEDATASET ('qEpsLogRecordCount');
+
+    IF (iMessagesCount > 0,
+      Block(
+        VAR ('sMessageText', String, '');
+        CASE (GETDATABASETYPE ('dbJournals'),
+          [
+            'MSSQL',
+            Block(
+              sSQL := 'SELECT' +
+                      ' TOP(1)' +
+                      ' DOCSTATUS, DODT' +
+                      ' FROM EPS_LOG' +
+                      ' WHERE' +
+                      ' READED=' +char(39)+ '0' +char(39)+
+                      ' ORDER BY DODT DESC'; // впоследствии заменить на CREATED_AT
+            )
+          ],
+          Block(
+            sSQL := 'SELECT' +
+                    ' DOCSTATUS, DODT' +
+                    ' FROM EPS_LOG' +
+                    ' WHERE' +
+                    ' READED=' +char(39)+ '0' +char(39)+
+                    ' ORDER BY DODT DESC'; // впоследствии заменить на CREATED_AT
+          )
+        ); // CASE
+
+        OPENQUERY ('qNewMessages', 'dbJournals', sSQL, 1);
+        sMessageText := qNewMessages.DOCSTATUS;
+        CLOSEDATASET ('qNewMessages');
+
+        SETSTATUSBARHINT ('Новое сообщение (' + iMessagesCount + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+  )
+), // FUNC - AddNotification()
+
+
+AddNotification();

@@ -1,0 +1,35 @@
+// *****************************************************************************
+// Название: get_backup_file
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: get_backup_file
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+// проверяет существование файла резервной копии по пути из базы Монитор ЭД
+// если файл существует - возвращает его путь, если не существует, возвращает пустую строку
+FUNC ('GetBackupFile',
+  Block(
+    PARAM ('pBackupFile', String, 0);
+    PARAM ('pIncoming', Integer, 1, 1);
+  ),
+  Block(
+    VAR ('sMailBackup', String, REGISTRYREADSTRING ('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\Log\', 'MailBackupDir', ''));
+    IF (FILEEXISTS (pBackupFile) = 0,
+      IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (REGISTRYREADSTRING ('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\Log\', 'MailBackupDir', '')) + INCLUDETRAILINGBACKSLASH (CASE (pIncoming, [1, 'IN', 0, 'OUT'], 'IN')) + pBackupFile),
+        Block(
+          pBackupFile := INCLUDETRAILINGBACKSLASH (REGISTRYREADSTRING ('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\Log\', 'MailBackupDir', '')) + INCLUDETRAILINGBACKSLASH (CASE (pIncoming, [1, 'IN', 0, 'OUT'], 'IN')) + pBackupFile;
+        ),
+        Block(
+          pBackupFile := '';
+        )
+      ); // IF
+    ); // IF
+    pBackupFile
+  )
+), // FUNC - GetBackupFile
+
+

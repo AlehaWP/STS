@@ -1,0 +1,56 @@
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'contractinfo'));
+VAR ('sStatus', String, '');
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 1);
+
+sStatus := 'Договор ВХ доставлен в АСТО';
+sSubStatus := '';
+
+sSQL := 'SELECT' +
+        ' JOURNAL_MASTER_ID, PLACEID, DOGNUMBER, DOGDATE' +
+        ' FROM' +
+        ' CONTRACTINFO' +
+        ' WHERE' +
+        ' DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+OPENQUERY ('qContractInfo', 'dbJournals', sSQL, 1);
+IF (FIELDISNULL ('qContractInfo', 'JOURNAL_MASTER_ID'),
+  Block(
+    // WriteLog - внешняя функция, подключена в скрипте eps.imp
+    WriteLog(
+        'EPSIMP',
+        '(' + sXmlFileName + '): Не найден договор ВХ по параметрам DOCUMENTID: ' + sDocumentId
+    ) // WriteLog
+  ),
+  Block(
+    sSQL := 'UPDATE' +
+            ' CONTRACTINFO' +
+            ' SET' +
+            ' EPS_STATUS=' +char(39)+ sStatus +char(39)+
+            ' WHERE' +
+            ' JOURNAL_MASTER_ID=' + qContractInfo.JOURNAL_MASTER_ID;
+    EXECUTESQL ('dbJournals', sSQL);
+
+    // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+    WriteEpsLog (
+        qContractInfo.PLACEID,
+        0,
+        0,
+        sDocumentId,
+        'Договор ВХ',
+        qContractInfo.DOGNUMBER,
+        qContractInfo.DOGDATE,
+        sStatus,
+        Date()+Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        iReaded,
+        dtDoDt,
+        1
+    ); // WriteEpsLog
+  )
+); // IF
+CLOSEDATASET ('qContractInfo');

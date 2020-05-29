@@ -1,0 +1,79 @@
+// *****************************************************************************
+// Название: whgou_ext
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: whgou_ext
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+
+FUNC ('IsNewWHGoodOut', '',
+  Block(
+    VAR ('iReturnCheckedValue', Integer, 1);
+    // проверяем, что это новое уведомление, которого не было в журнале, а не повторная загрузка уже существующего
+    sSQL := 'SELECT' +
+            ' JOURNAL_MASTER_ID, PRDOCUMENTNUMBER, PRDOCUMENTDATE' +
+            ' FROM' +
+            ' JRGOODOUT2' +
+            ' WHERE' +
+            ' DOCUMENTID=' +char(39)+ xmlMainNode.DocumentID +char(39);
+    OPENQUERY ('qJRGoodOut', 'dbJournals', sSQL, 1);
+    iReturnCheckedValue := FIELDISNULL ('qJRGoodOut', 'JOURNAL_MASTER_ID');
+    CLOSEDATASET ('qJRGoodOut');
+    iReturnCheckedValue
+  )
+); // FUNC - IsNewWHGoodOut
+
+
+// СОЛВО
+VAR ('sSolvoDir', String, INIFILE ('SOLVO', 'WorkDir', ''));
+IF (LENGTH (sSolvoDir) > 0,
+  Block (
+    sSolvoDir := INCLUDETRAILINGBACKSLASH (sSolvoDir) + 'PERM_OUT\';
+    IF (DIRECTORYEXISTS (sSolvoDir),
+      Block (
+        IF (IsNewWHGoodOut(),
+          Block(
+            COPYFILE (sXmlFilePath, sSolvoDir + sXmlFileName);
+            IF (FILEEXISTS (sSolvoDir + sXmlFileName) = 0, WriteLog('EPSIMP', '(' + sXmlFileName + '): не удалось скопировать в каталог SOLVO: ' + sSolvoDir));
+          )
+        ); // IF
+      )
+    ); // IF
+  )
+); // IF
+
+
+// ПОРТ БРОНКА
+// если включена настройка экспорта
+// и каалог обмена существуе - копируем в него Уведомление
+IF (INIFILE ('Bronka', 'ExportWHGoodOut', 0) = 1,
+  Block(
+    VAR('sDirExpPath', string, INIFILE ('BronkaDir', 'WHGoodOutDir', 'Z:\STMxml\WHGoodOut\'));
+    IF (DIRECTORYEXISTS (sDirExpPath) <> 1, FORCEDIRECTORIES(sDirExpPath));
+    IF (DIRECTORYEXISTS (sDirExpPath) = 1,
+      Block(
+        IF (IsNewWHGoodOut(),
+          COPYFILE (sXmlFilePath, INCLUDETRAILINGBACKSLASH (sDirExpPath) + sXmlFileName)
+        ); // IF
+      )
+    ); // IF
+  )
+); // IF
+
+
+// МОРСКОЙ РЫБНЫЙ ПОРТ
+// если каталог задан (есть в ini-файле) и существует, то копируем в него пришедшее Уведомление
+IF ((INIFILE ('MRP', 'WHGOU_OUT', '') <> '') * (DIRECTORYEXISTS (INIFILE ('MRP', 'WHGOU_OUT', ''))),
+  Block(
+    IF (IsNewWHGoodOut(),
+      COPYFILE (sXmlFilePath, INCLUDETRAILINGBACKSLASH (INIFILE ('MRP', 'WHGOU_OUT', '')) + sXmlFileName);
+    ); // IF
+  )
+); // IF

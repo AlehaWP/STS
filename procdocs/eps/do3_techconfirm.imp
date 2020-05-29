@@ -1,0 +1,64 @@
+// *****************************************************************************
+// Название: do3_techconfirm
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: do3_techconfirm
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, 0);
+VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'do3id'));
+VAR ('sStatus', String, 'ДО-3 доставлена в АСТО');
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 1);
+
+sSQL := 'SELECT' +
+        ' JOURNAL_MASTER_ID, PLACEID, REPORTNUMBER, REPORTDATE' +
+        ' FROM JRDO3' +
+        ' WHERE' +
+        ' UPPER(REFDOCUMENTID)=' +char(39)+ UPPERSTR(sDocumentId) +char(39);
+
+OPENQUERY ('qJRDO3', 'dbJournals', sSQL, 1);
+IF (FIELDISNULL ('qJRDO3', 'JOURNAL_MASTER_ID'),
+  Block(
+    // внешняя функция WriteLog подключена в скрипте eps.imp
+    WriteLog(
+        'EPSIMP',
+        '(' + sXmlFileName + '): Не найден отчет ДО-3 с идентификатором ' + sDocumentId
+    ); // WriteLog
+  ),
+  Block(
+    sSQL := 'UPDATE' +
+            ' JRDO3' +
+            ' SET' +
+            ' CUSTOMSTATE=' +char(39)+ sStatus +char(39)+
+            ' WHERE' +
+            ' JOURNAL_MASTER_ID=' + qJRDO3.JOURNAL_MASTER_ID;
+    EXECUTESQL ('dbJournals', sSQL);
+
+    // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+    WriteEpsLog (
+        qJRDO3.PLACEID,
+        0,
+        0,
+        sDocumentId,
+        'ДО-3',
+        qJRDO3.REPORTNUMBER,
+        qJRDO3.REPORTDATE,
+        sStatus,
+        Date()+Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        iReaded,
+        dtDoDt,
+        0
+    ); // WriteEpsLog
+  )
+); // IF
+CLOSEDATASET ('qJRDO3');

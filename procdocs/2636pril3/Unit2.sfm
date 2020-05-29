@@ -1,0 +1,402 @@
+﻿object Form2: TScriptMultiLanguageForm
+  Caption = #1054#1090#1095#1077#1090#1085#1086#1089#1090#1100' '#1086' '#1090#1086#1074#1072#1088#1072#1093' ('#1087#1088#1080#1083'. 3 '#1087#1088'. '#8470' 2636)'
+  ClientHeight = 381
+  ClientWidth = 544
+  Color = 15723755
+  Constraints.MaxHeight = 420
+  Constraints.MaxWidth = 560
+  Constraints.MinHeight = 413
+  Constraints.MinWidth = 554
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = 3481376
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'BorderStyle=bsSingle'
+    'Position=poScreenCenter')
+  SaveEvents.Strings = (
+    
+      'beLicenceNo.Properties.OnButtonClick=beLicenceNoPropertiesButton' +
+      'Click'
+    'btnOK.OnClick=btnOKClick'
+    'Self.OnCreate=Form2Create'
+    
+      'beReportNumber.Properties.OnButtonClick=beReportNumberProperties' +
+      'ButtonClick')
+  DesignSize = (
+    544
+    381)
+  PixelsPerInch = 96
+  TextHeight = 13
+  object gbWarehouse: TcxGroupBox
+    Left = 0
+    Top = 0
+    Hint = ''
+    Align = alTop
+    Caption = #1052#1077#1089#1090#1086' '#1093#1088#1072#1085#1077#1085#1080#1103
+    ParentFont = False
+    Style.Font.Charset = DEFAULT_CHARSET
+    Style.Font.Color = 3481376
+    Style.Font.Height = -11
+    Style.Font.Name = 'Tahoma'
+    Style.Font.Style = [fsBold]
+    Style.IsFontAssigned = True
+    TabOrder = 2
+    Height = 113
+    Width = 544
+    object teLicenceName: TcxTextEdit
+      Left = 8
+      Top = 72
+      Hint = ''
+      TabStop = False
+      ParentFont = False
+      Properties.ReadOnly = True
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 0
+      Width = 521
+    end
+    object lblLicenceNo: TcxLabel
+      Left = 8
+      Top = 26
+      Hint = ''
+      Caption = #8470' '#1083#1080#1094#1077#1085#1079#1080#1080
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+    end
+    object lblLicenceDate: TcxLabel
+      Left = 344
+      Top = 26
+      Hint = ''
+      Caption = #1086#1090
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 2
+    end
+    object lblLicenceName: TcxLabel
+      Left = 8
+      Top = 56
+      Hint = ''
+      Caption = #1053#1072#1080#1084#1077#1085#1086#1074#1072#1085#1080#1077' '#1084#1077#1089#1090#1072' '#1093#1088#1072#1085#1077#1085#1080#1103
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 3
+    end
+    object beLicenceNo: TcxButtonEdit
+      Left = 80
+      Top = 24
+      Hint = ''
+      TabStop = False
+      ParentFont = False
+      Properties.Buttons = <
+        item
+          Default = True
+          Kind = bkEllipsis
+        end>
+      Properties.ReadOnly = True
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 4
+      Width = 257
+    end
+  end
+  object gbPeriod: TcxGroupBox
+    Left = 280
+    Top = 200
+    Hint = ''
+    Caption = #1055#1077#1088#1080#1086#1076
+    ParentFont = False
+    Style.Font.Charset = DEFAULT_CHARSET
+    Style.Font.Color = 3481376
+    Style.Font.Height = -11
+    Style.Font.Name = 'Tahoma'
+    Style.Font.Style = [fsBold]
+    Style.IsFontAssigned = True
+    TabOrder = 3
+    Height = 80
+    Width = 264
+    object dtBegin: TcxDateEdit
+      Left = 128
+      Top = 16
+      Hint = ''
+      FindSelection = False
+      ParentFont = False
+      Properties.Buttons = <
+        item
+        end>
+      Properties.GlyphButtonIndex = 0
+      Properties.Alignment.Horz = taCenter
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 0
+      Width = 121
+    end
+    object dtEnd: TcxDateEdit
+      Left = 128
+      Top = 40
+      Hint = ''
+      FindSelection = False
+      ParentFont = False
+      Properties.Buttons = <
+        item
+        end>
+      Properties.GlyphButtonIndex = 0
+      Properties.Alignment.Horz = taCenter
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+      Width = 121
+    end
+    object lblBegin: TcxLabel
+      Left = 8
+      Top = 18
+      Hint = ''
+      Caption = #1076#1072#1090#1072' '#1085#1072#1095#1072#1083#1072
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 2
+    end
+    object конец: TcxLabel
+      Left = 8
+      Top = 42
+      Hint = ''
+      Caption = #1076#1072#1090#1072' '#1086#1082#1086#1085#1095#1072#1085#1080#1103
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 3
+    end
+  end
+  object gbWarehousePerson: TcxGroupBox
+    Left = 0
+    Top = 113
+    Hint = ''
+    Align = alTop
+    Caption = #1055#1088#1077#1076#1089#1090#1072#1074#1080#1090#1077#1083#1100' '#1084#1077#1089#1090#1072' '#1093#1088#1072#1085#1077#1085#1080#1103
+    ParentFont = False
+    Style.Font.Charset = DEFAULT_CHARSET
+    Style.Font.Color = 3481376
+    Style.Font.Height = -11
+    Style.Font.Name = 'Tahoma'
+    Style.Font.Style = [fsBold]
+    Style.IsFontAssigned = True
+    TabOrder = 4
+    Height = 87
+    Width = 544
+    object tePersonFullName: TcxTextEdit
+      Left = 128
+      Top = 24
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 0
+      Width = 401
+    end
+    object tePersonPost: TcxTextEdit
+      Left = 128
+      Top = 48
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+      Width = 401
+    end
+    object lblPersonFullName: TcxLabel
+      Left = 8
+      Top = 26
+      Hint = ''
+      Caption = #1048#1085#1080#1094#1080#1072#1083#1099', '#1092#1072#1084#1080#1083#1080#1103
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 2
+    end
+    object lblPersonPost: TcxLabel
+      Left = 8
+      Top = 50
+      Hint = ''
+      Caption = #1044#1086#1083#1078#1085#1086#1089#1090#1100
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 3
+    end
+  end
+  object btnOK: TcxButton
+    Left = 385
+    Top = 351
+    Width = 75
+    Height = 25
+    Anchors = [akRight, akBottom]
+    Caption = 'OK'
+    ModalResult = 1
+    TabOrder = 0
+  end
+  object btnCancel: TcxButton
+    Left = 465
+    Top = 351
+    Width = 75
+    Height = 25
+    Anchors = [akRight, akBottom]
+    Caption = #1054#1090#1084#1077#1085#1072
+    ModalResult = 2
+    TabOrder = 1
+  end
+  object gbDirectory: TcxGroupBox
+    Left = 0
+    Top = 280
+    Hint = ''
+    Caption = #1050#1072#1090#1072#1083#1086#1075#1076#1083#1103' '#1089#1086#1093#1088#1072#1085#1077#1085#1080#1103' '#1092#1072#1081#1083#1072
+    ParentFont = False
+    Style.Font.Charset = DEFAULT_CHARSET
+    Style.Font.Color = 3481376
+    Style.Font.Height = -11
+    Style.Font.Name = 'Tahoma'
+    Style.Font.Style = [fsBold]
+    Style.IsFontAssigned = True
+    TabOrder = 5
+    Height = 65
+    Width = 545
+    object deDirectory: TcxDirectoryEdit
+      Left = 8
+      Top = 24
+      Hint = ''
+      ParentFont = False
+      Properties.Buttons = <
+        item
+          Default = True
+          ImageIndex = 3
+          Images = MultiLanguageDataModule.ilDefaultOfficeImages16
+          Kind = bkGlyph
+        end>
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 0
+      DialogTitle = #1042#1099#1073#1086#1088' '#1082#1072#1090#1072#1083#1086#1075#1072
+      RootFolder = ftDrives
+      ShowFiles = False
+      Width = 521
+    end
+  end
+  object cxGroupBox1: TcxGroupBox
+    Left = 0
+    Top = 200
+    Hint = ''
+    Caption = #1054#1090#1095#1077#1090
+    ParentFont = False
+    Style.Font.Charset = DEFAULT_CHARSET
+    Style.Font.Color = 3481376
+    Style.Font.Height = -11
+    Style.Font.Name = 'Tahoma'
+    Style.Font.Style = [fsBold]
+    Style.IsFontAssigned = True
+    TabOrder = 6
+    Height = 81
+    Width = 281
+    object lblReportNumber: TcxLabel
+      Left = 8
+      Top = 34
+      Hint = ''
+      Caption = #1053#1086#1084#1077#1088' '#1086#1090#1095#1077#1090#1072
+      ParentFont = False
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 0
+    end
+    object beReportNumber: TcxButtonEdit
+      Left = 128
+      Top = 32
+      Hint = ''
+      ParentFont = False
+      Properties.Buttons = <
+        item
+          Default = True
+          Kind = bkEllipsis
+        end>
+      Style.Font.Charset = DEFAULT_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -11
+      Style.Font.Name = 'Tahoma'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+      Width = 137
+    end
+  end
+end

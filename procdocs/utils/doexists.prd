@@ -1,0 +1,46 @@
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+FUNC ('DOExists',
+  Block(
+    PARAM ('pPlaceId', Integer, 0);
+    PARAM ('pDocumentId', String, 1, '');
+    PARAM ('pCounter', Integer, 2, 0);
+  ),
+  Block(
+    VAR ('bReturn', Boolean, false);
+
+    IF (pCounter = 0,
+      Block(
+        // форма ДО-1
+        sSQL := 'SELECT PLACEID' +
+                ' FROM KRD_MAIN' +
+                ' WHERE' +
+                ' PLACEID=' + pPlaceId +
+                ' AND DOCUMENTID=' +char(39)+ pDocumentId +char(39);
+      ),
+      Block(
+        // форма ДО-2
+        sSQL := 'SELECT PLACEID' +
+                ' FROM ' + CORRECTTABLENAME ('RELEASE') +
+                ' WHERE' +
+                ' PLACEID=' + pPlaceId +
+                ' AND DOCUMENTID=' +char(39)+ pDocumentId +char(39)+
+                ' AND COUNTER=' + pCounter;
+      )
+    ); // IF
+
+    OPENQUERY ('qDOExists', 'STS_DB', sSQL, 1);
+    IF (FIELDISNULL ('qDOExists', 'PLACEID'),
+      bReturn := false,
+      bReturn := true
+    ); // IF
+    CLOSEDATASET ('qDOExists');
+
+    bReturn
+  )
+),  // FUNC - DOExists
+
+{
+showmessage (DOExists (1, 'A2407A81-FD57-4011-81BF-F1FCC8FC8311'), 1);
+showmessage (DOExists (1, 'D1208975-5588-4B5C-980E-BDEC537C6BED', 1), 1);
+}

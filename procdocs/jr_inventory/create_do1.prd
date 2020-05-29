@@ -1,0 +1,126 @@
+// *****************************************************************************
+// Название: create_do1 (from inventory)
+// Описание:
+// Кнопка вызова: 0
+// Подпись кнопки: create_do1
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
+
+FUNC ('AddNotification', '',
+  Block(
+    OPENQUERY ('qNewMessages', 'SELECT DOCSTATUS FROM EPS_LOG WHERE READED=' +char(39)+ '0' +char(39), 'dbJournals');
+
+    VAR ('iMessageNo', Integer, RECORDCOUNT ('qNewMessages'));
+    VAR ('sMessageText', String, '');
+
+    IF (iMessageNo > 0,
+      Block(
+        LAST ('qNewMessages');
+        sMessageText := qNewMessages.DOCSTATUS;
+        //SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\show_notifications.prd', sMessageText);
+        SETSTATUSBARHINT ('Новое сообщение (' + iMessageNo + ')', '65535', '0', INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + '\ProcDocs\eps_show_notifications\eps_show_notifications.ssproj', sMessageText);
+      ),
+      Block(
+        SETSTATUSBARHINT ('', '', '', '');
+      )
+    );
+    CLOSEDATASET ('qNewMessages');
+  )
+), // FUNC - AddNotification()
+
+
+TRYEXCEPT (
+  Block(
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\open_monitor_db.prd');
+
+    sSQL := 'SELECT' +
+            ' BACKUPFILE, INCOMING' +
+            ' FROM ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' MSGID IN (' +char(39)+ 'CMN.13029' +char(39)+ ',' +char(39)+ 'CMN.13005' +char(39)+ ')' +
+            ' AND WHDOCID=' +char(39)+ INVENTORY.REGNUMBERDOC +char(39);
+    OPENQUERY ('qInventory', 'dbMonitor', sSQL, 1);
+    //SELECTRECORDS ('111', 'qInventory', [], 'qs', '', 'STS_DB');
+
+    IF (FIELDISNULL ('qInventory', 'BackupFile'), RAISEEXCEPTION ('Не найден протокол описи с номером ' +char(39)+ INVENTORY.REGNUMBERDOC +char(39)));
+    // подключение функции GetBackupFile
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\utils\get_backup_file.prd');
+    VAR ('sBackupFile', String, GetBackupFile (qInventory.BACKUPFILE, qInventory.INCOMING));
+    IF (FILEEXISTS (sBackupFile)=0, RAISEEXCEPTION ('Отсутствует файл резервной копии Описи документов, создание формы ДО-1 невозможно.'));
+
+    VAR ('xmlDocument', Integer, XMLDOCUMENTCREATE ());
+    XMLDOCUMENTLOAD (xmlDocument, sBackupFile);
+
+    // элемент xmlRoot используется субскриптом do1_from_inventory.prd
+    VAR ('xmlRoot', Integer, XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (xmlDocument), 0), 'Body'), 'Signature'), 'Object') );
+    XMLNODESETATTRIBUTE (XMLNODECHILD (xmlRoot, 0), 'dodt', FDT ('DD.MM.YYYY HH:NN:SS', Date()+Time(1)));
+
+    TRYFINALLY (
+      Block(
+        VAR ('iRunScript', Integer, 1);
+        // проверить есть ли в базе ДО-1 с таким номером Описи
+        // если есть - выдать задаем вопрос подтверждение
+        sSQL := 'SELECT DISTINCT' +
+                ' NBD, BD_DATE' +
+                ' FROM KRD_MAIN' +
+                ' WHERE' +
+                ' PP=' +char(39)+ INVENTORY.REGNUMBERDOC +char(39);
+        OPENQUERY ('qDO1', 'STS_DB', sSQL, 1);
+        IF (FIELDISNULL ('qDO1', 'NBD') = 0,
+          Block(
+            VAR ('sMsgText', String, 'В книге учета уже есть отчет(-ы) на основе Описи документов № ' + INVENTORY.REGNUMBERDOC + '.' + char(13));
+            IF (RECORDCOUNT ('qDO1', 1) > 1,
+              sMsgText := sMsgText + ' - Формы ДО-1 №№ ' + UNIONVALUES ('qDO1', ['NBD'], ',', ''),
+              sMsgText := sMsgText + ' - Форма ДО-1 № ' + qDO1.NBD + ' от ' + FDT ('DD.MM.YYYY', qDO1.BD_DATE)
+            ); // IF
+            sMsgText := sMsgText +char(13)+char(13)+ 'Продолжить создание нового отчета ДО-1?';
+            iRunScript := YESNO (sMsgText)
+          )
+        ); // IF
+        CLOSEDATASET ('qDO1');
+
+        IF (iRunScript,
+          EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'PROCDOCS\do1_from_inventory.prd'),
+          RAISEEXCEPTION ('Отменено пользователем')
+        ); // IF
+        // strStatus и sSubStatus объявлены в скрипта do1_from_inventory
+
+        WriteEpsLog (vPLACEID,
+                0,
+                0,
+                DocId,
+                DoType,
+                DoNo,
+                DoDate,
+                strStatus,
+                dRegDate,
+                sJourGUID,
+                sSubStatus,
+                sBackupFile,
+                0,
+                DoDt,
+                2
+        ); // WriteEpsLog - //
+
+        AddNotification();
+        SHOWMESSAGE ('Выполнение завершено. ' +char(13)+char(13)+ strStatus +char(13)+ sSubStatus, 0, 'Создание ДО-1 из Описи документов');
+      ),
+      Block(
+        XMLDESTROY (xmlDocument);
+      )
+    ); // TRYFINALLY
+
+    CLOSEDATASET ('qInventory');
+    CLOSEDATABASE ('dbMonitor');
+  ),
+  Block(
+    SHOWMESSAGE ('Ошибка: ' + EXCEPTIONMESSAGE (), 2, 'Создание ДО-1 из Описи документов');
+  )
+); // TRYEXCEPT

@@ -1,0 +1,251 @@
+// *****************************************************************************
+// Название: создание коммерческого акта из уведомления о выпуске товара
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: КА > Ув
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT (IncludeTrailingBackslash (ProgramPath ()) + 'ProcDocs\sql_insert.prd');
+
+
+FUNC ('CreateCommAct',
+  Block(
+    PARAM ('pJMID', String, 0);
+    PARAM ('pReasons', Memo, 1);
+    PARAM ('pPersonInfo', String, 2);
+  ),
+  Block(
+    VAR ('sGenDocNo', String, INIFILE ('Docs', 'MakeCA_No', 'LEFTPAD(GENNO("CA_KPS"+' + KRD_MAIN.PLACEID + ', "№ комм. акта"), 7, "0")'));
+    sGenDocNo := REGEXREPLACE (sGenDocNo, 'KRD_MAIN.PLACEID', KRD_MAIN.PLACEID, 1);
+    VAR ('sSQL', String, '');
+    VAR ('iCounter', Integer, 1);
+    VAR ('iDocOrderNumber', Integer, 1);
+    VAR ('iG32', Integer, 1);
+    VAR ('sAcceptDate', String, '');
+    VAR ('sStorageDate', String, '');
+    VAR ('sStorageType', String, '');
+    VAR ('iNTTN', Integer, 1);
+
+    sSQL := 'SELECT MAX (COUNTER) AS MC, MAX (DOC_ORDER_NUMBER) AS DON FROM KRD_DOP WHERE PLACEID=' + KRD_MAIN.PLACEID + ' AND ID=' + KRD_MAIN.ID;
+    OPENQUERY ('qMCounter', 'STS_DB', sSQL, 1);
+    iCounter := qMCounter.MC + 1;
+    iDocOrderNumber := qMCounter.DON + 1;
+    CLOSEDATASET ('qMCounter');
+
+
+    // Добавляем коммерческий акт
+    Insert ('KRD_DOP', 'PLACEID', KRD_MAIN.PLACEID, 1);
+    Insert ('', , 'ID', KRD_MAIN.ID, 1);
+    Insert ('', 'COUNTER', iCounter, 1);
+    Insert ('', 'DOC_NAME', 'Коммерческий акт', 0);
+    Insert ('', 'DOC_NO', SOLVE (sGenDocNo), 0);
+    Insert ('', 'DOC_DATETIME', Date() + Time(1), 2);
+    Insert ('', 'DOC_ORDER_NUMBER', iDocOrderNumber, 1);
+    Insert ('', 'DOC_SDM_STAGE', 1, 1);
+    Insert ('', 'DOC_SDM_DATETIME', Date() + Time(1), 2);
+    Insert ('', 'REASONS', pReasons, 0);
+    Insert ('', 'WAREHOUSEPERSON_SURNAME', EXTRACTSTR (pPersonInfo, 1, ';'), 0);
+    Insert ('', 'WAREHOUSEPERSON_NAME', EXTRACTSTR (pPersonInfo, 2, ';'), 0);
+    Insert ('', 'WAREHOUSEPERSON_MDLNAME', EXTRACTSTR (pPersonInfo, 3, ';'), 0);
+    Insert ('', 'WAREHOUSEPERSON_POST', EXTRACTSTR (pPersonInfo, 4, ';'), 0);
+    Insert ('', '', '', 0, 'STS_DB');
+
+
+    // Добавляем несоответствия
+    sSQL := 'SELECT * FROM GOODINFO2 WHERE JOURNAL_MASTER_ID IN (' + pJMID + ') ORDER BY JOURNAL_MASTER_ID, JOURNAL_CHILD_ID';
+    OPENQUERY ('qGoods', sSQL, 'dbJournals', 1);
+
+    FIRST ('KRD_COMM');
+    FIRST ('qGoods');
+    WHILE (EOF ('KRD_COMM') = 0,
+      Block(
+        iG32 := KRD_COMM.G32;
+
+        sAcceptDate := KRD_COMM.ACCEPTDATE;
+        sStorageDate := KRD_COMM.STORAGE_DATE;
+        sStorageType := KRD_COMM.STORAGE_TYPE;
+        iNTTN := KRD_COMM.N_TTN;
+
+        IF (EOF ('qGoods') = 0,
+          Block(
+            // изменяем харакретистики товара
+            //showmessage ('изменяем товар ' + iG32);
+            Insert ('KRD_CSDM', 'PLACEID', KRD_MAIN.PLACEID, 1);
+            Insert ('', 'ID', KRD_MAIN.ID, 1);
+            Insert ('', 'G32', iG32, 1);
+            Insert ('', 'COUNTER', iCounter, 1);
+            Insert ('', 'SDM_KIND', 0, 0);
+            Insert ('', 'SDM_DATETIME', Date() + Time(1), 2);
+            Insert ('', 'DOC_G311', KRD_COMM.G311, 1);
+            Insert ('', 'FACT_G311', qGoods.PlaceNumber, 1);
+            Insert ('', 'DOC_G312', KRD_COMM.G312, 0);
+            Insert ('', 'FACT_G312', qGoods.GoodsDescription, 0);
+            Insert ('', 'DOC_G313', KRD_COMM.G313, 0);
+            Insert ('', 'FACT_G313', qGoods.PlaceDescription, 0);
+            Insert ('', 'DOC_G313_CODE', KRD_COMM.G313_CODE, 0);
+            Insert ('', 'FACT_G313_CODE', qGoods.PackageCode, 0);
+            Insert ('', 'DOC_G315', KRD_COMM.G315, 0);
+            Insert ('', 'FACT_G315', qGoods.MeasureName, 0);
+            Insert ('', 'DOC_G315A', KRD_COMM.G315A, 1);
+            Insert ('', 'FACT_G315A', qGoods.MeasureQuantity, 1);
+            Insert ('', 'DOC_G41A', KRD_COMM.G41A, 0);
+            Insert ('', 'FACT_G41A', qGoods.MeasureCode, 0);
+            Insert ('', 'DOC_G42', KRD_COMM.G42, 1);
+            Insert ('', 'FACT_G42', qGoods.InvoiceCost, 1);
+            Insert ('', 'DOC_G42_CURRENCY', KRD_COMM.G42_CURRENCY, 0);
+            Insert ('', 'FACT_G42_CURRENCY', CURRENCYCODE (qGoods.CurrencyCode), 0);
+            Insert ('', 'DOC_G35', KRD_COMM.G35, 1);
+            Insert ('', 'FACT_G35', qGoods.BruttoVolQuantity, 1);
+            Insert ('', 'DOC_G33', KRD_COMM.G33, 0);
+            Insert ('', 'FACT_G33', qGoods.GoodsTNVEDCode, 0);
+            Insert ('', '', '', 0, 'STS_DB');
+
+            sSQL := 'UPDATE KRD_COMM SET ' +
+                    'G311=' + qGoods.PlaceNumber +
+                    ', G312=' +char(39)+ qGoods.GoodsDescription +char(39)+
+                    ', G313=' +char(39)+ qGoods.PlaceDescription +char(39)+
+                    ', G313_CODE=' +char(39)+ qGoods.PackageCode +char(39)+
+                    ', G315=' +char(39)+ qGoods.MeasureName +char(39)+
+                    ', G315A=' + qGoods.MeasureQuantity +
+                    ', G41A=' +char(39)+ qGoods.MeasureCode +char(39)+
+                    ', G42=' + qGoods.InvoiceCost +
+                    ', G42_CURRENCY=' +char(39)+ CURRENCYCODE (qGoods.CurrencyCode) +char(39)+
+                    ', VALCODE=' +char(39)+ qGoods.CurrencyCode +char(39)+
+                    ', G35=' + qGoods.BruttoVolQuantity +
+                    ', G33=' +char(39)+ qGoods.GoodsTNVEDCode +char(39)+
+                    ' WHERE ' +
+                    ' PLACEID=' + KRD_COMM.PLACEID +
+                    ' AND ID=' + KRD_COMM.ID +
+                    ' AND G32=' + KRD_COMM.G32;
+            EXECUTESQL ('STS_DB', sSQL);
+            NEXT ('qGoods');
+          ),
+          Block(
+            // товар отсутствует по факту (в ДТ меньше товаров, чем в ДО-1
+            // изменяем харакретистики товара
+            //showmessage ('изменяем товар ' + iG32);
+            Insert ('KRD_CSDM', 'PLACEID', KRD_MAIN.PLACEID, 1);
+            Insert ('', 'ID', KRD_MAIN.ID, 1);
+            Insert ('', 'G32', iG32, 1);
+            Insert ('', 'COUNTER', iCounter, 1);
+            Insert ('', 'SDM_KIND', 1, 1);
+            Insert ('', 'SDM_DATETIME', Date() + Time(1), 2);
+            Insert ('', 'DOC_G311', KRD_COMM.G311, 1);
+            Insert ('', 'FACT_G311', 0, 1);
+            Insert ('', 'DOC_G312', KRD_COMM.G312, 0);
+            Insert ('', 'FACT_G312', '', 0);
+            Insert ('', 'DOC_G313', KRD_COMM.G313, 0);
+            Insert ('', 'FACT_G313', '', 0);
+            Insert ('', 'DOC_G313_CODE', KRD_COMM.G313_CODE, 0);
+            Insert ('', 'FACT_G313_CODE', '', 0);
+            Insert ('', 'DOC_G315', KRD_COMM.G315, 0);
+            Insert ('', 'FACT_G315', '', 0);
+            Insert ('', 'DOC_G315A', KRD_COMM.G315A, 1);
+            Insert ('', 'FACT_G315A', 0, 1);
+            Insert ('', 'DOC_G41A', KRD_COMM.G41A, 0);
+            Insert ('', 'FACT_G41A', '', 0);
+            Insert ('', 'DOC_G42', KRD_COMM.G42, 1);
+            Insert ('', 'FACT_G42', 0, 1);
+            Insert ('', 'DOC_G42_CURRENCY', KRD_COMM.G42_CURRENCY, 0);
+            Insert ('', 'FACT_G42_CURRENCY', '', 0);
+            Insert ('', 'DOC_G35', KRD_COMM.G35, 1);
+            Insert ('', 'FACT_G35', 0, 1);
+            Insert ('', 'DOC_G33', KRD_COMM.G33, 0);
+            Insert ('', 'FACT_G33', '', 0);
+            Insert ('', '', '', 0, 'STS_DB');
+
+            sSQL := 'UPDATE KRD_COMM SET ' +
+                    'G311=NULL' +
+                    ', G312=NULL' +
+                    ', G313=NULL' +
+                    ', G313_CODE=NULL' +
+                    ', G315=NULL' +
+                    ', G315A=NULL' +
+                    ', G41A=NULL' +
+                    ', G42=NULL' + 
+                    ', G42_CURRENCY=NULL' +
+                    ', G35=NULL' + 
+                    ', G33=NULL' +
+                    ' WHERE ' +
+                    ' PLACEID=' + KRD_COMM.PLACEID +
+                    ' AND ID=' + KRD_COMM.ID +
+                    ' AND G32=' + KRD_COMM.G32;
+            EXECUTESQL ('STS_DB', sSQL);
+            //showmessage ('списываем товар ' + iG32);
+          )
+        );
+        NEXT ('KRD_COMM');
+      )
+    );  // WHILE
+
+    WHILE (EOF ('qGoods') = 0,
+      Block(
+        iG32 := iG32 + 1;
+        // дополнительный (лишний товар)
+        Insert ('KRD_COMM', 'PLACEID', KRD_MAIN.PLACEID, 1);
+        Insert ('', 'ID', KRD_MAIN.ID, 1);
+        Insert ('', 'G32', iG32, 1);
+        Insert ('', 'GN', iG32, 1);
+        Insert ('', 'G311', qGoods.PlaceNumber, 1);
+        Insert ('', 'G312', qGoods.GoodsDescription, 0);
+        Insert ('', 'G313', qGoods.PlaceDescription, 0);
+        Insert ('', 'G313_CODE', qGoods.PackageCode, 0);
+        Insert ('', 'G315', qGoods.MeasureName, 0);
+        Insert ('', 'G315A', qGoods.MeasureQuantity, 1);
+        Insert ('', 'G41A', qGoods.MeasureCode, 0);
+        Insert ('', 'G42', qGoods.InvoiceCost, 1);
+        Insert ('', 'G42_CURRENCY', CURRENCYCODE (qGoods.CurrencyCode), 0);
+        Insert ('', 'VALCODE', qGoods.CurrencyCode, 0);
+        Insert ('', 'G35', qGoods.BruttoVolQuantity, 1);
+        Insert ('', 'G33', qGoods.GoodsTNVEDCode, 0);
+        Insert ('', 'BOXNO', SOLVE (IniFile ('Docs', 'BoxNoExpr', CUSTOMSNOPART (KRD_MAIN.NBD, 3, RIGHT (KRD_MAIN.NBD, 7))+ '/' + LEFTPAD(KRD_COMM.GN, "6", "0"))), 0);
+        Insert ('', 'STORAGE_DATE', sStorageDate, 2);
+        Insert ('', 'STORAGE_TYPE', sStorageType, 0);
+        Insert ('', 'ACCEPTDATE', sAcceptDate, 2);
+        Insert ('', 'N_TTN', iNTTN, 1);
+        Insert ('', 'N_TTN_G32', iG32, 1);
+        Insert ('', '', '', 0, 'STS_DB');
+
+        Insert ('KRD_CSDM', 'PLACEID', KRD_MAIN.PLACEID, 1);
+        Insert ('', 'ID', KRD_MAIN.ID, 1);
+        Insert ('', 'G32', iG32, 1);
+        Insert ('', 'COUNTER', iCounter, 1);
+        Insert ('', 'SDM_KIND', 2, 1);
+        Insert ('', 'SDM_DATETIME', Date() + Time(1), 2);
+        Insert ('', 'FACT_G311', qGoods.PlaceNumber, 1);
+        Insert ('', 'FACT_G312', qGoods.GoodsDescription, 0);
+        Insert ('', 'FACT_G313', qGoods.PlaceDescription, 0);
+        Insert ('', 'FACT_G313_CODE', qGoods.PackageCode, 0);
+        Insert ('', 'FACT_G315', qGoods.MeasureName, 0);
+        Insert ('', 'FACT_G315A', qGoods.MeasureQuantity, 1);
+        Insert ('', 'FACT_G41A', qGoods.MeasureCode, 0);
+        Insert ('', 'FACT_G42', qGoods.InvoiceCost, 1);
+        Insert ('', 'FACT_G42_CURRENCY', CURRENCYCODE (qGoods.CurrencyCode), 0);
+        Insert ('', 'FACT_G35', qGoods.BruttoVolQuantity, 1);
+        Insert ('', 'FACT_G33', qGoods.GoodsTNVEDCode, 0);
+        Insert ('', 'FACT_BOXNO', SOLVE (IniFile ('Docs', 'BoxNoExpr', CUSTOMSNOPART (KRD_MAIN.NBD, 3, RIGHT (KRD_MAIN.NBD, 7))+ '/' + LEFTPAD(KRD_COMM.GN, "6", "0"))), 0);
+        Insert ('', 'FACT_ACCEPTDATE', sAcceptDate, 2);
+        Insert ('', 'FACT_STORAGE_DATE', sStorageDate, 2);
+        Insert ('', 'FACT_STORAGE_TYPE', sStorageType, 0);
+        Insert ('', '', '', 0, 'STS_DB');
+        //showmessage ('добавляем товар товар ' + iG32);
+        NEXT ('qGoods');
+      )
+    ); // WHILE
+    CLOSEDATASET ('qGoods');
+
+    REFRESH ('KRD_MAIN');
+    REFRESH ('KRD_COMM');
+    REFRESH ('KRD_DOP');
+  )
+),  // FUNC - CreateCommAct
+
+
+
+
+//CreateCommAct ('248,69');
+//CreateCommAct ('248', 'reasons', 'f;i;o;post');

@@ -1,0 +1,52 @@
+// *****************************************************************************
+// Название: do2_techconfirm
+// Описание:
+// Кнопка вызова: 0
+// Подпись кнопки: do2_techconfirm
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, XMLNODEATTRIBUTE (xmlMainNode, 'whid'));
+VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'do1id'));
+VAR ('iCounter', Integer, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do2id'), XMLNODEATTRIBUTE (xmlMainNode, 'do2id'), 0));
+VAR ('iReaded', Integer, 1);
+VAR ('sStatus', String, '');
+VAR ('sSubStatus', String, '');
+
+IF (LOCATE ('REL_MAIN_2', 'PLACEID;DOCUMENTID;COUNTER', [iPlaceId, sDocumentId, iCounter]),
+  Block(
+    sStatus := 'ДО-2 №' + REL_MAIN_2.RELEASE_NO + ' доставлена в АСТО';
+    sSQL := 'UPDATE' +
+            ' KRD_MAIN' +
+            ' SET' +
+            ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+            ' WHERE' +
+            ' PLACEID=' + REL_MAIN_2.PLACEID +
+            ' AND MAIN_ID=' + REL_MAIN_2.MAIN_ID;
+    EXECUTESQL ('STS_DB', sSQL);
+
+    // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+    WriteEpsLog (
+        REL_MAIN_2.PLACEID,
+        REL_MAIN_2.MAIN_ID,
+        REL_MAIN_2.MAIN_COUNTER,
+        REL_MAIN_2.DOCUMENTID,
+        'ДО-2',
+        REL_MAIN_2.RELEASE_NO,
+        REL_MAIN_2.OUT_DATE,
+        sStatus,
+        Date()+Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        iReaded,
+        dtDoDt,
+        0
+    ); // WriteEpsLog
+  )
+); // IF

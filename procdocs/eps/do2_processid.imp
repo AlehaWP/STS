@@ -1,0 +1,57 @@
+// *****************************************************************************
+// Название: do2_processid
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: do2_processid
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, XMLNODEATTRIBUTE (xmlMainNode, 'whid'));
+VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'do1id'));
+VAR ('iCounter', Integer, XMLNODEATTRIBUTE (xmlMainNode, 'do2id'));
+
+IF (LOCATE ('REL_MAIN_2', 'PLACEID;DOCUMENTID;COUNTER', [iPlaceId, sDocumentId, iCounter]),
+  Block(
+    sSQL := 'UPDATE' +
+            ' ' + correcttablename ('RELEASE') +
+            ' SET' +
+            ' PROCESSID=' +char(39)+ xmlMainNode.ProcessId +char(39)+
+            ' WHERE PLACEID=' + iPlaceId +
+            ' AND MAIN_COUNTER=' + REL_MAIN_2.MAIN_COUNTER +
+            ' AND MAIN_ID=' + REL_MAIN_2.MAIN_ID;
+    EXECUTESQL ('STS_DB', sSQL);
+
+    sSQL := 'UPDATE' +
+            ' KRD_MAIN' +
+            ' SET' +
+            ' STATUS_EPS=' +char(39)+ 'ДО-2 №' + REL_MAIN_2.RELEASE_NO + ' процедура открыта' +char(39)+
+            ' WHERE PLACEID=' + iPlaceId +
+            ' AND ID=' + REL_MAIN_2.MAIN_ID;
+    EXECUTESQL ('STS_DB', sSQL);
+
+    // внешняя функция WriteEpsLog, подключена в скрипте eps.IMPEX
+    WriteEpsLog (
+        REL_MAIN_2.PLACEID,
+        REL_MAIN_2.MAIN_ID,
+        REL_MAIN_2.MAIN_COUNTER,
+        REL_MAIN_2.DOCUMENTID,
+        'ДО-2',
+        REL_MAIN_2.RELEASE_NO,
+        REL_MAIN_2.OUT_DATE,
+        'ДО-2 №' +REL_MAIN_2.RELEASE_NO + ' процедура открыта',
+        Date()+Time(1),
+        GENERATEUUID (),
+        'ProcessId= ' + xmlMainNode.ProcessId,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        1,
+        dtDoDt,
+        1
+    ); // WriteLog
+
+  )
+); // IF

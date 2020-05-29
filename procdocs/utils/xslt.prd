@@ -1,0 +1,87 @@
+// *****************************************************************************
+// Название: просмотр документа на бланке (XSLT)
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: Просмотр XML
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+VAR ('sTmp', String, '');
+VAR ('sXmlFile', String, INIFILE ('XSLT', 'LASTOPENEDFILE', ''));
+IF (SELECTFILE ('sXmlFile', 'Выбор XML-файла для просмотра на бланке', '*.xml|*.xml','|') = 0,
+  RAISEEXCEPTION ('Отменено пользователем');
+);
+
+SPLITSTR (sXmlFile, '|', sXmlFile);
+WRITEINIFILE ('XSLT', 'LASTOPENEDFILE', sXmlFile);
+
+VAR ('sXsltPath', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + INIFILE ('XMLFormat', 'Version', '5.14.2') + '\XSLT\');
+VAR ('sTmpFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + GENERATEUUID() + '.html');
+VAR ('sTmpXmlFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + GENERATEUUID() + '.xml');
+
+VAR ('sDocumentName', String, 'DO3Report');
+VAR ('sDocumentModeID', String, '1008013E');
+VAR ('mText', Memo, '');
+
+VAR ('XmlDocument', Integer, XMLDOCUMENTCREATE ());
+XMLDOCUMENTLOAD (XmlDocument, sXmlFile);
+VAR ('XmlDocumentRoot', Integer, XMLDOCUMENTROOT (XmlDocument));
+VAR ('XmlElement', Integer, XMLNODECHILD (XmlDocumentRoot, 0));
+VAR ('XmlObject', Integer);
+
+
+IF (XMLNODENAME (XmlElement, 1) = 'Envelope',
+  Block(
+    XmlElement := XMLNODECHILD (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlElement, 'Body'), 'Signature'), 'Object'), 0);
+  )
+); // IF
+
+XmlObject := XmlElement;
+
+IF (XMLNODENAME (XmlElement, 1) = 'ED_Container',
+  Block(
+    IF (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlElement, 'ContainerDoc'), 'DocBody'), 'Signature'),
+      Block(
+        XmlElement := XMLNODECHILD (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlElement, 'ContainerDoc'), 'DocBody'), 'Signature'), 'Object'), 0);
+        XmlObject := XmlElement;
+      ),
+      XmlObject := XMLNODECHILD (XMLNODEFIND (XMLNODEFIND (XmlElement, 'ContainerDoc'), 'DocBody'), 0)
+    ); // IF
+  )
+); // IF
+
+IF (XMLNODENAME (XmlElement, 1) = 'ED_Container',
+  Block(
+    XmlElement := XMLNODECHILD (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XmlElement, 'ContainerDoc'), 'DocBody'), 'Signature'), 'Object'), 0);
+    XmlObject := XmlElement;
+  )
+); // IF
+
+IF (XMLNODENAME (XmlElement, 1) = 'ED_Container',
+  Block(
+    XmlObject := XMLNODECHILD (XMLNODEFIND (XMLNODEFIND (XmlElement, 'ContainerDoc'), 'DocBody'), 0);
+  )
+); // IF
+
+sDocumentName := XMLNODENAME (XmlObject, 1);
+sDocumentModeId := XMLNODEATTRIBUTE (XmlObject, 'DocumentModeID');
+
+XMLNODESAVE (XmlElement, sTmpXmlFile, 'UTF-8');
+XMLDESTROY (XmlDocument);
+
+IF (FILEEXISTS (sXsltPath + sDocumentModeID + '_' + sDocumentName + '.xslt'),
+  Block(
+    mText := XMLTRANSFORM (sTmpXmlFile, sXsltPath + sDocumentModeID + '_' + sDocumentName + '.xslt');
+    mText := REGEXREPLACE (mText, 'UTF-8', 'windows-1251', 34);
+    STRINGTOFILE (mText, sTmpFile);  // STRINGTOFILE
+
+    // открывает файл в приложении по умолчанию
+    //SHELLEXECUTE (sTmpFile);
+    // открывает файл в InternetExplorer
+    SHELLEXECUTE ('iexplore.exe', sTmpFile, 'open', 3);
+  ),
+  SHELLEXECUTE ('iexplore.exe', sTmpXmlFile, 'open', 3);
+); // IF

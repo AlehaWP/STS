@@ -1,0 +1,274 @@
+// *****************************************************************************
+// Название: on_doc_send
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: on_doc_send
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, XMLNODEATTRIBUTE (xmlMainNode, 'whid'));
+VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'do1id'));
+VAR ('iCounter', Integer, IF (XMLNODEHASATTRIBUTE (xmlMainNode, 'do2id'), XMLNODEATTRIBUTE (xmlMainNode, 'do2id'), 0));
+VAR ('iReaded', Integer, 1);
+VAR ('sStatus', String, '');
+VAR ('sSubStatus', String, '');
+IF (VAREXISTS ('iRecordType') = 0, VAR ('iRecordType', Integer, 0));
+
+
+CASE (xmlMainNode.DocType,
+  [
+    'whdtDO1',
+    Block(
+      // закомментировано так как не можем отличить отправку комм. акта, письма об ошибках и ДО-1
+      // к тому же событие дублируется через DO1StatusChanged
+      // загружаем только в случае ошибки отправки сообщения
+      IF (xmlMainNode.SendResult = 'False',
+        Block(
+          sStatus := 'Ошибка отправки документа в АСТО';
+          // пока строка 41 закомментирована, чтобы использовать универсальную формулировку "ошибка отправки ДОКУМЕНТА" раз мы не можем их отличить
+
+          IF (LOCATE ('KRD_MAIN_2', 'PLACEID;DOCUMENTID', [iPlaceId, sDocumentId]),
+            Block(
+              IF (xmlMainNode.SendResult = 'True',
+                Block(
+                  sStatus := 'ДО-1 отправлена';
+                ),
+                Block(
+                  // sStatus := 'Ошибка! ДО-1 не отправлена';
+                  sSubStatus := REGEXREPLACE (xmlMainNode.ErrorDescription, '(\n)', ' ', 1);
+                  iReaded := 0;
+                )
+              ); // IF
+
+              sSQL := 'UPDATE' +
+                      ' KRD_MAIN' +
+                      ' SET' +
+                      ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+                      ' WHERE' +
+                      ' PLACEID=' + KRD_MAIN_2.PLACEID +
+                      ' AND MAIN_ID=' + KRD_MAIN_2.MAIN_ID;
+              EXECUTESQL ('STS_DB', sSQL);
+
+              // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+              WriteEpsLog (
+                  KRD_MAIN_2.PLACEID,
+                  KRD_MAIN_2.ID,
+                  0,
+                  KRD_MAIN_2.DOCUMENTID,
+                  'ДО-1',
+                  KRD_MAIN_2.NBD,
+                  KRD_MAIN_2.BD_DATE,
+                  sStatus,
+                  Date()+Time(1),
+                  GENERATEUUID (),
+                  sSubStatus,
+                  sXmlFileName, // внешняя переменная из скрипта eps.imp
+                  iReaded,
+                  dtDoDt,
+                  iRecordType
+              ); // WriteEpsLog
+            ),
+            Block(
+              // WriteLog - внешняя функция, подключена в скрипте eps.imp
+              WriteLog(
+                  'EPSIMP',
+                  '(' + sXmlFileName + '): Не найден отчет ДО-1 PLACEID: ' + iPlaceId + '; DOCUMENTID: ' + sDocumentId
+              ) // WriteLog
+            )
+          ); // IF
+
+        )
+      ); // IF
+    ),
+    'whdtDO2',
+    Block(
+      IF (LOCATE ('REL_MAIN_2', 'PLACEID;DOCUMENTID;COUNTER', [iPlaceId, sDocumentId, iCounter]),
+        Block(
+          IF (xmlMainNode.SendResult = 'True',
+            Block(
+              sStatus := 'ДО-2 №' + REL_MAIN_2.RELEASE_NO + ' отправлена';
+            ),
+            Block(
+              sStatus := 'Ошибка! ДО-2 №' + REL_MAIN_2.RELEASE_NO + ' не отправлена';
+              sSubStatus := REGEXREPLACE (xmlMainNode.ErrorDescription, '(\n)', ' ', 1);
+              iReaded := 0;
+            )
+          ); // IF
+
+          sSQL := 'UPDATE' +
+                  ' KRD_MAIN' +
+                  ' SET' +
+                  ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+                  ' WHERE' +
+                  ' PLACEID=' + REL_MAIN_2.PLACEID +
+                  ' AND MAIN_ID=' + REL_MAIN_2.MAIN_ID;
+          EXECUTESQL ('STS_DB', sSQL);
+
+          // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+          WriteEpsLog (
+              REL_MAIN_2.PLACEID,
+              REL_MAIN_2.MAIN_ID,
+              REL_MAIN_2.MAIN_COUNTER,
+              REL_MAIN_2.DOCUMENTID,
+              'ДО-2',
+              REL_MAIN_2.RELEASE_NO,
+              REL_MAIN_2.OUT_DATE,
+              sStatus,
+              Date()+Time(1),
+              GENERATEUUID (),
+              sSubStatus,
+              sXmlFileName, // внешняя переменная из скрипта eps.imp
+              iReaded,
+              dtDoDt,
+              iRecordType
+          ); // WriteEpsLog
+        ),
+        Block(
+          // WriteLog - внешняя функция, подключена в скрипте eps.imp
+          WriteLog(
+              'EPSIMP',
+              '(' + sXmlFileName + '): Не найден отчет ДО-2 PLACEID: ' + iPlaceId + '; DOCUMENTID: ' + sDocumentId + '; COUNTER: ' + iCounter
+          ) // WriteLog
+        )
+      ); // IF
+    ),
+    'whdtDO3',
+    Block(
+      sSQL := 'SELECT' +
+              ' JOURNAL_MASTER_ID, PLACEID, REPORTNUMBER, REPORTDATE' +
+              ' FROM JRDO3' +
+              ' WHERE' +
+              ' UPPER(REFDOCUMENTID)=' +char(39)+ UPPERSTR (sDocumentId) +char(39);
+      OPENQUERY ('qJRDO3', 'dbJournals', sSQL, 1);
+      IF (FIELDISNULL ('qJRDO3', 'JOURNAL_MASTER_ID'),
+        Block(
+          // внешняя функция WriteLog подключена в скрипте eps.imp
+          WriteLog (
+              'EPSIMP',
+              '(' + sXmlFileName + '): Не найден отчет ДО-3 с идентификатором ' + sDocumentId
+          ); // WriteLog
+        ),
+        Block(
+          IF (xmlMainNode.SendResult = 'True',
+            Block(
+              sStatus := 'ДО-3 отправлена';
+            ),
+            Block(
+              sStatus := 'Ошибка! ДО-3 не отправлена';
+              sSubStatus := REGEXREPLACE (xmlMainNode.ErrorDescription, '(\n)', ' ', 1);
+              iReaded := 0;
+            )
+          ); // IF
+
+          sSQL := 'UPDATE' +
+                  ' JRDO3' +
+                  ' SET' +
+                  ' CUSTOMSTATE=' +char(39)+ sStatus +char(39)+
+                  ' WHERE' +
+                  ' JOURNAL_MASTER_ID=' + qJRDO3.JOURNAL_MASTER_ID;
+          EXECUTESQL ('dbJournals', sSQL);
+
+          // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+          WriteEpsLog (
+              qJRDO3.PLACEID,
+              0,
+              0,
+              sDocumentId,
+              'ДО-3',
+              qJRDO3.REPORTNUMBER,
+              qJRDO3.REPORTDATE,
+              sStatus,
+              Date()+Time(1),
+              GENERATEUUID (),
+              sSubStatus,
+              sXmlFileName, // внешняя переменная из скрипта eps.imp
+              iReaded,
+              dtDoDt,
+              iRecordType
+          ); // WriteEpsLog
+        )
+      ); // IF
+      CLOSEDATASET ('qJRDO3');
+    ),
+    'whdtContractInfo',
+    Block(
+      sStatus := 'Договор ВХ отправлен';
+      sSubStatus := '';
+
+      sSQL := 'SELECT' +
+              ' JOURNAL_MASTER_ID, PLACEID, DOGNUMBER, DOGDATE' +
+              ' FROM' +
+              ' CONTRACTINFO' +
+              ' WHERE' +
+              ' DOCUMENTID=' +char(39)+ sDocumentId +char(39);
+      OPENQUERY ('qContractInfo', 'dbJournals', sSQL, 1);
+      IF (FIELDISNULL ('qContractInfo', 'JOURNAL_MASTER_ID'),
+        Block(
+          // WriteLog - внешняя функция, подключена в скрипте eps.imp
+          WriteLog(
+              'EPSIMP',
+              '(' + sXmlFileName + '): Не найден договор ВХ по параметрам DOCUMENTID: ' + sDocumentId
+          ) // WriteLog
+        ),
+        Block(
+          sSQL := 'UPDATE' +
+                  ' CONTRACTINFO' +
+                  ' SET' +
+                  ' EPS_STATUS=' +char(39)+ sStatus +char(39)+
+                  ' WHERE' +
+                  ' JOURNAL_MASTER_ID=' + qContractInfo.JOURNAL_MASTER_ID;
+          EXECUTESQL ('dbJournals', sSQL);
+
+          // внешняя функция WriteEpsLog подключена в скрипте eps.imp
+          WriteEpsLog (
+              qContractInfo.PLACEID,
+              0,
+              0,
+              sDocumentId,
+              'Договор ВХ',
+              qContractInfo.DOGNUMBER,
+              qContractInfo.DOGDATE,
+              sStatus,
+              Date()+Time(1),
+              GENERATEUUID (),
+              sSubStatus,
+              sXmlFileName, // внешняя переменная из скрипта eps.imp
+              iReaded,
+              dtDoDt,
+              iRecordType
+          ); // WriteEpsLog
+        )
+      ); // IF
+      CLOSEDATASET ('qContractInfo');
+    ),
+    // 'whdtInventory',
+    // Block(
+    //
+    // ),
+    // 'whdtInventoryRequest',
+    // Block(
+    //
+    // ),
+    // 'whdtDeclStateChange',
+    // Block(
+    //
+    // ),
+    // 'whdtDocsRegNotif',
+    // Block(
+    //
+    // ),
+    // 'whdtIssue',
+    // Block(
+    //
+    // ),
+    // 'whdtTransit',
+    // Block(
+    //
+    // )
+  ], Block()
+); // CASE

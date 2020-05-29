@@ -1,0 +1,125 @@
+// *****************************************************************************
+// Название: Загрузка результатов таможенного досмотра (осмотра)
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: Загрузка досмотра (осмотра)
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+FUNC ('SaveObject',
+  Block(
+    PARAM ('pBackupFile', String, 0);
+    PARAM ('pWHId', String, 1, '');
+    PARAM ('pDO1Id', String, 2, '');
+  ),
+  Block(
+    IF (FILEEXISTS (pBackupFile),
+       Block(
+         VAR ('xmlDoc', Integer);
+         VAR ('xmlObject', Integer);
+         VAR ('xmlDocument', Integer);
+         VAR ('sXmlFileToSave', String, '');
+         xmlDoc := XMLDOCUMENTCREATE();
+         XMLDOCUMENTLOAD (xmlDoc, pBackupFile);
+         xmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (XMLDOCUMENTROOT (xmlDoc), 0), 'Body'), 'Signature'), 'Object');
+         xmlDocument := XMLNODECHILD (xmlObject, 0);
+         XMLNODESETATTRIBUTE (xmlDocument, 'dodt', FDT ('DD.MM.YYYY HH:MM:SS', Date() + Time(1)));
+         XMLNODESETATTRIBUTE (xmlDocument, 'whid', pWHId);
+         XMLNODESETATTRIBUTE (xmlDocument, 'do1id', pDO1Id);
+
+         IF (DIRECTORYEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\' + USERINFO ('', 'UserUuid')) = 0,
+           Block(
+             FORCEDIRECTORIES (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\' + USERINFO('', 'UserUuid'));
+           ),
+         ); // IF
+         sXmlFileToSave := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iout\'+ USERINFO ('', 'UserUuid') + '\' + EXTRACTSTR (pBackupFile, SPLITSTR (pBackupFile, '\', sSQL), '\');
+         XMLNODESAVE (xmlDocument, sXmlFileToSave);
+       ),
+    ); // IF
+  )
+), // FUNC
+
+
+VAR ('sSTSAlbum', String, INIFILE ('XMLFormat', 'Version', '5.14.3'));
+VAR ('sSQL', String, '');
+
+VAR ('dtDateFrom', DateTime, Date() - 3);
+VAR ('dtDateTo', DateTime, Date() + ' 23:59:59');
+
+IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd') = 1,
+  Block(
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\sqldate.prd');
+  ),
+  Block(
+    RAISEEXCEPTION ('Не найден скрипт "sqldate.prd"');
+  )
+);
+
+IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\open_monitor_db.prd') = 1,
+  Block(
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\open_monitor_db.prd');
+  ),
+  Block(
+    RAISEEXCEPTION ('Не найден скрипт "open_monitor_db.prd"');
+  )
+);
+
+IF (INPUTDATERANGE ('dtDateFrom', 'dtDateTo', 'Укажиде период для поиска уведомлений') = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+TRYFINALLY (
+  Block(
+    SHOWINFORMATION ('Поиск результатов таможенного досмотра (осмотра), подождите..');
+
+    sSQL := 'SELECT' +
+            ' BACKUPFILE, INCOMING, WHID, WHDOCID' +
+            ' FROM ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' (MSGID IN (' +char(39)+ 'CMN.13035' +char(39)+ '))';
+
+    // sConnString - объявляется и инициализируется в скрипте open_monitor_db.prd
+    IF (STRPOS ('Provider=Microsoft.Jet.OLEDB.4.0', sConnString),
+        sSQL := sSQL + ' AND (ED_PROCMESSAGES.PreparedAt BETWEEN #'+ REPLACESTR (FDT('MM.DD.YYYY', dtDateFrom), '.', '/') +' 00.00# AND #'+ REPLACESTR (FDT('MM.DD.YYYY', dtDateTo), '.', '/') +' 23.59# )',
+    );
+    IF (STRPOS ('Provider=SQLOLEDB.1', sConnString),
+        sSQL := sSQL + ' AND (ED_PROCMESSAGES.PreparedAt BETWEEN '+ CHAR(39)+ FDT('DD.MM.YYYY', dtDateFrom) +' 00:00'+ CHAR(39)+' AND '+ CHAR(39)+ FDT('DD.MM.YYYY', dtDateTo) +' 23:59'+ CHAR(39)+' )',
+    );
+
+    // подключаем функцию GetBackupFile
+    EXECUTESCRIPT ('ProcDocs\utils\get_backup_file.prd');
+
+    OPENQUERY ('Q_FILE', sSQL, 'dbMonitor', 1);
+    IF (BOF ('Q_FILE') = 0, FIRST ('Q_FILE'));
+    VAR ('sBackupFile', String, '');
+    WHILE (EOF ('Q_FILE') = 0,
+      Block(
+        sBackupFile := GetBackupFile (Q_FILE.BACKUPFILE, Q_FILE.INCOMING);
+        IF (FILEEXISTS (sBackupFile),
+           Block(
+             SaveObject (sBackupFile, Q_FILE.WHID, Q_FILE.WHDOCID);
+           )
+        ); // IF
+        NEXT ('Q_FILE');
+      )
+    ); // WHILE
+
+  ),
+  Block(
+    HIDEINFORMATION ();
+    CLOSEDATABASE ('dbMonitor');
+  )
+); // TRYFINALLY
+
+TRYFINALLY (
+  Block(
+    GLOBALVAR ('iShowProgressBar', Integer, 1);
+    EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'data\impex\scripts\eps.imp'),
+  ),
+  Block(
+    iShowProgressBar := 0;
+    REFRESH ('JR_WHAI');
+  )
+); // TRYFINALLY
+

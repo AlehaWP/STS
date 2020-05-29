@@ -1,0 +1,35 @@
+// *****************************************************************************
+// Название: просмотр сертификата ЭП
+// Описание:
+// Кнопка вызова: 0
+// Подпись кнопки: ViewCertificate
+// Язык: FuncScript
+// Вызов по событию:
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+FUNC ('ViewCertificate',
+  Block(
+    PARAM ('sBackupFile', String, 0);
+  ),
+  Block(
+    VAR ('sTemporaryFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + GENERATEUUID() + '.cer');
+
+    VAR ('xDoc', Integer, XMLDOCUMENTCREATE ());
+    XMLDOCUMENTLOAD (xDoc, sBackupFile);
+    VAR ('xRoot', Integer, XMLDOCUMENTROOT (xDoc));
+    VAR ('xObject', Integer);
+
+    //
+    IF (XMLNODEFIND (xRoot, 'Envelope'),
+      Block(
+        // xObject := xRoot.Envelope.Body.Signature.KeyInfo.X509Data.X509Certificate;
+        xObject := XMLNODEFIND (xRoot.Envelope.Body.Signature.KeyInfo.X509Data, 'X509Certificate');
+
+        STRINGTOFILE (XMLNODEVALUE (xObject), sTemporaryFile);
+        SHELLEXECUTE (sTemporaryFile);
+      )
+    ); // IF
+  )
+);

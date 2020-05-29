@@ -1,0 +1,199 @@
+// *****************************************************************************
+// Название: do1_status_changed
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: do1_status_changed
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('dtDoDt', DateTime, XMLNODEATTRIBUTE (xmlMainNode, 'dodt'));
+VAR ('iPlaceId', Integer, XMLNODEATTRIBUTE (xmlMainNode, 'whid'));
+VAR ('sDocumentId', String, XMLNODEATTRIBUTE (xmlMainNode, 'do1id'));
+VAR ('sStatusCode', String, xmlMainNode.StatusId);
+VAR ('sStatus', String, '');
+VAR ('sSubStatus', String, '');
+VAR ('iReaded', Integer, 1);
+IF (VAREXISTS ('iRecordType') = 0, VAR ('iRecordType', Integer, 0));
+
+
+FUNC ('IsNewStatus', '',
+  Block(
+    VAR ('bReturn', Boolean, false);
+    sSQL := 'SELECT' +
+            ' COUNT(*) AS C' +
+            ' FROM' +
+            ' EPS_LOG' +
+            ' WHERE' +
+            ' PLACEID=' + iPlaceId  +
+            ' AND DOCUMENTID=' +char(39)+ sDocumentId +char(39)+
+            ' AND DODT > ' + DBFORMATDATETIME (dtDoDt, GETDATABASETYPE ('STS_DB'), 1, 1, 1);
+    OPENQUERY ('qIsNewStatus', 'dbJournals', sSQL, 1);
+    IF (qIsNewStatus.C = 0, bReturn := true, bReturn := false);
+    CLOSEDATASET ('qIsNewStatus');
+    bReturn
+  )
+), // FUNC - IsNewStatus
+
+
+FUNC ('WriteToEpsLog',
+  Block(
+    ''
+  ),
+  Block(
+    // внешняя функция, подключена в скрипте eps.imp
+    WriteEpsLog (
+        KRD_MAIN_2.PLACEID,
+        KRD_MAIN_2.ID,
+        0,
+        KRD_MAIN_2.DOCUMENTID,
+        'ДО-1',
+        KRD_MAIN_2.NBD,
+        KRD_MAIN_2.BD_DATE,
+        sStatus,
+        Date()+Time(1),
+        GENERATEUUID (),
+        sSubStatus,
+        sXmlFileName, // внешняя переменная из скрипта eps.imp
+        iReaded,
+        dtDoDt,
+        iRecordType
+    ); // WriteEpsLog
+  )
+), // FUNC - WriteToEpsLog
+
+
+// Проверяем статус сообщения:
+// -1: статус не изменился
+// 20: отправлен запрос на открытие процедуры
+// 30: процедура открыта, отчётность отправлена  (обрабатывается событием do1_processid.prd)
+// 35: процедура открыта, отчётность не отправлена
+// 42: отказ в открытии процедуры
+// 50: отчётность предоставлена
+// 70: отчётность зарегистрирована
+// 80: отправлен запрос отмены отчетности
+// 85: запрос на отмену отчености доставлен в АСТО
+// 90: отчетность отменена
+// 160: в регистрации отчётности отказано
+
+IF (IsNewStatus (),
+  Block(
+    IF (LOCATE ('KRD_MAIN_2', 'PLACEID;DOCUMENTID', [iPlaceId, sDocumentId]),
+      Block(
+        sSubStatus := xmlMainNode.SubStatusText;
+        sSubStatus := REGEXREPLACE (sSubStatus, '(\n)', ' ', 1);
+        CASE (sStatusCode,
+          [
+            '20',  // Отправлен запрос на открытие процедуры
+            Block(
+              sStatus := 'Отправлен запрос на открытие процедуры';
+              iRecordType := 1;
+            ),
+            '35',  // Процедура открыта, ДО-1 не отправлена
+            Block(
+              sStatus := 'Процедура открыта, ДО-1 не отправлена';
+              iReaded := 0;
+              iRecordType := 0;
+            ),
+            '42', // отказ в открытии процедуры
+            Block(
+              sStatus := 'Отказ в открытии процедуры';
+              iReaded := 0;
+              iRecordType := 0;
+            ),
+            '50',  // ДО-1 доставлена инспектору | ДО- доставлена в АСТО
+            Block(
+              sStatus := 'ДО-1 доставлена в АСТО';
+              iRecordType := 0;
+            ),
+            '80',  // Отправилен запрос отмены отчетности
+            Block(
+              // sStatus := 'Отправлен запрос отмены отчетности';
+            ),
+            // '70', {ДО-1 зарегистрирована} Block(),
+            '85', // Запрос отмены отчетности доставлен в АСТО
+            Block(
+              sStatus := 'Запрос отмены отчетности доставлен в АСТО';
+              iRecordType := 0;
+            ),
+            '90', // Отчетность отменена
+            Block(
+              // sStatus := 'Отчетность отменена';
+              // iReaded := 0;
+            ),
+            '160', // Отказ в регистрации ДО-1
+            Block(
+              sStatus := 'Отказ в регистрации ДО-1';
+              iReaded := 0;
+              iRecordType := 0;
+            ),
+            '-1', // разные статусы, без смены состояния процедуры
+            Block(
+              IF (REGEXMATCH (xmlMainNode.SubStatusText, '(АСТО: подтверждена доставка запроса на открытие процедуры обмена по ДО-1)', 34, 'sSQL'),
+                Block(
+                  sStatus := 'Запрос на открытие процедуры доставлен в АСТО';
+                  // очишаем подробности (субстатус), так как он дублирует основной статус
+                  sSubStatus := '';
+                  iRecordType := 1;
+                )
+              ); // IF
+              // статус дублирует событие OnDocSend (on_doc_send.imp)
+              IF (REGEXMATCH (xmlMainNode.SubStatusText, '(Отправлен ДО-1 №)', 34, 'sSQL'),
+                Block(
+                  sStatus := 'ДО-1 отправлена';
+                  iRecordType := 0;
+                )
+              ); // IF
+              IF (REGEXMATCH (xmlMainNode.SubStatusText, '(В регистрации дополнительного листа к отчетности ДО-1 отказано.)', 34, 'sSQL'),
+                Block(
+                  sStatus := 'Получен отказ в регистрации доб. листа к ДО-1';
+                  iReaded := 0;
+                  iRecordType := 0;
+                )
+              ); // IF
+              IF (REGEXMATCH (xmlMainNode.SubStatusText, '(Отправлен добавочный лист/коммерческий акт к ДО-1)', 34, 'sSQL'),
+                Block(
+                  sStatus := 'Комм. акт отправлен';
+                  iRecordType := 0;
+                )
+              ); // IF
+              IF (REGEXMATCH (xmlMainNode.SubStatusText, '(Письмо об ошибках, выявленных в ДО-1 передано в АСТО)', 34, 'sSQL'),
+                Block(
+                  sStatus := 'Письмо об ошибках отправлено';
+                  iRecordType := 0;
+                )
+              ); // IF
+            )
+          ], Block()
+        ); // CASE
+      ),
+      Block(
+        // WriteLog - внешняя функция, подключена в скрипте eps.imp
+        WriteLog (
+          'EPSIMP',
+          '(' + sXmlFileName + '): Не найден отчет ДО-1 с параметрами PLACEID= ' + iPlaceId + ', DOCUMENTID=' + sDocumentId
+        ); // WriteLog
+      )
+    ); // IF
+  )
+); // IF
+
+IF (LENGTH (sStatus) > 0,
+  Block(
+    sSQL := 'UPDATE' +
+            ' KRD_MAIN' +
+            ' SET' +
+            ' STATUS_EPS=' +char(39)+ sStatus +char(39)+
+            // если это отказ в регистрации ДО-1, то обновляем статус
+            IF (sStatusCode = '160', ',MC_STATUS_BD=' +char(39)+ '1' +char(39), '') +
+            ' WHERE' +
+            ' PLACEID=' + iPlaceId +
+            ' AND MAIN_ID=' + KRD_MAIN_2.MAIN_ID;
+    EXECUTESQL ('STS_DB', sSQL);
+
+    WriteToEpsLog ();
+  )
+); // IF

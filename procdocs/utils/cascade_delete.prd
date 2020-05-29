@@ -1,0 +1,61 @@
+// *****************************************************************************
+// Название: cascade_delete.prd
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: CascadeDelete
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+FUNC ('CascadeDelete',
+  Block(
+    PARAM ('pCascadeDeteleTablesList', Memo, 0);
+    PARAM ('pCascadeDeteleWhereClouse', String, 1);
+    PARAM ('pCascadeDeteleDatabase', String, 2, 'STS_DB');
+  ),
+  Block(
+    // используем сложные имена перепенных, чтобы избежать пересечения с другими скриптами
+    VAR ('iCascadeDeleteTablesCount', Integer, SPLITSTR (pCascadeDeteleTablesList, '|', sSQL));
+    VAR ('iCascadeDeleteTableIndex', Integer, 1);
+    VAR ('bCascadeDeleteResult', Boolean, True);
+    VAR ('sCascadeDeleteTableName', String, '');
+
+    IF (LENGTH (pCascadeDeteleWhereClouse) > 5,
+      Block(
+        WHILE (iCascadeDeleteTableIndex <= iCascadeDeleteTablesCount,
+          Block(
+            sCascadeDeleteTableName := EXTRACTSTR (pCascadeDeteleTablesList, iCascadeDeleteTableIndex, '|');
+            IF (TABLEEXISTS (sCascadeDeleteTableName, pCascadeDeteleDatabase),
+              Block(
+                sSQL := 'DELETE' +
+                        ' FROM ' + sCascadeDeleteTableName +
+                        ' WHERE' +
+                        ' ' + pCascadeDeteleWhereClouse;
+                TRYEXCEPT (
+                  Block(
+                    EXECUTESQL (pCascadeDeteleDatabase, sSQL);
+                  ),
+                  Block(
+                    //SHOWMESSAGE (EXCEPTIONMESSAGE (), 2, 'Функция CascadeDelete');
+                    bCascadeDeleteResult := False;
+                  )
+                ); // TRYEXCEPT
+                
+              )
+            ); // IF
+            iCascadeDeleteTableIndex := iCascadeDeleteTableIndex + 1;
+          )
+        ); // WHILE
+      ),
+      Block(
+        bCascadeDeleteResult := False;
+      )
+    ); // IF
+
+    bCascadeDeleteResult
+  )
+); // CascadeDelete

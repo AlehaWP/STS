@@ -1,0 +1,208 @@
+object MainForm_1: TScriptMultiLanguageForm
+  Caption = #1055#1088#1086#1089#1084#1086#1090#1088' '#1091#1074#1077#1076#1086#1084#1083#1077#1085#1080#1081' '#1069#1055#1057
+  ClientHeight = 493
+  ClientWidth = 764
+  Color = 15723755
+  Constraints.MinHeight = 500
+  Constraints.MinWidth = 600
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = 3481376
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  Scaled = False
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'WindowState=wsNormal'
+    'Position=poScreenCenter')
+  SaveEvents.Strings = (
+    'Self.OnActivate=Form2Activate'
+    'btnClose.OnClick=cxButton1Click'
+    'pmiAutoHeight.OnClick=pmiAutoHeightClick'
+    'btnClearList.OnClick=cxButton3Click'
+    'pmiClearList.OnClick=pmiClearListClick'
+    'btnGotoDocument.OnClick=cxButton2Click'
+    
+      'cxGrid1DBTableView1.OnFocusedRecordChanged=cxGrid1DBTableView1Fo' +
+      'cusedRecordChanged'
+    'Self.OnCreate=MainForm_1Create')
+  DesignSize = (
+    764
+    493)
+  PixelsPerInch = 96
+  TextHeight = 13
+  object cxGrid1: TcxGrid
+    Left = 8
+    Top = 8
+    Width = 746
+    Height = 447
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    PopupMenu = pmGrid
+    TabOrder = 0
+    ExplicitWidth = 740
+    ExplicitHeight = 444
+    object cxGrid1DBTableView1: TcxGridDBTableView
+      Navigator.Buttons.CustomButtons = <>
+      Navigator.Buttons.Insert.Visible = False
+      Navigator.Buttons.Delete.Visible = False
+      Navigator.Buttons.Edit.Visible = False
+      Navigator.Buttons.Post.Visible = False
+      Navigator.Buttons.Cancel.Visible = False
+      Navigator.Buttons.SaveBookmark.Visible = False
+      Navigator.Buttons.GotoBookmark.Visible = False
+      Navigator.InfoPanel.Visible = True
+      Navigator.Visible = True
+      ScrollbarAnnotations.CustomAnnotations = <>
+      DataController.DataSource = dsEpsLog
+      DataController.Summary.DefaultGroupSummaryItems = <>
+      DataController.Summary.FooterSummaryItems = <>
+      DataController.Summary.SummaryGroups = <>
+      OptionsData.Deleting = False
+      OptionsData.Editing = False
+      OptionsData.Inserting = False
+      OptionsView.GroupByBox = False
+      OptionsView.HeaderAutoHeight = True
+      object cxGrid1DBTableView1REGDATE: TcxGridDBColumn
+        Caption = #1044#1072#1090#1072' '#1087#1086#1083#1091#1095#1077#1085#1080#1103' '#1089#1086#1086#1073#1097#1077#1085#1080#1103
+        DataBinding.FieldName = 'REGDATE'
+        BestFitMaxWidth = 113
+        HeaderAlignmentHorz = taCenter
+        HeaderGlyphAlignmentHorz = taCenter
+        SortIndex = 0
+        SortOrder = soAscending
+        Width = 113
+      end
+      object cxGrid1DBTableView1DOCTYPE: TcxGridDBColumn
+        Caption = #1058#1080#1087' '#1076#1086#1082#1091#1084#1077#1085#1090#1072
+        DataBinding.FieldName = 'DOCTYPE'
+        BestFitMaxWidth = 91
+        HeaderAlignmentHorz = taCenter
+        Width = 91
+      end
+      object cxGrid1DBTableView1DOCNO: TcxGridDBColumn
+        Caption = #8470' '#1076#1086#1082#1091#1084#1077#1085#1090#1072
+        DataBinding.FieldName = 'DOCNO'
+        BestFitMaxWidth = 83
+        HeaderAlignmentHorz = taCenter
+        Width = 83
+      end
+      object cxGrid1DBTableView1DOCDATE: TcxGridDBColumn
+        Caption = #1044#1072#1090#1072' '#1076#1086#1082#1091#1084#1077#1085#1090#1072
+        DataBinding.FieldName = 'DOCDATE'
+        HeaderAlignmentHorz = taCenter
+        Width = 116
+      end
+      object cxGrid1DBTableView1DOCSTATUS: TcxGridDBColumn
+        Caption = #1057#1090#1072#1090#1091#1089
+        DataBinding.FieldName = 'DOCSTATUS'
+        HeaderAlignmentHorz = taCenter
+        Width = 294
+      end
+      object cxGrid1DBTableView1SUBSTATUS: TcxGridDBColumn
+        Caption = #1050#1086#1084#1084#1077#1085#1090#1072#1088#1080#1081
+        DataBinding.FieldName = 'SUBSTATUS'
+        HeaderAlignmentHorz = taCenter
+        Width = 266
+      end
+      object cxGrid1DBTableView1LICENCENO: TcxGridDBColumn
+        Caption = #8470' '#1083#1080#1094#1077#1085#1079#1080#1080' '#1057#1042#1061
+        DataBinding.FieldName = 'LICENCENO'
+        HeaderAlignmentHorz = taCenter
+        Width = 133
+      end
+      object cxGrid1DBTableView1LICENCEDATE: TcxGridDBColumn
+        Caption = #1044#1072#1090#1072' '#1083#1080#1094#1077#1085#1079#1080#1080' '#1057#1042#1061
+        DataBinding.FieldName = 'LICENCEDATE'
+        HeaderAlignmentHorz = taCenter
+        Width = 147
+      end
+      object cxGrid1DBTableView1PLACEID: TcxGridDBColumn
+        DataBinding.FieldName = 'PLACEID'
+        Visible = False
+      end
+      object cxGrid1DBTableView1ID: TcxGridDBColumn
+        DataBinding.FieldName = 'ID'
+        Visible = False
+      end
+      object cxGrid1DBTableView1COUNTER: TcxGridDBColumn
+        DataBinding.FieldName = 'COUNTER'
+        Visible = False
+      end
+    end
+    object cxGrid1Level1: TcxGridLevel
+      GridView = cxGrid1DBTableView1
+    end
+  end
+  object btnClose: TcxButton
+    Left = 676
+    Top = 460
+    Width = 75
+    Height = 25
+    Anchors = [akRight, akBottom]
+    Caption = #1047#1072#1082#1088#1099#1090#1100
+    TabOrder = 1
+    ExplicitLeft = 670
+    ExplicitTop = 457
+  end
+  object btnGotoDocument: TcxButton
+    Left = 8
+    Top = 460
+    Width = 129
+    Height = 25
+    Anchors = [akLeft, akBottom]
+    Caption = #1055#1077#1088#1077#1081#1090#1080' '#1082' '#1076#1086#1082#1091#1084#1077#1085#1090#1091
+    TabOrder = 2
+    ExplicitTop = 457
+  end
+  object btnClearList: TcxButton
+    Left = 144
+    Top = 460
+    Width = 121
+    Height = 25
+    Anchors = [akLeft, akBottom]
+    Caption = #1054#1095#1080#1089#1090#1080#1090#1100' '#1089#1087#1080#1089#1086#1082
+    TabOrder = 3
+    ExplicitTop = 457
+  end
+  object qEpsLog: TUniQuery
+    Active = False
+    Filtered = False
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereAll
+    Params = <>
+    SQL.Strings = (
+      'SELECT '
+      ' REGDATE, DOCTYPE, DOCNO, DOCDATE, DOCSTATUS, '
+      ' SUBSTATUS, LICENCENO, LICENCEDATE,'
+      ' PLACEID, ID, COUNTER'
+      'FROM EPS_LOG WHERE READED='#39'0'#39)
+    Left = 24
+    Top = 408
+  end
+  object dsEpsLog: TUniDataSource
+    DataSet = qEpsLog
+    Left = 64
+    Top = 408
+  end
+  object pmGrid: TPopupMenu
+    Left = 24
+    Top = 456
+    object pmiAutoHeight: TMenuItem
+      Caption = #1040#1074#1090#1086'-'#1096#1080#1088#1080#1085#1072
+    end
+    object pmiSeporator1: TMenuItem
+      Caption = '-'
+    end
+    object pmiClearList: TMenuItem
+      Caption = #1054#1095#1080#1089#1090#1080#1090#1100' '#1089#1087#1080#1089#1086#1082
+    end
+  end
+end

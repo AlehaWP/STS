@@ -1,0 +1,217 @@
+// *****************************************************************************
+// Название: формирование отчёта
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: 2636 Прил 4
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+VAR ('iPlaceId', Integer, INIFILE ('2636Pril4', 'PlaceId', 0));
+VAR ('sLicenceNo', String, INIFILE ('2636pril4', 'LicenceNo', ''));
+VAR ('sLicenceName', String, INIFILE ('2636pril4', 'LicenceName', ''));
+VAR ('sLicenceDate', String, INIFILE ('2636pril4', 'LicenceDate', ''));
+VAR ('sAtDate', DateTime, INIFILE ('2636Pril4', 'AtDate', Date()));
+VAR ('sBegin', DateTime, INIFILE ('2636Pril4', 'Begin', Date()));
+VAR ('sEnd', DateTime, INIFILE ('2636Pril4', 'End', Date()));
+VAR ('sPersonFullName', String, INIFILE ('2636Pril4', 'PersonFullName', ''));
+VAR ('sPersonPost', String, INIFILE ('2636Pril4', 'PersonPost', ''));
+VAR ('sReportNumber', String, INIFILE ('2636Pril4', 'ReportNumber', '1'));
+VAR ('sDirectory', String, INIFILE ('2636Pril4', 'Directory', INCLUDETRAILINGBACKSLASH (SpecialFolderPath (''))));
+
+VAR ('xDoc', Integer, XMLDOCUMENTCREATE ());
+XMLDOCUMENTENCODING (xDoc, 'UTF-8');
+VAR ('xRoot', Integer, XMLDOCUMENTROOT (xDoc));
+VAR ('xReportingOwnerCustomsWarehouseExpires', Integer, XMLNODEADDCHILD (xRoot, 'rocwe:ReportingOwnerCustomsWarehouseExpires'));
+
+XMLNODESETATTRIBUTE (xReportingOwnerCustomsWarehouseExpires, 'xmlns:rocwe', 'urn:customs.ru:ReportingCollection:ReportingOwnerCustomsWarehouseExpires:1.0.0');
+XMLNODESETATTRIBUTE (xReportingOwnerCustomsWarehouseExpires, 'xmlns:cat', 'urn:customs.ru:CommonAggregateTypes:5.8.0');
+
+XMLNODESETVALUES (xReportingOwnerCustomsWarehouseExpires, '',
+                 'cat:DocumentID', GENERATEUUID (1),
+                 'rocwe:ReportDate', FDT ('YYYY-MM-DD', Date()),
+                 'rocwe:ReportNumber', sReportNumber,
+                 'rocwe:ReportPeriodDateFrom', FDT('YYYY-MM-DD', sBegin),
+                 'rocwe:ReportPeriodDateTo', FDT('YYYY-MM-DD', sEnd),
+                 'rocwe:OrganizationName', sLicenceName,
+                 'rocwe:CertOfInclusionDate', FDT('YYYY-MM-DD', sLicenceDate),
+                 'rocwe:CertOfInclusionNumber', sLicenceNo,
+                 'rocwe:PersonPost', sPersonPost,
+                 'rocwe:PersonFullName', sPersonFullName,
+                 'rocwe:SignDate', FDT('YYYY-MM-DD', Date()),
+); // XMLNODESETVALUES
+
+
+VAR ('xGoodsInfo', Integer);
+
+FUNC ('FillGoodsInfo', '',
+  Block(
+    xGoodsInfo := XMLNODEADDCHILD (xReportingOwnerCustomsWarehouseExpires, 'rocwe:GoodsInfo');
+    XMLNODESETVALUES (
+      xGoodsInfo, 
+      '', 
+      'rocwe:GoodsNumeric', iGoodsNumeric,
+      'rocwe:GoodsTNVEDCode', qKrdComm.G33,
+    ); // XMLNODESETVALUES
+
+    VAR ('sGoodsDescription', String, qKrdComm.G312);
+    IF (LENGTH (sGoodsDescription) > 250,
+      Block(
+        WHILE (LENGTH (sGoodsDescription) > 0,
+          Block(
+            XMLNODESETVALUE (XMLNODEADDCHILD (xGoodsInfo, 'rocwe:GoodsDescription'), COPY (sGoodsDescription, 1, 250));
+            sGoodsDescription := DELETE (sGoodsDescription, 1, 250);
+          )
+        ); // WHILE
+      ),
+      XMLNODESETVALUE (XMLNODEADDCHILD (xGoodsInfo, 'rocwe:GoodsDescription'), sGoodsDescription)
+    ); // IF
+
+    XMLNODESETVALUES (
+      xGoodsInfo, 
+      'rocwe:GTDNumber',
+      'cat:CustomsCode', CUSTOMSNOPART(KRD_MAIN_2.NBD, 1),
+      'cat:RegistrationDate', FDT ('YYYY-MM-DD', EXCLUDEDATE (KRD_MAIN_2.NBD)),
+      'cat:GTDNumber', CUSTOMSNOPART(KRD_MAIN_2.NBD, 3),
+    ); // XMLNODESETVALUES
+
+    XMLNODESETVALUES (
+      xGoodsInfo,
+      '',
+      'rocwe:GoodsQuantity', qKrdComm.G315A,
+      'rocwe:GrossWeightOrVolumeQuantity', qKrdComm.G35,
+      'rocwe:GoodsCost', qKrdComm.G42,
+      'rocwe:CurrencyCode', CURRENCYABBR (qKrdComm.G42_CURRENCY),
+      'rocwe:DateEndStorage', FDT ('YYYY-MM-DD', qKrdComm.STORAGE_DATE),
+      'rocwe:LegalOwner', KRD_MAIN_2.G082,
+    ); // XMLNODESETVALUES
+
+  )
+); // FUNC - FillGoodInfo
+
+
+VAR ('iGoodsNumeric', Integer, 1);
+VAR ('sFilter', String, '');
+VAR ('iG315ARel', Float, 0);
+VAR ('fG35Rel', Float, 0);
+VAR ('fG42Rel', Float, 0);
+VAR ('iG315ARest', Float, 0);
+VAR ('fG35Rest', Float, 0);
+VAR ('fG42Rest', Float, 0);
+
+// ОТБИРАЕМ ТОВАРЫ "ЗА ПЕРИОД"
+// ДЛЯ КАЖДОГО ТОВАРА ПРОВЕРЯЕМ ЕСТЬ ЛИ ОСТАТКИ "НА ДАТУ"
+// ЕСЛИ ОСТАТКИ ЕСТЬ, ТО ВКЛЮЧАЕМ ТОВАР В ОТЧЕТ
+
+// Проверяем заполненность поля REL_COMM.RELEASE_OUT_DATE
+// Если поле пустое, то пишем в него значение RELEASE.OUT_DATE
+sSQL := 'SELECT' +
+        ' COUNT(PLACEID) AS P' +
+        ' FROM ' + CORRECTTABLENAME ('REL_COMM') +
+        ' WHERE' +
+        ' RELEASE_OUT_DATE IS NULL' +
+        ' AND PLACEID=' + iPlaceId;
+SHOWINFORMATION ('Подготовка данных, подождите..');
+TRYFINALLY (
+  Block(
+    OPENQUERY ('qROD', 'STS_DB', sSQL, 1);
+    IF (FIELDISNULL ('qROD', 'P') = 0,
+      Block(
+        sSQL := 'UPDATE ' + CORRECTTABLENAME ('REL_COMM') +
+                ' SET' +
+                ' REL_COMM.RELEASE_OUT_DATE=' +
+                    '(' +
+                    'SELECT' +
+                    ' R.OUT_DATE' +
+                    ' FROM ' + CORRECTTABLENAME ('RELEASE') + ' R' +
+                    ' WHERE' +
+                    ' R.PLACEID=REL_COMM.PLACEID' +
+                    ' AND R.ID=REL_COMM.ID' +
+                    ' AND R.COUNTER=REL_COMM.COUNTER' +
+                    ')' +
+                ' WHERE' +
+                ' REL_COMM.RELEASE_OUT_DATE IS NULL' +
+                ' AND REL_COMM.PLACEID=' + iPlaceId;
+        EXECUTESQL ('STS_DB', sSQL);
+      )
+    ); // IF
+    CLOSEDATASET ('qROD');
+  ),
+  Block(
+    HIDEINFORMATION ();
+  )
+); // TRYFINALLY
+
+sSQL := 'SELECT' +
+        ' PLACEID, ID, G32' +
+        ' ,G33,G312,G35,G315,G315A,G42,G42_CURRENCY,STORAGE_DATE' +
+        ' ,STORE_PERIOD,GN' +
+        ' FROM' +
+        ' KRD_COMM' + 
+        ' WHERE' +
+        ' PLACEID=' + iPlaceId +
+        ' AND STORAGE_DATE BETWEEN ' + DBFORMATDATETIME (sBegin, GETDATABASETYPE ('STS_DB'), 0, 1) + 
+        ' AND ' + DBFORMATDATETIME (sEnd, GETDATABASETYPE ('STS_DB'), 0, 1);
+TRYFINALLY (
+  Block(
+    SHOWINFORMATION ('Выборка данных..');
+    OPENQUERY ('qKrdComm', 'STS_DB', sSQL, 1);
+    SHOWINFORMATION ('Построение отчета, подождите..');
+    
+    WHILE (EOF ('qKrdComm') = 0,
+      Block(
+        // перешли к товару
+        IF (LOCATE ('KRD_MAIN_2', 'PLACEID;ID', [qKrdComm.PLACEID, qKrdComm.ID]),
+          Block(
+            // проверяем наличие остатков на дату
+            sFilter := 'PLACEID=' + qKrdComm.PLACEID +
+                       ' AND ID=' + qKrdComm.ID +
+                       ' AND G32=' + qKrdComm.G32 +
+                       ' AND RELEASE_OUT_DATE <= ' + DBFORMATDATETIME (sAtDate, GETDATABASETYPE ('STS_DB'), 1, 1);
+            SETFILTER ('REL_COMM_2', sFilter);
+
+            iG315ARel := SUMVALUES ('REL_COMM_2', 'RELEASE_G315A');
+            fG35Rel := SUMVALUES ('REL_COMM_2', 'RELEASE_G35');
+            fG42Rel := SUMVALUES ('REL_COMM_2', 'RELEASE_G42');
+            iG315ARest := qKrdComm.G315A - iG315ARel;
+            fG35Rest := qKrdComm.G35 - fG35Rel;
+            fG42Rest := qKrdComm.G42 - fG42Rel;
+
+            IF ((iG315ARest > 0) | (fG35Rest > 0) | (fG42Rest > 0),
+              Block(
+                // есть остатки, добавляем товар в отчет                
+                FillGoodsInfo();
+                iGoodsNumeric := iGoodsNumeric + 1;
+              )
+            ); // IF                        
+
+          )
+        ); // IF        
+
+        NEXT ('qKrdComm');
+      )
+    ); // WHILE
+  ),
+  Block(
+    HIDEINFORMATION ();
+    SETFILTER ('REL_COMM_2', '');
+  )
+); // TRYFINALLY
+
+XMLDOCUMENTSAVE (xDoc, sDirectory + '\2636pril4.xml', 1);
+XMLDESTROY (xDoc);
+
+IF (FILEEXISTS (sDirectory + '\2636pril4.xml'),
+  Block(
+    TRYEXCEPT (
+      ShellExecute('explorer.exe', '/select,' +sDirectory + '\2636pril4.xml'),
+      SHOWMESSAGE (EXCEPTIONMESSAGE ())
+    );
+  ),
+  Block(
+    SHOWMESSAGE ('Не удалось сформировать файл' +char(39)+ sDirectory + '\2636pril4.xml' +char(39), 2, 'Ошибка');
+  )
+); // IF

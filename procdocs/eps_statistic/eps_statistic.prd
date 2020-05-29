@@ -1,0 +1,217 @@
+// *****************************************************************************
+// Название: eps_statistic
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: eps_statistic
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+EXECUTESCRIPT ('PROCDOCS\sql_insert.prd');
+
+IF (VAREXISTS ('sSQL') = 0, VAR ('sSQL', String, ''));
+
+IF (TABLEEXISTS ('EPS_STATISTIC', 'STS_DB') = 0,
+  Block(
+    sSQL := 'CREATE TABLE ' +
+            CORRECTTABLENAME ('EPS_STATISTIC') +
+            ' (' +
+            'PLACEID SMALLINT' +
+            ',MAIN_ID INT' +
+            ',MAIN_COUNTER SMALLINT' +
+            ',STAGE CHAR(25)' +
+            ',DO_TYPE CHAR(4)' +
+            ',DO_NO CHAR(30)' +
+            ',DOCUMENTID CHAR(36)' +
+            ',DOC_TYPE CHAR(30)' +
+            ',DOC_NO CHAR(30)' +
+            ',STATUS_EPS CHAR(255)' +
+            ',LIST_ID CHAR(36)' +
+            // для PARADOX используем TIMESTAMP для других БД используем DATETIME
+            IF (UPPERSTR (GETDATABASETYPE ('STS_DB')) = 'PARADOX',
+              Block(
+                ',DO_DATE TIMESTAMP' +
+                ',DATECORR TIMESTAMP'
+              ),
+              Block(
+                ',DO_DATE DATETIME' +
+                ',DATECORR DATETIME'
+              )
+            ) +
+            ')';
+    EXECUTESQL ('STS_DB', sSQL);
+  )
+); // IF
+
+VAR ('sDatabaseType', String, GETDATABASETYPE ('STS_DB'));
+VAR ('s2H', String, DBFORMATDATETIME (Date()+Time(1)-0.08333333, sDatabaseType, 1, 1, 1));
+VAR ('s24H', String, DBFORMATDATETIME (Date()-1 + '23:59:59', sDatabaseType, 1, 1, 1));
+VAR ('s2W', String, DBFORMATDATETIME (Date()-14, sDatabaseType, 0, 1, 1));
+VAR ('sGUID', String, GENERATEUUID (1));
+VAR ('sStatusEps', String, '');
+CONST ('cRegistryRoot', String, 'HKEY_CURRENT_USER');
+CONST ('cRegistryKey', String, 'Software\CTM\STS\PROCDOCS\EPS_STATISTIC');
+VAR ('sKey', String, '');
+
+
+FUNC ('ClearEpsStatistic',
+  Block(
+    PARAM ('pListId', String, 0, '');
+  ),
+  Block(
+    IF (TABLEEXISTS ('EPS_STATISTIC', 'STS_DB'),
+      Block(
+        sSQL := 'DELETE' +
+                ' FROM ' + CORRECTTABLENAME ('EPS_STATISTIC');
+        IF (LENGTH (TRIM (pListId)) > 0, sSQL := sSQL + ' WHERE LIST_ID=' +char(39)+ pListId +char(39));
+        EXECUTESQL ('STS_DB', sSQL);
+      )
+    ); // IF
+  )
+), // FUNC - ClearEpsStatistic
+
+
+FUNC ('RefreshEpsStatistic', '',
+  Block(
+    IF (LENGTH (USERINFO ('', 'UserUUID')) > 0, sKey := cRegistryKey + '_' + USERINFO ('', 'USERUUID'), sKey := cRegistryKey);
+    IF (LENGTH (sGUID) > 0, ClearEpsStatistic(sGUID), ClearEpsStatistic ());
+
+    // формируем запрос
+    sSQL := '';
+    // добавляем записи, что "недавно поданы"
+    IF (REGISTRYREADSTRING (cRegistryRoot, sKey, 'New', 0),
+      Block(
+        sSQL := ' SELECT' +
+                ' PLACEID, MAIN_ID, PART_NO AS MAIN_COUNTER, ' +char(39)+ 'Недавно подан        ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ' AS DO_TYPE, NBD AS DO_NO, BD_DATE AS DO_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ' AS DOC_TYPE, ' +char(39)+ '                       ' +char(39)+ ' AS DOC_NO, STATUS_EPS ' +
+                ' FROM KRD_MAIN' +
+                ' WHERE' +
+                ' DATECORR > ' + s2H + ' AND (REG_NBD IS NULL) AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL ' +
+                ' UNION' +
+                ' SELECT' +
+                ' R.PLACEID, R.MAIN_ID, R.MAIN_COUNTER, ' +char(39)+ 'Недавно подан        ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-2' +char(39)+ ', R.RELEASE_NO, R.OUT_DATE, R.DOCUMENTID, R.DATECORR, R.DOC_TYPE, R.DOC_NO, KM.STATUS_EPS' +
+                ' FROM RELEASE R INNER JOIN KRD_MAIN KM ON KM.PLACEID=R.PLACEID AND KM.ID=R.ID' +
+                ' WHERE' +
+                ' R.DATECORR  > ' + s2H + ' AND (R.REG_RELEASE_NO IS NULL) AND R.DATECORR IS NOT NULL AND R.DOCUMENTID IS NOT NULL';
+      )
+    ); // IF
+
+    // добавляем записи, "Превышен срок 2 часа"
+    IF (REGISTRYREADSTRING (cRegistryRoot, sKey, '2Hours', 0),
+      Block(
+        IF (LENGTH (sSQL) > 0, sSQL := sSQL + ' UNION');
+        sSQL := sSQL +
+                ' SELECT' +
+                ' PLACEID, MAIN_ID, PART_NO AS MAIN_COUNTER, ' +char(39)+ 'Превышен срок 2 часа ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-1' +char(39)+ ' AS DO_TYPE, NBD AS DO_NO, BD_DATE AS DO_DATE, DOCUMENTID, DATECORR, ' +char(39)+ '                              ' +char(39)+ ' AS DOC_TYPE, ' +char(39)+ '                       ' +char(39)+ ' AS DOC_NO, STATUS_EPS ' +
+                ' FROM KRD_MAIN' +
+                ' WHERE' +
+                ' DATECORR BETWEEN ' + s24H + ' AND ' + s2H + ' AND (REG_NBD IS NULL) AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                ' UNION' +
+                ' SELECT' +
+                ' R.PLACEID, R.MAIN_ID, R.MAIN_COUNTER, ' +char(39)+ 'Превышен срок 2 часа ' +char(39)+ ' AS STAGE, ' +char(39)+ 'ДО-2' +char(39)+ ', R.RELEASE_NO, R.OUT_DATE, R.DOCUMENTID, R.DATECORR, R.DOC_NO, R.DOC_TYPE, KM.STATUS_EPS ' +
+                ' FROM RELEASE R INNER JOIN KRD_MAIN KM ON KM.PLACEID=R.PLACEID AND KM.ID=R.ID' +
+                ' WHERE' +
+                ' R.DATECORR BETWEEN ' + s24H + ' AND ' + s2H + ' AND (R.REG_RELEASE_NO IS NULL) AND R.DATECORR IS NOT NULL AND R.DOCUMENTID IS NOT NULL';
+      )
+    ); // IF
+
+    // добавляем записи, "Превышен срок 24 часа"
+    IF (REGISTRYREADSTRING (cRegistryRoot, sKey, '24Hours', 0),
+      Block(
+        IF (LENGTH (sSQL) > 0, sSQL := sSQL + ' UNION');
+        sSQL := sSQL +
+                ' SELECT' +
+                ' PLACEID,MAIN_ID,PART_NO AS MAIN_COUNTER,' +char(39)+ 'Превышен срок 24 часа' +char(39)+ ' AS STAGE,' +char(39)+ 'ДО-1' +char(39)+ ' AS DO_TYPE,NBD AS DO_NO,BD_DATE AS DO_DATE,DOCUMENTID,DATECORR,' +char(39)+ '                              ' +char(39)+ ' AS DOC_TYPE,' +char(39)+ '                       ' +char(39)+ ' AS DOC_NO,STATUS_EPS ' +
+                ' FROM KRD_MAIN' +
+                ' WHERE' +
+                ' DATECORR BETWEEN ' + s2W + ' AND ' + s24H + ' AND (REG_NBD IS NULL) AND DATECORR IS NOT NULL AND DOCUMENTID IS NOT NULL' +
+                ' UNION' +
+                ' SELECT' +
+                ' R.PLACEID,R.MAIN_ID,R.MAIN_COUNTER,' +char(39)+ 'Превышен срок 24 часа' +char(39)+ ' AS STAGE,' +char(39)+ 'ДО-2' +char(39)+ ',R.RELEASE_NO,R.OUT_DATE,R.DOCUMENTID,R.DATECORR,R.DOC_TYPE,R.DOC_NO,KM.STATUS_EPS ' +
+                ' FROM RELEASE R INNER JOIN KRD_MAIN KM ON KM.PLACEID=R.PLACEID AND KM.ID=R.ID' +
+                ' WHERE' +
+                ' R.DATECORR BETWEEN ' + s2W + ' AND ' + s24H + ' AND (R.REG_RELEASE_NO IS NULL) AND R.DATECORR IS NOT NULL AND R.DOCUMENTID IS NOT NULL';
+      )
+    ); // IF
+
+    // добавляем записи, "Для регистрации"
+    IF (REGISTRYREADSTRING (cRegistryRoot, sKey, 'ForRegistration', 0),
+      Block(
+        IF (LENGTH (sSQL) > 0, sSQL := sSQL + ' UNION');
+        sSQL := sSQL +
+                ' SELECT' +
+                ' PLACEID,MAIN_ID,PART_NO AS MAIN_COUNTER,' +char(39)+ 'Для регистрации      ' +char(39)+ ' AS STAGE,' +char(39)+ 'ДО-1' +char(39)+ ' AS DO_TYPE,NBD AS DO_NO,BD_DATE AS DO_DATE,DOCUMENTID,DATECORR,' +char(39)+ '                              ' +char(39)+ ' AS DOC_TYPE,' +char(39)+ '                       ' +char(39)+ ' AS DOC_NO,STATUS_EPS ' +
+                ' FROM KRD_MAIN' +
+                ' WHERE' +
+                ' MC_STATUS_BD=' +char(39)+ '0' +char(39)+ ' AND (DOCUMENTID IS NULL OR DOCUMENTID=' +char(39)+char(39)+ ')' +
+                ' UNION' +
+                ' SELECT' +
+                ' R.PLACEID,R.MAIN_ID,R.MAIN_COUNTER,' +char(39)+ 'Для регистрации      ' +char(39)+ ' AS STAGE,' +char(39)+ 'ДО-2' +char(39)+ ',R.RELEASE_NO,R.OUT_DATE,R.DOCUMENTID,R.DATECORR,R.DOC_TYPE,R.DOC_NO,KM.STATUS_EPS ' +
+                ' FROM RELEASE R INNER JOIN KRD_MAIN KM ON KM.PLACEID=R.PLACEID AND KM.ID=R.ID' +
+                ' WHERE' +
+                ' R.MC_STATUS=' +char(39)+ '0' +char(39)+ ' AND R.DATECORR IS NULL';
+      )
+    ); // IF
+
+    IF (LENGTH (sSQL) > 0,
+      Block(
+        sSQL := sSQL + ' ORDER BY 4 DESC, 9';
+        OPENQUERY ('qEpsStatistic', 'STS_DB', sSQL, 1);
+        SHOWINFORMATION ('Подготовка данных');
+        TRYEXCEPT (
+          Block(
+            WHILE (EOF ('qEpsStatistic') = 0,
+              Block(
+                sStatusEps := qEpsStatistic.STATUS_EPS;
+                PrepareInsert2 ();
+                Insert2 ('PLACEID', qEpsStatistic.PLACEID, 1);
+                Insert2 ('MAIN_ID', qEpsStatistic.MAIN_ID, 1);
+                Insert2 ('MAIN_COUNTER', qEpsStatistic.MAIN_COUNTER, 1);
+                Insert2 ('STAGE', qEpsStatistic.STAGE);
+                Insert2 ('DO_TYPE', qEpsStatistic.DO_TYPE);
+                Insert2 ('DO_NO', qEpsStatistic.DO_NO);
+                //Insert2 ('DO_DATE', DBFORMATDATETIME (qEpsStatistic.DO_DATE, sDatabaseType, 1, 1, 1), 2);
+                Insert2 ('DO_DATE', qEpsStatistic.DO_DATE, 2);
+                Insert2 ('DOCUMENTID', qEpsStatistic.DOCUMENTID);
+                //Insert2 ('DATECORR', DBFORMATDATETIME (qEpsStatistic.DATECORR, sDatabaseType, 1, 1, 1), 2);
+                IF ('Для регистрации      ' = qEpsStatistic.STAGE,
+                  Block(
+                    Insert2 ('DATECORR', '', 2);
+                  ),
+                  Block(
+                    Insert2 ('DATECORR', qEpsStatistic.DATECORR, 2);
+                    sSQL := 'SELECT' +
+                            ' DOCSTATUS,CREATED_AT,DODT,REGDATE' +
+                            ' FROM ' + CORRECTTABLENAME ('EPS_LOG') +
+                            ' WHERE' +
+                            ' DOCUMENTID=' +char(39)+ qEpsStatistic.DOCUMENTID +char(39)+
+                            ' ORDER BY REGDATE DESC';
+                    OPENQUERY ('qEpsLog', 'dbJournals', sSQL, 1);
+                    IF (FIELDISNULL ('qEpsLog', 'DOCSTATUS') = 0,
+                      sStatusEps := qEpsLog.DOCSTATUS
+                    ); // IF
+                    CLOSEDATASET ('qEpsLog');
+                  )
+                ); // IF
+                Insert2 ('DOC_TYPE', qEpsStatistic.DOC_TYPE);
+                Insert2 ('DOC_NO', qEpsStatistic.DOC_NO);
+                Insert2 ('STATUS_EPS', sStatusEps);
+                Insert2 ('LIST_ID', sGUID);
+                Insert2 ('', '', 0, 'EPS_STATISTIC', 'STS_DB');
+                NEXT ('qEpsStatistic');
+              )
+            ); // WHILE
+          ),
+          Block(
+            HIDEINFORMATION ();
+            RAISEEXCEPTION (EXCEPTIONMESSAGE ());
+          )
+        ); // TRYEXCEPT
+        CLOSEDATASET ('qEpsStatistic');
+        HIDEINFORMATION ();
+      )
+    ); // IF
+    sGUID
+  )
+), // FUNC - RefreshEpsStatistic

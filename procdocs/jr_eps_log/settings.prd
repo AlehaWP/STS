@@ -1,0 +1,63 @@
+// *****************************************************************************
+// Название: jr_eps_log_settings
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: jr_eps_log_settings
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+FUNC ('IsChecked',
+  Block(
+    PARAM ('pExponent', Integer, 0);
+  ),
+  Block(
+    VAR ('iResult', Integer, 2);
+    VAR ('iIterations', Integer, 1);
+    IF (pExponent = 0,
+      Block(
+        iResult := 1;
+      ),
+      Block(
+        WHILE (iIterations < pExponent,
+          Block(
+            iResult := iResult * 2;
+            iIterations := iIterations + 1;
+          )
+        ); // WHILE
+      )
+    ); // IF
+    BITAND (iChoice, iResult) <> iResult
+  )
+), // FUNC - Pow2
+
+
+VAR ('sVariants', String, '');
+
+sVariants := 'Регистрация ДО' +
+             '|Несоответствия в ходе таможенного досмотра (осмотра)' +
+             '|Отправка отмены подачи ДО' +
+             '|Установлена связь ДО-1 и Уведомлением' +
+             '|Регистрация Комм. акта \ Письма' +
+             '|Уведомление о принятии решения о выдаче товара с СВХ';
+
+VAR ('iChoice', Integer, CHOICEVARIANTS ('Уведомлять о следующих событиях', 2, INIFILE ('JR_EPS_LOG', 'Settings', 0), sVariants, '|'));
+IF (iChoice < 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+WRITEINIFILE ('JR_EPS_LOG', 'Settings', iChoice);
+VAR ('iChecked', Integer);
+
+// Регистрация ДО
+WRITEINIFILE ('JR_EPS_LOG', 'DORegInfo', IsChecked(0));
+// Досмотры (осмотры)
+WRITEINIFILE ('JR_EPS_LOG', 'WHActInspectionRes', IsChecked(1));
+// Отправлена отмена подачи ДО
+WRITEINIFILE ('JR_EPS_LOG', 'OnCancelReportSend', IsChecked(2));
+// Принято решение о выдаче товара
+WRITEINIFILE ('JR_EPS_LOG', 'WHGoodOutMatch', IsChecked(3));
+// Регистрация комм. акта \ письма
+WRITEINIFILE ('JR_EPS_LOG', 'PermitDOChange', IsChecked(4));
+// Уведомление о принятии решения о выдаче товара с СВХ
+WRITEINIFILE ('JR_EPS_LOG', 'WHGoodOut', IsChecked(5));

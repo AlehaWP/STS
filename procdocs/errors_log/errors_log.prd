@@ -1,0 +1,120 @@
+// *****************************************************************************
+// Название: errors_log.prd
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: errors_log.prd
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+VAR ('sSQL', String, '');
+
+FUNC ('CheckTableExists', '',
+  Block(
+    IF (TABLEEXISTS ('ERRORS_LIST', 'STS_DB') = 0,
+      Block(
+        sSQL := 'CREATE TABLE ' + CORRECTTABLENAME('ERRORS_LIST') +
+             '(' +
+             'ID SMALLINT,' +
+             'GROUP_NAME CHAR(250),' +
+             'ERR_LVL CHAR(16),' +
+             'DESCR CHAR(250),' +
+             'INVALID_VALUE CHAR(250),' +
+             'VALID_VALUE CHAR(250),' +
+             'LIST_ID CHAR(36),' +
+             'PRIMARY KEY (ID)' +
+             ')';
+        EXECUTESQL ('STS_DB', sSQL);
+      )
+    );  // IF
+  )
+); // FUNC CheckTableExists
+
+
+FUNC ('GetNewId', '',
+  Block(
+
+    VAR ('iReturn', Integer, 1);
+    sSQL := 'SELECT MAX(ID) AS NEWID FROM ERRORS_LIST';
+    OPENQUERY ('qEL', 'STS_DB', sSQL, 1);
+    iReturn := qEL.NEWID + 1;
+    CLOSEDATASET ('qEL');
+    iReturn
+  )
+),  // FUNC GetNewId
+
+
+FUNC ('AddError',
+  Block(
+    PARAM ('pGroupName', String, 0);
+    PARAM ('pErrLvl', String, 1);
+    PARAM ('pDescr', String, 2);
+    PARAM ('pInvalidValue', String, 3);
+    PARAM ('pValidValue', String, 4);
+    PARAM ('pListId', String, 5);
+  ),
+  Block(
+    sSQL := 'INSERT INTO ' + CORRECTTABLENAME ('ERRORS_LIST') +
+         '(ID,GROUP_NAME,ERR_LVL,DESCR,INVALID_VALUE,VALID_VALUE,LIST_ID)' +
+         'VALUES (' +
+         CONVERT (GetNewId(), String) + ',' +
+         char(39)+ pGroupName +char(39)+ ',' +
+         char(39)+ pErrLvl +char(39)+ ',' +
+         char(39)+ pDescr +char(39)+ ',' +
+         char(39)+ pInvalidValue +char(39)+ ',' +
+         char(39)+ pValidValue +char(39)+ ',' +
+         char(39)+ pListId +char(39)+
+         ')';
+    EXECUTESQL ('STS_DB', sSQL);
+  )
+), // FUNC AddError
+
+
+FUNC ('DeleteList',
+  Block(
+    PARAM ('pListId', String, 0);
+  ),
+  Block(
+    sSQL := 'DELETE FROM ' + CORRECTTABLENAME ('ERRORS_LIST') +
+            ' WHERE' +
+            ' LIST_ID=' +char(39)+ pListId +char(39);
+    EXECUTESQL ('STS_DB', sSQL);
+  )
+),  // FUNC DeleteList
+
+
+FUNC ('DeleteAllLists', '',
+  Block(
+    sSQL := 'DELETE FROM ' + CORRECTTABLENAME ('ERRORS_LIST');
+    EXECUTESQL ('STS_DB', sSQL);
+  )
+),  // FUNC DeleteList
+
+
+FUNC ('ShowErrorsLog',
+  Block(
+    PARAM ('pListId', String, 0);
+  ),
+  Block(
+    EXECUTEPROJECT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\errors_log\errors_log.ssproj', ['LID', pListId]);
+  )
+), // FUNC ShowErrorsLog
+
+// проверяем существование таблицы, если не существует - создаём
+CheckTableExists();
+
+
+
+//* Пример использования *//
+//
+// EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'procdocs\errors_log\errors_log.prd');
+// VAR ('sErrorListId', Integer, GENERATEUUID (1));
+// VAR ('sGroupName', Stirng, 'Даты');
+//
+// AddError (sGroupName, 'ОШ.', 'Дата документа', '01.01.2018', '> ' + FDT ('DD.MM.YYYY', Date()), sErrorListId);
+// ShowErrorsLog (iErrorListId);
+//
+//* КОНЕЦ *//
+
+

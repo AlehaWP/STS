@@ -1,0 +1,19 @@
+VAR ('iList', Integer, STRINGLISTCREATE());
+VAR ('sShowlogFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\' + IF (USERINFO ('', 'UserUUID') <> '', USERINFO ('', 'UserUUID') + '\', ''));
+
+CASE (JRGOODOUT2.DOCUMENTKIND,
+  [
+    'GoodOutDecision',
+    Block(
+      sShowlogFile := sShowlogFile + 'SHOWLOGWHGOU_' + JRGOODOUT2.DOCUMENTID
+    ),
+  ],
+    sShowlogFile := sShowlogFile + 'SHOWLOGWHGOU2_' + REPLACESTR (JRGOODOUT2.PRDOCUMENTNUMBER, '/', '-')
+); // CASE
+
+sShowlogFile := sShowlogFile + '.xml';
+
+STRINGLISTADDITEM (iList, '<?xml version="1.0" encoding="windows-1251"?>');
+STRINGLISTADDITEM (iList, '<SHOWMONITORED>Открыть протокол Уведомления о выдаче в Монитор ЭД</SHOWMONITORED>');
+STRINGLISTSAVETOFILE (iList, sShowlogFile);
+STRINGLISTDESTROY (iList);

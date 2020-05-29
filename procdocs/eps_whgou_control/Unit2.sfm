@@ -1,0 +1,164 @@
+object MainForm_1: TScriptMultiLanguageForm
+  BorderIcons = [biSystemMenu, biMinimize]
+  Caption = #1050#1086#1085#1090#1088#1086#1083#1100' '#1059#1074#1077#1076#1086#1084#1083#1077#1085#1080#1081
+  ClientHeight = 240
+  ClientWidth = 566
+  Color = 15723755
+  Constraints.MaxHeight = 300
+  Constraints.MaxWidth = 600
+  Constraints.MinHeight = 258
+  Constraints.MinWidth = 564
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = 3481376
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'Position=poScreenCenter'
+    'BorderStyle=bsSingle')
+  SaveEvents.Strings = (
+    'Self.OnCreate=MainForm_1Create'
+    'btnClose.OnClick=btnCloseClick'
+    'gdMain.OnCellClick=gdMainCellClick'
+    'btnReloadWhgou.OnClick=btnReloadWhgouClick')
+  PixelsPerInch = 96
+  TextHeight = 13
+  object pnlBottom: TPanel
+    Left = 0
+    Top = 199
+    Width = 566
+    Height = 41
+    Align = alBottom
+    TabOrder = 0
+    ExplicitTop = 192
+    ExplicitWidth = 560
+    DesignSize = (
+      566
+      41)
+    object btnClose: TcxButton
+      Left = 449
+      Top = 9
+      Width = 107
+      Height = 25
+      Anchors = [akRight, akBottom]
+      Caption = #1047#1072#1082#1088#1099#1090#1100
+      TabOrder = 0
+      ExplicitLeft = 443
+    end
+    object btnReloadWhgou: TcxButton
+      Left = 16
+      Top = 8
+      Width = 129
+      Height = 25
+      Caption = #1054#1073#1088#1072#1073#1086#1090#1072#1090#1100' '#1087#1086#1074#1090#1086#1088#1085#1086
+      TabOrder = 1
+    end
+  end
+  object gdMain: TDBGrid
+    Left = 0
+    Top = 0
+    Width = 566
+    Height = 199
+    Align = alClient
+    DataSource = dsMain
+    Font.Charset = DEFAULT_CHARSET
+    Font.Color = 3481376
+    Font.Height = 18
+    Font.Name = 'Tahoma'
+    Font.Style = []
+    Options = [dgTitles, dgColLines, dgRowLines, dgRowSelect, dgAlwaysShowSelection, dgConfirmDelete, dgCancelOnExit, dgTitleHotTrack]
+    ParentFont = False
+    TabOrder = 1
+    TitleFont.Charset = DEFAULT_CHARSET
+    TitleFont.Color = 3481376
+    TitleFont.Height = -13
+    TitleFont.Name = 'Tahoma'
+    TitleFont.Style = []
+    StyleElements = [seFont, seBorder]
+  end
+  object qJour: TUniQuery
+    Active = False
+    Filtered = False
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftDateTime
+        Name = 'dtFrom'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      'SELECT COUNT(*) AS C '
+      'FROM JRGOODOUT2 '
+      'WHERE'
+      
+        'CAST(CAST(SENDDATE AS VARCHAR(10)) + '#39' '#39' + SENDTIME AS TIMESTAMP' +
+        ') >= :dtFrom')
+    Left = 8
+    Top = 192
+  end
+  object connMed: TADOConnection
+    ConnectionString = 
+      'Provider=Microsoft.Jet.OLEDB.4.0;Data Source=D:\CTM\AllData\MONI' +
+      'TORED\BASE\MONITORED.MDB;Persist Security Info=False;'
+    LoginPrompt = False
+    Mode = cmRead
+    Provider = 'Microsoft.Jet.OLEDB.4.0'
+    Left = 88
+    Top = 192
+  end
+  object qMed: TADOQuery
+    Connection = connMed
+    CursorType = ctStatic
+    Parameters = <
+      item
+        Name = 'dtFrom'
+        Attributes = [paNullable]
+        DataType = ftWideString
+        NumericScale = 255
+        Precision = 255
+        Size = 510
+        Value = Null
+      end>
+    SQL.Strings = (
+      'SELECT COUNT(*)  AS C'
+      'FROM ED_ProcMessages'
+      'WHERE MsgId='#39'CMN.13014'#39' AND'
+      'PreparedAt >= :dtFrom')
+    Left = 128
+    Top = 192
+  end
+  object qBackups: TADOQuery
+    Connection = connMed
+    CursorType = ctStatic
+    Parameters = <
+      item
+        Name = 'dtFrom'
+        DataType = ftWideString
+        NumericScale = 255
+        Precision = 255
+        Size = 510
+        Value = Null
+      end>
+    SQL.Strings = (
+      'SELECT BACKUPFILE, INCOMING'
+      'FROM ED_ProcMessages'
+      'WHERE MsgId='#39'CMN.13014'#39' AND'
+      '(PreparedAt >= :dtFrom)')
+    Left = 168
+    Top = 192
+  end
+  object dsMain: TDataSource
+    Left = 48
+    Top = 160
+  end
+end

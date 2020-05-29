@@ -1,0 +1,263 @@
+// *****************************************************************************
+// Название: просмотр файла резервной копии
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: ViewBackupFile
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+VAR ('sSQL', String, '');
+VAR ('sListId', String, GENERATEUUID (1));
+VAR ('sCatRuNamespace', String, '');
+VAR ('sDocumentModeID', String, '');
+
+FUNC ('SHOWDOCUMENT',
+  Block(
+    PARAM ('pXmlFilePath', String, 0);
+    PARAM ('pXmlFormat', String, 1);
+  ),
+  Block(
+    VAR ('ext', Variant, CREATEOLEOBJECT ('svh.Extention'));
+    //ext.ShowErrors := true;
+    ext.GetXSLT3(pXmlFilePath, sDocumentModeId, pXmlFormat);
+    ext.Transformate();
+    ext.ShowDocument();
+    IF (FILEEXISTS (pXmlFilePath), DELETEFILE (pXmlFilePath))
+  )
+),
+
+
+FUNC ('GetNewId', '',
+  Block(
+    VAR ('iReturn', Integer, 1);
+    sSQL := 'SELECT MAX(ID) AS NEWID FROM ' + CORRECTTABLENAME('SHOWLOG_DOCUMENT_VIEWER');
+    OPENQUERY ('qSDV', 'STS_DB', sSQL, 1);
+    iReturn := qSDV.NEWID + 1;
+    CLOSEDATASET ('qSDV');
+    iReturn
+  )
+),  // FUNC GetNewId
+
+
+FUNC ('DeleteList',
+  Block(
+    PARAM ('pListId', String, 0);
+  ),
+  Block(
+    sSQL := 'DELETE FROM ' + CORRECTTABLENAME ('SHOWLOG_DOCUMENT_VIEWER') +
+            ' WHERE' +
+            ' LIST_ID=' +char(39)+ pListId +char(39);
+    EXECUTESQL ('STS_DB', sSQL);
+  )
+),  // FUNC DeleteList
+
+
+FUNC ('CheckTableExists', '',
+  Block(
+    IF (TABLEEXISTS (CORRECTTABLENAME('SHOWLOG_DOCUMENT_VIEWER'), 'STS_DB') = 0,
+      Block(
+        sSQL := 'CREATE TABLE ' + CORRECTTABLENAME('SHOWLOG_DOCUMENT_VIEWER') +
+             '(' +
+             'ID SMALLINT,' +
+             'NAME CHAR(50),' +
+             'DESCR CHAR(250),' +
+             'DOCUMENTMODEID CHAR(10),' +
+             'XMLNODE INT,' +
+             'LIST_ID CHAR(36),' +
+             'PRIMARY KEY (ID)' +
+             ')';
+        EXECUTESQL ('STS_DB', sSQL);
+      )
+    );  // IF
+  )
+); // FUNC CheckTableExists
+
+
+FUNC ('GetEDContainerDocs',
+  Block(
+    PARAM ('pXmlEDContainer', Integer, 0);
+  ),
+  Block(
+    VAR ('iChildCount', Integer, XMLNODECHILDCOUNT (pXmlEDContainer));
+    VAR ('iContainerDocIndex', Integer, XMLNODEINDEX (XMLNODEFIND (pXmlEDContainer, 'ContainerDoc')));
+
+    VAR ('xmlDocument', Integer);
+    VAR ('iDocumentsCount', Integer, 0);
+
+    // ПРОВЕРЯЕМ СУЩЕСТВОВАНИЕ ВРЕМЕННОЙ ТАБЛИЦЫ СПИСКА ДОКУМЕНТОВ
+    CheckTableExists();
+
+    WHILE (STRPOS ('ContainerDoc', XMLNODENAME (XMLNODECHILD (pXmlEDContainer, iContainerDocIndex))),
+      Block(
+        IF (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (pXmlEDContainer, iContainerDocIndex), 'DocBody'), 'Signature'), 'Object'),
+          xmlDocument := XMLNODECHILD (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODECHILD (pXmlEDContainer, iContainerDocIndex), 'DocBody'), 'Signature'), 'Object'), 0),
+          xmlDocument := XMLNODECHILD (XMLNODEFIND (XMLNODECHILD (pXmlEDContainer, iContainerDocIndex), 'DocBody'), 0);
+        ); // IF
+
+        sDocumentModeID := XMLNODEATTRIBUTE (xmlDocument, 'DocumentModeID');
+        VAR ('sDocumentName', String, IF (STRPOS (':', XMLNODENAME (xmlDocument)) = 0, XMLNODENAME (xmlDocument), EXTRACTSTR (XMLNODENAME (xmlDocument), 2, ':')));
+        VAR ('sXSDFile', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + INIFILE ('XMLFormat', 'Version', '5.14.3') + '\' + sDocumentName + '.XSD');
+        VAR ('sDocumentDescr', String, 'Описание XML-документа отсутствует');
+
+        IF (FILEEXISTS (sXSDFile),
+          Block(
+            VAR ('mXSDFileContent', Memo, STRINGFROMFILE (sXSDFile, '65001'));
+            IF (REGEXMATCH (mXSDFileContent, '<xs:documentation>(.*)</xs:documentation>', 1, 'sDocumentDescr') = 0,
+              Block(
+                sDocumentDescr := 'Описание XML-документа отсутствует';
+              )
+            ); // IF
+          )
+        ); // IF
+
+        sSQL := 'INSERT INTO ' + CORRECTTABLENAME ('SHOWLOG_DOCUMENT_VIEWER') +
+                '(ID,NAME,DESCR,DOCUMENTMODEID,XMLNODE,LIST_ID)' +
+                ' VALUES (' +
+                CONVERT (GetNewId(), String) + ',' +
+                char(39)+ sDocumentName +char(39)+ ',' +
+                char(39)+ sDocumentDescr +char(39)+ ',' +
+                char(39)+ sDocumentModeId +char(39)+ ',' +
+                xmlDocument + ',' +
+                char(39)+ sListId +char(39)+
+                ')';
+
+        EXECUTESQL ('STS_DB', sSQL);
+        iDocumentsCount := iDocumentsCount + 1;
+
+        iContainerDocIndex := iContainerDocIndex + 1;
+      )
+    ); // WHILE
+
+    // если был один документ, то возвращаем его дескриптор
+    // если в контейнере более одного документа, возвращаем ноль,
+    // тогда принимающий скрипт покажет диалог SELECTVALUES по таблице SHOWLOG_DOCUMENT_VIEWER
+    IF (iDocumentsCount = 1, xmlDocument, 0);
+  )
+); // FUNC EDContainerDocs
+
+FUNC ('ViewBackupFile',
+  Block(
+    PARAM ('pBackupFile', String, 0);
+    PARAM ('pXmlFormat', String, 1, '5.14.3');
+  ),
+  Block(
+
+    // проверяем количество документов в файле
+    VAR ('xmlBackupFile', Integer, XMLDOCUMENTCREATE ());
+    XMLDOCUMENTLOAD (xmlBackupFile, pBackupFile);
+    VAR ('xmlBackupFileRoot', Integer, XMLDOCUMENTROOT (xmlBackupFile));
+    VAR ('xmlObject', Integer);
+
+    // проверяем находится ли сообщение в конверте
+    IF (XMLNODEFIND (xmlBackupFileRoot, 'Envelope'),
+      Block(
+        // достаем из конверта объект Envelope \ Body \ Signature \ Object
+        xmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xmlBackupFileRoot, 'Envelope'), 'Body'), 'Signature'), 'Object');
+      )
+    ); // IF
+
+    IF (XMLNODEFIND (xmlObject, 'EPS_EnvResponse'),
+      Block(
+        // добираемся до документа запрошенного повтора сообщений
+        xmlObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xmlObject, 'EPS_EnvResponse'), 'EnvData'), 'Envelope'), 'Body'), 'Signature'), 'Object');
+      )
+    ); // IF
+
+    VAR ('SHOWLOGID', Integer, 0);
+    VAR ('SHOWLOGXMLNODE', Integer, 0);
+    VAR ('sTemporaryFile', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + GENERATEUUID(1) + '.xml');
+    VAR ('mBackupFileContent', Memo, STRINGFROMFILE (pBackupFile, '65001'));
+    IF (REGEXMATCH (mBackupFileContent, 'xmlns:cat_ru="(\S+)"', 1, 'sCatRuNamespace') = 0,
+      Block(
+        sCatRuNamespace := 'urn:customs.ru:CommonAggregateTypes:5.10.0';
+      )
+    ); // IF
+
+    // определяем что является объектом контейнер или документ
+    IF (xmlObject * XMLNODEFIND (xmlObject, 'ED_Container'),
+      Block(
+        // получаем список документов в контейнере, показываем пользователю для выбора
+        SHOWLOGXMLNODE := GetEDContainerDocs (XMLNODEFIND (xmlObject, 'ED_Container'));
+        IF (SHOWLOGXMLNODE = 0,
+          Block(
+            VAR ('iSelect', Integer, SELECTVALUES ('Выбор документа для просмотра', CORRECTTABLENAME ('SHOWLOG_DOCUMENT_VIEWER'), [['NAME', 'Наименование документа', 20], ['DESCR', 'Описание документа', 50], ['DOCUMENTMODEID', 'Код документа', 11]], [['XMLNODE', 'SHOWLOGXMLNODE'], ['DOCUMENTMODEID', 'sDocumentModeID']], 'ID', 'STS_DB', 'LIST_ID=' +char(39)+ sListId +char(39)));
+            IF (iSelect = 0, RAISEEXCEPTION ('Отменено пользователем'));
+            
+            IF (SHOWLOGXMLNODE > 0,
+              Block(
+                XMLNODESAVE (SHOWLOGXMLNODE, sTemporaryFile);
+                VAR ('xmlAddNamespace', Integer, XMLDOCUMENTCREATE());
+                XMLDOCUMENTLOAD (xmlAddNamespace, sTemporaryFile);
+                XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xmlAddNamespace), 0), 'xmlns:cat_ru', sCatRuNamespace);
+                XMLDOCUMENTSAVE (xmlAddNamespace, sTemporaryFile);
+                XMLDESTROY (xmlAddNamespace);
+              )
+            ); // IF
+          ),
+          Block(
+            XMLNODESAVE (SHOWLOGXMLNODE, sTemporaryFile);
+            VAR ('xmlAddNamespace', Integer, XMLDOCUMENTCREATE());
+            XMLDOCUMENTLOAD (xmlAddNamespace, sTemporaryFile);
+            XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xmlAddNamespace), 0), 'xmlns:cat_ru', sCatRuNamespace);
+            XMLDOCUMENTSAVE (xmlAddNamespace, sTemporaryFile);
+            XMLDESTROY (xmlAddNamespace);
+          )
+        ); // IF
+      ),
+      IF (XMLNODEFIND (xmlBackupFileRoot, 'ED_Container'),
+        Block(
+          // получаем список документов в контейнере, показываем пользователю для выбора
+          SHOWLOGXMLNODE := GetEDContainerDocs (XMLNODEFIND (xmlBackupFileRoot, 'ED_Container'));
+          IF (SHOWLOGXMLNODE = 0,
+            Block(
+              VAR ('iSelect', Integer, SELECTVALUES ('Выбор документа для просмотра', CORRECTTABLENAME ('SHOWLOG_DOCUMENT_VIEWER'), [['NAME', 'Наименование документа', 20], ['DESCR', 'Описание документа', 50], ['DOCUMENTMODEID', 'Код документа', 11]], [['XMLNODE', 'SHOWLOGXMLNODE'], ['DOCUMENTMODEID', 'sDocumentModeID']], 'ID', 'STS_DB', 'LIST_ID=' +char(39)+ sListId +char(39)));
+              IF (iSelect = 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+              IF (SHOWLOGXMLNODE > 0,
+                Block(
+                  XMLNODESAVE (SHOWLOGXMLNODE, sTemporaryFile);
+                  VAR ('xmlAddNamespace', Integer, XMLDOCUMENTCREATE());
+                  XMLDOCUMENTLOAD (xmlAddNamespace, sTemporaryFile);
+                  XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xmlAddNamespace), 0), 'xmlns:cat_ru', sCatRuNamespace);
+                  XMLDOCUMENTSAVE (xmlAddNamespace, sTemporaryFile);
+                  XMLDESTROY (xmlAddNamespace);
+                )
+              ); // IF
+            ),
+            Block(
+              XMLNODESAVE (SHOWLOGXMLNODE, sTemporaryFile);
+              VAR ('xmlAddNamespace', Integer, XMLDOCUMENTCREATE());
+              XMLDOCUMENTLOAD (xmlAddNamespace, sTemporaryFile);
+              XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xmlAddNamespace), 0), 'xmlns:cat_ru', sCatRuNamespace);
+              XMLDOCUMENTSAVE (xmlAddNamespace, sTemporaryFile);
+              XMLDESTROY (xmlAddNamespace);
+            )
+          ); // IF
+        ),
+        Block(
+          // сохраняем документ
+          sDocumentModeID := XMLNODEATTRIBUTE (XMLNODECHILD (xmlObject, 0), 'DocumentModeID');
+          XMLNODESAVE (XMLNODECHILD (xmlObject, 0), sTemporaryFile);
+          VAR ('xmlAddNamespace', Integer, XMLDOCUMENTCREATE());
+          XMLDOCUMENTLOAD (xmlAddNamespace, sTemporaryFile);
+          XMLNODESETATTRIBUTE (XMLNODECHILD (XMLDOCUMENTROOT (xmlAddNamespace), 0), 'xmlns:cat_ru', sCatRuNamespace);
+          XMLDOCUMENTSAVE (xmlAddNamespace, sTemporaryFile);
+          XMLDESTROY (xmlAddNamespace);
+        )
+      ) // IF
+    ); // IF
+
+    SHOWDOCUMENT (sTemporaryFile, pXmlFormat);
+    XMLDESTROY (xmlBackupFile);
+
+    IF (TABLEEXISTS (CORRECTTABLENAME('SHOWLOG_DOCUMENT_VIEWER'), 'STS_DB'),
+      DeleteList (sListId)
+    ); // IF
+  )
+); // FUNC - ViewBackupFile
+
+
+

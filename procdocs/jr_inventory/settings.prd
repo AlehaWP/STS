@@ -1,0 +1,54 @@
+// *****************************************************************************
+// Название: JR_INVENTORY Settings
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: JR_INVENTORY Settings
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+FUNC ('IsChecked',
+  Block(
+    PARAM ('pExponent', Integer, 0);
+  ),
+  Block(
+    VAR ('iResult', Integer, 2);
+    VAR ('iIterations', Integer, 1);
+    IF (pExponent = 0,
+      Block(
+        iResult := 1;
+      ),
+      Block(
+        WHILE (iIterations < pExponent,
+          Block(
+            iResult := iResult * 2;
+            iIterations := iIterations + 1;
+          )
+        ); // WHILE
+      )
+    ); // IF
+    BITAND (iChoice, iResult) = iResult
+  )
+), // FUNC - Pow2
+
+
+VAR ('sVariants', String, '');
+
+sVariants := 'Создавать ДО-1 автоматически при получении описи' +
+             '|При создании ДО-1 не заполнять количество в дополнительных единицах' +
+             '|Добавлять в ДО-1 все документы из 44 графы';
+
+VAR ('iChoice', Integer, CHOICEVARIANTS ('Парметры журанала', 2, INIFILE ('WHDocInventory', 'Settings', 0), sVariants, '|'));
+IF (iChoice < 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+WRITEINIFILE ('WHDocInventory', 'Settings', iChoice);
+VAR ('iChecked', Integer);
+
+// создавать ДО-1 автоматически
+WRITEINIFILE ('WHDocInventory', 'CreateDO1', IsChecked(0));
+// не загружать количество в доп. единицах
+WRITEINIFILE ('WHDocInventory', 'IgnoreMeasureQuantity', IsChecked(1));
+// добавлять в ДО-1 все документы из 44-ой графы
+WRITEINIFILE ('WHDocInventory', 'AddAllDocuments', IsChecked(2));

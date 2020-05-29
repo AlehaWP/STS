@@ -1,0 +1,97 @@
+// *****************************************************************************
+// Название: Операции над выделенными документами
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: По выделенным
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+VAR ('iCurrentPlaceId', Integer, KRD_MAIN.PLACEID);
+VAR ('iCurrentId', Integer, KRD_MAIN.ID);
+VAR ('iSelectedDocsCount', Integer, GETSELECTEDCOUNT());
+IF (iSelectedDocsCount = 0, RAISEEXCEPTION ('Нет выделенных документов'));
+
+VAR ('iSelectedDocIndex', Integer, 1);
+GETSELECTEDDOCS ('qSelectedDocs', 'PLACEID', 'ID');
+
+VAR ('iChoice', Integer, -1);
+
+iChoice := CHOICEVARIANT (
+             'Выберите действие',
+             1,
+             0,
+             [
+               'Восстановление протокола',
+               'Обновление статуса ЭПС'
+             ], 'SELECTED_RUNNER'
+          ); // CHOICEVARIANT
+IF (iChoice < 0, RAISEEXCEPTION ('Отменено пользователем'));
+
+VAR ('sScriptPath', String, '');
+sScriptPath := CASE (iChoice,
+  [0, 'PROCDOCS\fix_protocol.prd',
+   1, 'PROCDOCS\refresh_eps.prd',
+  ], ''
+); // CASE
+
+IF (LENGTH (sScriptPath) = 0, RAISEEXCEPTION ('Не выбрано действие'));
+IF (FILEEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + sScriptPath) = 0, RAISEEXCEPTION ('Скрипт "' + sScriptPath + '" не существует'));
+// запоминаем текущий фильтр для последующего восстановления
+VAR ('sFilter', String, GETFILTER ('KRD_MAIN'));
+SETFILTER ('KRD_MAIN', '');
+
+IF (DIRECTORYEXISTS (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS') = 0, FORCEDIRECTORIES (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS'));
+VAR ('sLog', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\selected_runner.log');
+VAR ('bShowLog', Boolean, false);
+CREATELOGFILE (sLog, 0);
+APPENDLOGFILE (sLog, FDT ('DD.MM.YYYY HH:NN:SS', Date() + Time(1)) + ', запуск скрипта ' + sScriptPath, '');
+
+SHOWPROGRESS ('Пожалуйста, подождите..');
+IF (BOF ('qSelectedDocs') = 0, FIRST ('qSelectedDocs'));
+WHILE (EOF ('qSelectedDocs') = 0,
+  Block(
+     IF (LOCATE ('KRD_MAIN', 'PLACEID;ID', [qSelectedDocs.PLACEID, qSelectedDocs.ID]),
+       Block(
+         TRYEXCEPT (
+           Block(
+             //showmessage (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + sScriptPath +char(13)+ KRD_MAIN.NBD);
+             EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + sScriptPath);
+           ),
+           Block(
+             APPENDLOGFILE (sLog, 'ДО-1 №' + KRD_MAIN.NBD + ' от ' + FDT ('DD.MM.YYYY', Date() + Time(1)) + ': ' + EXCEPTIONMESSAGE ());
+             bShowLog := true;
+           )
+         ); // TRYEXCEPT
+       )
+     ); // IF
+
+     iSelectedDocIndex := iSelectedDocIndex + 1;
+     SETPROGRESS (iSelectedDocsCount, iSelectedDocIndex, 100);
+     NEXT ('qSelectedDocs');
+  )
+); // WHILE
+HIDEPROGRESS ();
+
+APPENDLOGFILE (sLog, '', 'Выполнение завершено');
+
+// восстанавливаем фильтр
+SETFILTER ('KRD_MAIN', sFilter);
+LOCATE ('KRD_MAIN', 'PLACEID;ID', [iCurrentPlaceId, iCurrentId]);
+
+IF (bShowLog,
+  SHOWLOGFILE (sLog, 'Операции над выделенными документами'),
+  SHOWMESSAGE ('Выполнение завершено', 0, 'Операции над выделенными документами');
+); // IF
+
+
+
+
+
+
+
+
+
+

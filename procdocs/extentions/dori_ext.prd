@@ -1,0 +1,136 @@
+// *****************************************************************************
+// Название: dori_ext
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: dori_ext
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+// FillBill
+// если включена настройка и тип документа ДО-1
+IF (INIFILE ('FILLBILL', 'ExportDO1Reg', 0) = 1,
+  Block(
+    IF (xmlMainNode.FormReport = 1,
+      EXECUTESCRIPT ('PROCDOCS\do1reg2Fillbill.prd')
+    ); // IF
+  )
+); // IF
+
+
+// МОРСКОЙ РЫБНЫЙ ПОРТ
+// если в INI-файле заданы каталогли, то выгружаем в них
+// документы соответствующего типа (ДО-1, ДО-2)
+// использует функцию GETXMLDOCUMENT
+IF (VAREXISTS ('sDefaultAF') = 0, VAR ('sDefaultAF', String, INIFILE ('XmlFormat', 'Version', '5.14.3')));
+VAR ('xmlMRPFile', Integer);
+
+FUNC ('GETXMLDOCUMENT', '',
+  Block(
+    xmlMRPFile := XMLDOCUMENTCREATE ();
+    XMLDOCUMENTROOT (xmlMRPFile);
+  )
+), // FUNC - GETXMLDOCUMENT
+
+CASE (xmlMainNode.FormReport,
+  [
+    1,
+    Block(
+      IF (INIFILE ('MRP', 'DO1_OUT', '') <> '',
+        IF (DIRECTORYEXISTS (INIFILE ('MRP', 'DO1_OUT', '')),
+          Block(
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [vPlaceId, vId]);
+            GETXMLDOCUMENT ();
+            EXECUTESCRIPT ('DATA\IMPEX\SCRIPTS\' + sDefaultAF + '\do1_album.exp');
+            XMLDESTROY (xmlMRPFile);
+          )
+        ) // IF
+      ); // IF
+    ),
+    2,
+    Block(
+      // Морской рыбный порт
+      IF (INIFILE ('MRP', 'DO2_OUT', '') <> '',
+        IF (DIRECTORYEXISTS (INIFILE ('MRP', 'DO2_OUT', '')),
+          Block(
+            VAR ('epsMainCounter', Integer, 0);
+            OPENQUERY ('REL_MAIN_3', 'STS_DB', 'SELECT * FROM ' + CORRECTTABLENAME ('RELEASE') + ' WHERE PLACEID=' + vPLACEID + ' AND MAIN_ID=' + vID + ' AND COUNTER=' + vCounter, 1);
+            epsMainCounter := REL_MAIN_3.MAIN_COUNTER;
+            LOCATE ('KRD_MAIN', 'PLACEID;ID', [vPlaceId, vId]);
+            LOCATE ('RELEASE', 'PLACEID;ID;COUNTER', [vPlaceId, vId, epsMainCounter]);
+            GETXMLDOCUMENT ();
+            EXECUTESCRIPT ('DATA\IMPEX\SCRIPTS\' + sDefaultAF + '\do2_album.exp');
+            XMLDOCUMENTSAVE (xmlMRPFile, INCLUDETRAILINGBACKSLASH (INIFILE ('MRP', 'DO2_OUT', '')) + 'do2_' + DoNo + '_' + DocId + '.xml');
+            XMLDESTROY (xmlMRPFile);
+            CLOSEDATASET ('REL_MAIN_3');
+          )
+        ) // IF
+      ); // IF
+    ),
+  ],
+); // CASE
+
+
+// Надстройка для ПИК-ЮГ
+IF ((INIFILE ('PY01', 'ExportReg', '0') = '1')*(xmlMainNode.FormReport = 1),
+  Block(
+    VAR ('XmlDocument', Integer, XMLDOCUMENTCREATE());
+    VAR ('XmlDORoot', Integer, XMLDOCUMENTROOT (XmlDocument));
+    VAR ('XmlDO1', Integer, XMLNODEADDCHILD (XMLNODEADDCHILD (XmlDORoot, 'DO'), 'DO1'));
+    VAR ('sPathToSave', String, INIFILE ('PY01', 'PathToSave', ''));
+	VAR ('sRegNum', String, '');
+	sRegNum := xmlMainNode.RegisterNumberReport.CustomsCode + '/' +
+               FDT ('DDMMYY', STRTODATE (xmlMainNode.RegisterNumberReport.RegistrationDate, 'YYYY-MM-DD', '-')) + '/' +
+               xmlMainNode.RegisterNumberReport.GTDNumber;
+
+
+    VAR ('dtRegDate', DateTime, STRTODATE (XMLNODEVALUE (XMLNODEFIND (xmlMainNode, 'RegDate')), 'YYYY-MM-DD', '-'));
+	VAR ('sRegDateTime', String, '');
+	
+	IF (XMLNODEFIND (xmlMainNode, 'RegTime'),
+		Block(
+			VAR ('sRegTime', String, xmlMainNode.RegTime);
+			IF (STRPOS ('+', sRegTime) > 0,
+				Block(
+					SPLITSTR (sRegTime, '+', sRegTime);
+				)
+			); // IF
+			sRegDateTime := FDT ('YYYYMMDDHHNN', dtRegDate + sRegTime);
+		),
+		Block(
+			sRegDateTime := FDT ('YYYYMMDD', dtRegDate);
+		)
+	); // IF
+			   
+    XMLNODESETVALUES (XmlDO1, '',
+                              'CustRepNum', COPY(sRegNum,1,23),
+                              'CustRepDate', sRegDateTime,
+                              'CustRepId', KRD_MAIN_2.G531,
+                              'BillID', KRD_MAIN_2.NU,
+                              'Number', KRD_MAIN_2.NBD,
+                              'Date', FDT ('YYYYMMDDHHNN', KRD_MAIN_2.BD_DATE),
+    ); // XMLNODESETVALUES
+
+    XMLNODESETVALUES (XmlDO1, 'Person',
+                              'PersonName', KRD_MAIN_2.AUTHOR,
+                              'PersonPost', KRD_MAIN_2.AUTHOR_POST,
+    ); // XMLNODESETVALUES
+
+    VAR ('sPathToSave', String, INIFILE ('PY01', 'PathToSave', ''));
+    IF (LENGTH (TRIM (sPathToSave)) > 0,
+      XMLDOCUMENTSAVE (XmlDocument, INCLUDETRAILINGBACKSLASH (sPathToSave) + KRD_MAIN_2.NBD + '-' + KRD_MAIN_2.NU + '.xml'),
+      Block(
+        IF (SELECTDIRECTORY ('sPathToSave') = 1,
+          Block(
+            WRITEINIFILE ('PY01', 'PathToSave', sPathToSave);
+            XMLDOCUMENTSAVE (XmlDocument, INCLUDETRAILINGBACKSLASH (sPathToSave) + KRD_MAIN_2.NBD + '-' + KRD_MAIN_2.NU + '.xml');
+          )
+        ); // IF
+      )
+    ); // IF
+    XMLDESTROY ('XmlDocument');
+  )
+); // IF
+// НАДСТРОЙКА ДЛЯ ПИК-ЮГ

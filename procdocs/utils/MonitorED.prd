@@ -1,0 +1,60 @@
+FUNC ('ConnStringBaseMonitorEd', ,
+     Block(
+            VAR ('sWinIniPath', String, INCLUDETRAILINGBACKSLASH (SPECIALFOLDERPATH (519))+'CTM\ctm.cfg');
+            VAR ('sConnString', String, '');
+            IF (REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcType', '0') = 1,
+                BLOCK(
+                   sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB\', 'ArcDir', '')+'MONITORED.MDB;Persist Security Info=False';
+                ),
+                IF(REGISTRYREADSTRING('HKEY_CURRENT_USER', 'Software\CTM\MONITORED\MAIN\DB', 'ArcType', '0') = 2,
+                   BLOCK(
+                        sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'ServerName', '') + ';Initial Catalog=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'DBName', '') + ';';
+                        IF (REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer', 'IntegratedSecurity', '') = '1',
+                          Block(
+                            sConnString := sConnString + 'Integrated Security=SSPI;';
+                          ),
+                          Block(
+                            sConnString := sConnString + 'User Id=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Login', '') + ';Password=' + REGISTRYREADSTRING ('HKEY_CURRENT_USER','Software\CTM\MONITORED\MAIN\DB\SQLServer\', 'Password', '');
+                          )
+                        ); // IF - //
+                   )
+                )
+            );
+            IF(sConnString='',
+               BLOCK(
+                  VAR ('sMonPath', String);
+                  sMonPath := INIFILE ('MONITOR_ED', 'InstallPath', '', sWinIniPath);
+                  // смотрим указанный пользователем каталог(запоминаем его в ini склада)
+                  IF (sMonPath = '', sMonPath :=INIFILE('MONITOR_ED', 'InstallPath', ''));
+                  // если не нашли по CTM.INI - работаем в терминале, спрашиваем пользователя
+                  IF(sMonPath = '', Block(
+                    SELECTDIRECTORY ('sMonPath');
+                    WRITEINIFILE('MONITOR_ED', 'InstallPath', sMonPath);
+                  ));
+                  If(FILEEXISTS(INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI')=0, sMonPath := '');
+                  IF(sMonPath = '', RAISEEXCEPTION ('Не найден Монитор ЭД'));
+                  VAR ('sMonitorIniPath', String, INCLUDETRAILINGBACKSLASH (sMonPath) + 'MONITORED.INI');
+                    IF (INIFILE ('DB', 'ArcType', '1', sMonitorIniPath) = 1,
+                      Block(
+                        // База данных Access
+                        VAR ('sDBPath', String, INIFILE ('DB', 'ArcDir', '', sMonitorIniPath) + 'MONITORED.MDB');
+                        IF (sDBPath = '', RAISEEXCEPTION ('Не найден путь к базе Монитора ЭД'));
+                        sConnString := 'ConnString=Provider=Microsoft.Jet.OLEDB.4.0;Data Source='+ sDBPath +';Persist Security Info=False';
+                      ),
+                      Block(
+                        sConnString := 'ConnString=Provider=SQLOLEDB.1;Data Source=' + INIFILE ('DB', 'Arc_SQL_ServerName', '', sMonitorIniPath) + ';Initial Catalog=' + INIFILE ('DB', 'Arc_SQL_DBName', '', sMonitorIniPath) + ';';
+                        IF (INIFILE ('DB', 'Arc_SQL_IntegratedSecurity', '0', sMonitorIniPath) = '1',
+                          Block(
+                            sConnString := sConnString + 'Integrated Security=SSPI;';
+                          ),
+                          Block(
+                            sConnString := sConnString + 'User Id=' + INIFILE ('DB', 'Arc_SQL_Login', '', sMonitorIniPath) + ';Password=' + INIFILE ('DB', 'Arc_SQL_Password', '', sMonitorIniPath);
+                          )
+                        ); // IF - //
+                      )
+                    ); // IF - //
+                )
+            );
+            sConnString
+     )//block
+);// FUNC ConnStringBaseMonitorEd
