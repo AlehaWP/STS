@@ -201,29 +201,34 @@ FUNC ('FillXML', ,
 
 FUNC ('SaveXML', ,
   Block(
+    VAR ('sTempDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
+    IF (DIRECTORYEXISTS (sTempDir) = 0, FORCEDIRECTORIES (sTempDir));
+
+    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'ReqWHOperations_'+vPlaceID+'_'+vDocID+'.xml');
     XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
+    sTmpFileName;
   )
 ), // FUNC - SaveTmpXML() //
 
+FUNC ('GetReqOperationsExpXml',
+  Block (
+    Param ('pPlaceID', string, 0);
+    Param ('pDocID', string, 1);
+  ),
+  Block (
+    vPlaceID := pPlaceID;
+    vDocID := pDocID;
 
-// настройка на каталог временный каталог 
-VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
+    CreateXML ();
+    FillXML ();
+    SaveXML ();
+  )
+),
 
-IF (DIRECTORYEXISTS (sDir) = 0, FORCEDIRECTORIES (sDir));
-
-VAR ('vDocID', String, '');
-
-VAR ('mSQL', Memo, '');
-
-mSQL := 'SELECT PLACEID, ID, DOCUMENTID FROM KRD_MAIN WHERE ID=' + JR_OPERATIONS.ID;
-OPENQUERY ('qDO1', 'STS_DB', mSQL);
-IF (FIELDISNULL ('qDO1', 'DOCUMENTID') = 0,  vDocID := qDO1.DOCUMENTID);
-
-VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sDir) + 'ReqWHOperations_'+qDO1.PLACEID+'_'+vDocID+'.xml');
+VAR ('vPlaceID', string, '');
+VAR ('vDocID', string, '');
 
 
-CreateXML ();
-FillXML ();
-SaveXML ();
+
 
 
