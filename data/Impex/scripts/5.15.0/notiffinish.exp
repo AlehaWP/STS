@@ -10,7 +10,7 @@
 FUNC ('CreateXML', ,
   Block(
     VAR ('XMLDoc', Integer, XMLDocumentCreate());
-    XMLDOCUMENTENCODING (XMLDoc, sXmlDocEncoding);
+    XMLDOCUMENTENCODING (XMLDoc, 'utf-8');
     VAR ('XMLDocRoot', Integer, XMLDocumentRoot(XMLDoc));
     VAR ('XMLNfRejOper', Integer, XMLNodeAddChild(XMLDocRoot, 'nfro:NotifFinishRejectOperations'));
 
@@ -25,7 +25,7 @@ FUNC ('CreateXML', ,
     //XmlNodeSetAttribute (XMLDO3Report, 'cat_ru:RefDocumentID', JRDO3.RefDocumentId);
     XMLNODESETVALUES (XMLNfRejOper, '',
 				    'cat_ru:DocumentID', GENERATEUUID (1),
-				    'cat_ru:RefDocumentID', JR_OPERATIONS.DocumentId
+				    'cat_ru:RefDocumentID', JR_OPERATIONS.DOCUMENTID
     ); // XMLNODESETVALUES - //
 
   )
@@ -191,7 +191,7 @@ FUNC ('SaveXML', ,
     VAR ('sTempDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
     IF (DIRECTORYEXISTS (sTempDir) = 0, FORCEDIRECTORIES (sTempDir));
 
-    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'NotifFinishRejectOperations_'+sPlaceID+'_'+sDocID+'.xml');
+    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'NotifFinishRejectOperations_'+sPlaceID+'_'+sDoDocID+'.xml');
     XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
     sTmpFileName
   )
@@ -201,11 +201,11 @@ FUNC ('SaveXML', ,
 FUNC ('GetNotifFinishExpXml',   
   Block (
     Param ('pPlaceID', string, 0);
-    Param ('pDocID', string, 1);
+    Param ('pDoDocID', string, 1);
   ),
   Block (
     sPlaceID := pPlaceID;
-    sDocID := pDocID;
+    sDoDocID := pDoDocID;
 
     CreateXML ();
     FillXML ();
@@ -214,5 +214,5 @@ FUNC ('GetNotifFinishExpXml',
 ),
 
 VAR ('sPlaceID', string, '');
-VAR ('sDocID', string, '');
+VAR ('sDoDocID', string, '');
 

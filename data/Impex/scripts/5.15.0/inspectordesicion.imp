@@ -21,25 +21,12 @@ FUNC('GetDate',
 ),
 
 
-{
-  VAR ('sPath', String, '');
-  IF (SELECTFILE ('sPath', 'Выбор уведомления о выпуске', 'Xml-файлы (*.xml)|*.xml') = 0, RAISEEXCEPTION ('Отменено пользователем'));
-
-  VAR ('XmlDoc', Integer, XMLDOCUMENTCREATE());
-  XMLDOCUMENTLOAD (XmlDoc, sPath);
-
-  VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
-}
-
-//OPENTABLE ('OPERATE', 'JRREQOPER', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
-
 
 VAR ('XMLInspDecision', Integer, XMLNODECHILD (XmlRoot, 0));
       VAR ('sDocumentID', string, XMLNODEVALUE (XMLNODEFIND (XMLInspDecision, 'cat_ru:DocumentID')));
       VAR ('sRefID', string, XMLNODEVALUE (XMLNODEFIND (XMLInspDecision, 'cat_ru:RefDocumentID')));
-OPENQUERY('FindReqOper', 'Select JOURNAL_MASTER_ID FROM JRREQOPER WHERE DOCUMENTID='+char(39)+sRefID+char(39), 'dbJournals');
+OPENQUERY('FindReqOper', 'Select JOURNAL_MASTER_ID FROM JR_OPERATIONS WHERE DOCUMENTID='+char(39)+sRefID+char(39), 'dbJournals');
 //OPENQUERY('FindReqOper', 'Select JOURNAL_MASTER_ID FROM JRREQOPER WHERE DOCUMENTID='+char(39)+'a'+char(39), 'dbJournals');
-
 IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
    BLOCK(
       VAR('iChildCount', integer, XMLNODECHILDCOUNT(XMLInspDecision));
@@ -48,7 +35,7 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
             BLOCK(
                   IF(XMLNODENAME(XMLNODECHILD(XMLInspDecision, iCounter))='ispd:DecisionDescription',
                      BLOCK(
-                          OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID  FROM inspDecision WHERE JOURNAL_MASTER_ID='+FindReqOper.JOURNAL_MASTER_ID, 'dbJournals');
+                          OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID  FROM INSPECTORDECISION WHERE JOURNAL_MASTER_ID='+FindReqOper.JOURNAL_MASTER_ID, 'dbJournals');
                           VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
 
                           VAR('iDecision', integer, XMLNODECHILD(XMLInspDecision, iCounter));
@@ -103,7 +90,7 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
                                 )
                           );
                           //showmessage(dDecisionDate);
-                          EXECUTESQL('dbJournals',  ' INSERT INTO inspDecision '+
+                          EXECUTESQL('dbJournals',  ' INSERT INTO INSPECTORDECISION '+
                                                     ' VALUES '+
                                                     ' ('+
                                                     FindReqOper.JOURNAL_MASTER_ID +', '+

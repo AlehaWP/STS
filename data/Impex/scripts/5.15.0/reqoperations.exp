@@ -22,7 +22,7 @@ FUNC ('CreateXML', ,
 
     XmlNodeSetAttribute (XMLReqOper, 'DocumentModeID', '1006135E');
     XMLNODESETVALUES (XMLReqOper, '',
-            'cat_ru:DocumentID', sDocID,
+            'cat_ru:DocumentID', JRREQOPER.DocumentID,
             'reqop:ReqNumber', JR_OPERATIONS.REQNUMBER,
             'reqop:ReqDate', FDT ('YYYY-MM-DD', JR_OPERATIONS.ReqDate),
             'reqop:DocSign', 1,
@@ -204,7 +204,7 @@ FUNC ('SaveXML', ,
     VAR ('sTempDir', String, INCLUDETRAILINGBACKSLASH (TEMPDIRECTORY ()) + 'STS-MED\');
     IF (DIRECTORYEXISTS (sTempDir) = 0, FORCEDIRECTORIES (sTempDir));
 
-    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'ReqWHOperations_'+sPlaceID+'_'+sDocID+'.xml');
+    VAR ('sTmpFileName', String, INCLUDETRAILINGBACKSLASH (sTempDir) + 'ReqWHOperations_'+sPlaceID+'_'+sDoDocID+'.xml');
     XMLDocumentSaveToFile(XMLDoc, sTmpFileName);
     sTmpFileName
   )
@@ -213,11 +213,11 @@ FUNC ('SaveXML', ,
 FUNC ('GetReqOperationsExpXml',
   Block (
     Param ('pPlaceID', string, 0);
-    Param ('pDocID', string, 1);
+    Param ('pDoDocID', string, 1);
   ),
   Block (
     sPlaceID := pPlaceID;
-    sDocID := pDocID;
+    sDoDocID := pDoDocID;
 
     CreateXML ();
     FillXML ();
@@ -226,7 +226,7 @@ FUNC ('GetReqOperationsExpXml',
 ),
 
 VAR ('sPlaceID', string, '');
-VAR ('sDocID', string, '');
+VAR ('sDoDocID', string, '');
 
 
 
