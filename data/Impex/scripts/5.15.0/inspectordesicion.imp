@@ -35,8 +35,8 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
             BLOCK(
                   IF(XMLNODENAME(XMLNODECHILD(XMLInspDecision, iCounter))='ispd:DecisionDescription',
                      BLOCK(
-                          OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID  FROM INSPECTORDECISION WHERE JOURNAL_MASTER_ID='+FindReqOper.JOURNAL_MASTER_ID, 'dbJournals');
-                          VAR('iJMID', Integer, qryMAXID.MAX_ID + 1);
+                          OPENQUERY ('qryMAXID', ' SELECT MAX(JOURNAL_CHILD_ID) AS MAX_ID  FROM JR_INSPDECISION WHERE JOURNAL_MASTER_ID='+FindReqOper.JOURNAL_MASTER_ID, 'dbJournals');
+                          VAR('iCHID', Integer, qryMAXID.MAX_ID + 1);
 
                           VAR('iDecision', integer, XMLNODECHILD(XMLInspDecision, iCounter));
                           VAR('dDecisionDate', string, FormatDateTime('DD.MM.YYYY', GetDate(iDecision,'ispd:DecisionDate')) + ' ' + COPY(EXTRACTSTR (XMLNODEVALUE(XMLNODEFIND(iDecision,'ispd:DecisionTime')), 1, '.'), 1, 8));
@@ -90,11 +90,15 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
                                 )
                           );
                           //showmessage(dDecisionDate);
-                          EXECUTESQL('dbJournals',  ' INSERT INTO INSPECTORDECISION '+
+                          EXECUTESQL('dbJournals',  ' INSERT INTO JR_INSPDECISION '+
+                                                    ' (JOURNAL_MASTER_ID, JOURNAL_CHILD_ID, DECISION_DATE, DECISION_TEXT, '+
+                                                    ' DOC_NAME, DOC_NUMBER, DOC_DATE, DOC_CODE, INSP_FIO_ INSP_LNP,' +
+                                                    ' CUSTOMS_CODE, CUSTOMS_NAME, GOODS_CUSTOMS_CODE, GOODS_CUSTOMS_NAME' + 
+                                                    ' )' +   
                                                     ' VALUES '+
                                                     ' ('+
                                                     FindReqOper.JOURNAL_MASTER_ID +', '+
-                                                    iJMID+', '+
+                                                    iCHID+', '+
                                                     char(39)+ GENERATEUUID () +char(39)+ ', ' +
                                                     char(39)+ dDecisionDate   +char(39)+ ', ' +
                                                     char(39)+ sDecisionText   +char(39)+ ', '+
@@ -109,6 +113,11 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
                                                     char(39)+ sGCode          +char(39)+ ', '+
                                                     char(39)+ sGOfficeName    +char(39)+
                                                     ' )'
+                          );
+
+                          EXECUTESQL('dbJournals',  ' UPDATE JR_OPERATIONS '+
+                                                    ' SET STATUS = ' + char(39) + 'Получено решение от инспектора' + char(39) + 
+                                                    ' WHERE JOURNAL_MASTER_ID = ' + FindReqOper.JOURNAL_MASTER_ID 
                           );
                           iCounter := iCounter + 1;
 
