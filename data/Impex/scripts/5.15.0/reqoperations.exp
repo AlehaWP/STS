@@ -22,7 +22,7 @@ FUNC ('CreateXML', ,
 
     XmlNodeSetAttribute (XMLReqOper, 'DocumentModeID', '1006135E');
     XMLNODESETVALUES (XMLReqOper, '',
-            'cat_ru:DocumentID', JRREQOPER.DocumentID,
+            'cat_ru:DocumentID', JR_OPERATIONS.DocumentID,
             'reqop:ReqNumber', JR_OPERATIONS.REQNUMBER,
             'reqop:ReqDate', FDT ('YYYY-MM-DD', JR_OPERATIONS.ReqDate),
             'reqop:DocSign', 1,

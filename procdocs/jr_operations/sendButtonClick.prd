@@ -15,24 +15,33 @@ FUNC('NotFindErrorsInFillingJrData',
       IF (pDocType = 0, //Ответ на требование
         Block (
           IF (FIELDISNULL ('JR_OPERATIONS','DOCUMENTSIGN') = 1, sCheck := 'Не заполнен признак решения склада!');
-          IF ((JR_OPERATIONS.TRANSPVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','TRANSPDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по транспортировке!', sCheck := 'Нет решения по транспортировке!'));
-          IF ((JR_OPERATIONS.WEIGHVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','WEIGHINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по взвешиванию!', sCheck := 'Нет решения по взвешиванию!'));
-          IF ((JR_OPERATIONS.DEFQUANTVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','DEFQUANTDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по иному определению количества!', sCheck := 'Нет решения по иному определению количества!'));
-          IF ((JR_OPERATIONS.LOADINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','LOADINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по погрузке!', sCheck := 'Нет решения по погрузке!'));
-          IF ((JR_OPERATIONS.UNLOADINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','UNLOADINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по выгрузке!', sCheck := 'Нет решения по выгрузке!'));
-          IF ((JR_OPERATIONS.OVERLOADINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','OVERLOADINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по перегрузке!', sCheck := 'Нет решения по перегрузке!'));
-          IF ((JR_OPERATIONS.CORRPACKVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','CORRPACKDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по исправлению поврежденной упаковки!', sCheck := 'Нет решения по исправлению поврежденной упаковки!'));
-          IF ((JR_OPERATIONS.UNPACKINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','UNPACKINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по вскрытию упаковки!', sCheck := 'Нет вскрытию упаковки!'));
-          IF ((JR_OPERATIONS.PACKINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','PACKINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по упаковке!', sCheck := 'Нет решения по упаковке!'));
-          IF ((JR_OPERATIONS.REPACKINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','REPACKINGDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по переупаковке!', sCheck := 'Нет решения по переупаковке!'));
-          IF ((JR_OPERATIONS.OLG_VALUE=1)*(FIELDISNULL ('JR_OPERATIONS','OLG_DECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по по вскрытию помещ.!', sCheck := 'Нет решения по вскрытию помещ.!'));
-          IF ((JR_OPERATIONS.DIVISIONVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','DIVISIONDECISION') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Нет решения по разделению тов. партии!', sCheck := 'Нет решения по разделению тов. партии!'));
+          IF ((JR_OPERATIONS.TRANSPVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','TRANSPDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по транспортировке!');
+          IF ((JR_OPERATIONS.WEIGHINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','WEIGHINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по взвешиванию!');
+          IF ((JR_OPERATIONS.DEFQUANTVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','DEFQUANTDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по иному определению количества!');
+          IF ((JR_OPERATIONS.LOADINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','LOADINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по погрузке!');
+          IF ((JR_OPERATIONS.UNLOADINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','UNLOADINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по выгрузке!');
+          IF ((JR_OPERATIONS.OVERLOADINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','OVERLOADINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по перегрузке!');
+          IF ((JR_OPERATIONS.CORRPACKVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','CORRPACKDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по исправлению поврежденной упаковки!');
+          IF ((JR_OPERATIONS.UNPACKINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','UNPACKINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по вскрытию упаковки!');
+          IF ((JR_OPERATIONS.PACKINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','PACKINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по упаковке!');
+          IF ((JR_OPERATIONS.REPACKINGVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','REPACKINGDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по переупаковке!');
+          IF ((JR_OPERATIONS.OLG_VALUE=1)*(FIELDISNULL ('JR_OPERATIONS','OLG_DECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по по вскрытию помещ.!');
+          IF ((JR_OPERATIONS.DIVISIONVALUE=1)*(FIELDISNULL ('JR_OPERATIONS','DIVISIONDECISION') = 1), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Нет решения по разделению тов. партии!');
+        )
+      );
+      IF (pDocType = 1, //Заявление
+        Block (
+          IF (Length (JR_OPERATIONS.REQNUMBER) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен номер заявления!');
+          IF (Length (JR_OPERATIONS.REQDATE) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнена дата заявления!');
+          IF (Length (JR_OPERATIONS.INSPFIO) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнены ФИО инспектора!');
+                
         )
       );
 
-      IF (FIELDISNULL ('JR_OPERATIONS','CustomsCode') = 1, IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Не заполнен код поста!', 'Не заполнен код поста!'));
-      IF ((FIELDISNULL ('JR_OPERATIONS','DeclOrgName') = 1)|(FIELDISNULL ('JR_OPERATIONS','ReprOrgName') = 1), IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Не заполнен декларант или представитель!', sCheck := 'Не заполнен декларант или представитель!'));
-      IF (FIELDISNULL ('JR_OPERATIONS','GTDNumber') = 1, IF (sCheck <> '', sCheck := sCheck +char(13)+ 'Не заполнен номер ДТ', sCheck := 'Не заполнен номер ДТ'));
+      IF (Length (JR_OPERATIONS.CustomsCode) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен код поста!');
+      IF ((Length (JR_OPERATIONS.DeclOrgName) = 0)*(Length (JR_OPERATIONS.ReprOrgName) = 0), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен декларант или представитель!');
+      //IF (Length (JR_OPERATIONS.GTDNumber) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен номер ДТ');
+
       IF (LENGTH (sCheck) = 0, 
         iResult := 1, 
         showmessage(sCheck)
