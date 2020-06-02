@@ -91,15 +91,21 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
                           );
                           //showmessage(dDecisionDate);
                           EXECUTESQL('dbJournals',  ' INSERT INTO JR_INSPDECISION '+
-                                                    ' (JOURNAL_MASTER_ID, JOURNAL_CHILD_ID, DECISION_DATE, DECISION_TEXT, '+
-                                                    ' DOC_NAME, DOC_NUMBER, DOC_DATE, DOC_CODE, INSP_FIO_ INSP_LNP,' +
-                                                    ' CUSTOMS_CODE, CUSTOMS_NAME, GOODS_CUSTOMS_CODE, GOODS_CUSTOMS_NAME' + 
+                                                    ' (JOURNAL_MASTER_ID, JOURNAL_CHILD_ID, ' +
+                                                    ' JOURNAL_UUID, DOCUMENTID, ' + 
+                                                    ' DECISION_DATE, DECISION_TEXT, '+
+                                                    ' DOC_NAME, DOC_NUMBER, ' + 
+                                                    ' DOC_DATE, DOC_CODE, '+
+                                                    ' INSP_FIO, INSP_LNP,' +
+                                                    ' CUSTOMS_CODE, CUSTOMS_NAME, ' +
+                                                    ' GOODS_CUSTOMS_CODE, GOODS_CUSTOMS_NAME' + 
                                                     ' )' +   
                                                     ' VALUES '+
                                                     ' ('+
                                                     FindReqOper.JOURNAL_MASTER_ID +', '+
                                                     iCHID+', '+
                                                     char(39)+ GENERATEUUID () +char(39)+ ', ' +
+                                                    char(39)+ sDocumentID     +char(39)+ ', ' +
                                                     char(39)+ dDecisionDate   +char(39)+ ', ' +
                                                     char(39)+ sDecisionText   +char(39)+ ', '+
                                                     char(39)+ sDocName        +char(39)+ ', '+
