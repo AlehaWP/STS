@@ -1,0 +1,367 @@
+object Form2: TScriptMultiLanguageForm
+  BorderIcons = []
+  Caption = #1047#1072#1075#1088#1091#1079#1082#1072' '#1080#1079' Excel'
+  ClientHeight = 270
+  ClientWidth = 449
+  Color = 15723755
+  Constraints.MaxHeight = 305
+  Constraints.MaxWidth = 459
+  Constraints.MinHeight = 200
+  Constraints.MinWidth = 453
+  Font.Charset = RUSSIAN_CHARSET
+  Font.Color = 3481376
+  Font.Height = -13
+  Font.Name = 'Cambria'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'AutoSize=False'
+    'Position=poMainFormCenter'
+    'BorderStyle=bsSingle')
+  SaveEvents.Strings = (
+    'btOk.OnClick=btOkClick'
+    'Self.OnActivate=Form2Activate'
+    'rbLoadToActiveDo.OnClick=rbHowCreateDoClick'
+    'rbCreateNewDO.OnClick=rbHowCreateDoClick'
+    'tcxWayBill.OnEnter=tcxWayBillEnter'
+    'tcxWayBill.OnExit=tcxWayBillExit'
+    'refWayBillCode.OnExit=refWayBillCodeExit'
+    'feFileExcelPath.OnAfterDialog=feFileExcelPathAfterDialog'
+    'cxBoxNo.OnEnter=cxBoxNoEnter'
+    'cxBoxNo.OnExit=cxBoxNoExit')
+  PixelsPerInch = 96
+  TextHeight = 15
+  object cxGroupBox1: TcxGroupBox
+    AlignWithMargins = True
+    Left = 5
+    Top = 131
+    Hint = ''
+    Margins.Left = 5
+    Margins.Top = 0
+    Margins.Right = 5
+    Margins.Bottom = 10
+    Align = alTop
+    Style.BorderStyle = ebsNone
+    TabOrder = 3
+    ExplicitWidth = 433
+    DesignSize = (
+      439
+      30)
+    Height = 30
+    Width = 439
+    object btOk: TcxButton
+      Left = 206
+      Top = 3
+      Width = 115
+      Height = 25
+      Anchors = [akRight, akBottom]
+      Caption = #1047#1072#1075#1088#1091#1079#1080#1090#1100
+      ModalResult = 1
+      TabOrder = 1
+      ExplicitLeft = 200
+    end
+    object btCancel: TcxButton
+      Left = 350
+      Top = 3
+      Width = 75
+      Height = 25
+      Anchors = [akRight, akBottom]
+      Caption = #1054#1090#1084#1077#1085#1072
+      ModalResult = 2
+      TabOrder = 0
+      ExplicitLeft = 344
+    end
+  end
+  object cxRadioGroup1: TcxRadioGroup
+    AlignWithMargins = True
+    Left = 5
+    Top = 5
+    Hint = ''
+    Margins.Left = 5
+    Margins.Top = 5
+    Margins.Right = 5
+    Margins.Bottom = 10
+    Align = alTop
+    Properties.Items = <>
+    Style.BorderStyle = ebsNone
+    TabOrder = 0
+    ExplicitWidth = 433
+    Height = 28
+    Width = 439
+    object rbCreateNewDO: TcxRadioButton
+      Left = 2
+      Top = 9
+      Width = 143
+      Height = 17
+      Align = alLeft
+      Caption = #1057#1086#1079#1076#1072#1090#1100' '#1085#1086#1074#1099#1081' '#1044#1054'1'
+      TabOrder = 0
+    end
+    object rbLoadToActiveDo: TcxRadioButton
+      Left = 243
+      Top = 9
+      Width = 176
+      Height = 17
+      Align = alRight
+      Caption = #1047#1072#1075#1088#1091#1079#1080#1090#1100' '#1074' '#1090#1077#1082#1091#1097#1080#1081' '#1044#1054'1'
+      Checked = True
+      TabOrder = 1
+      TabStop = True
+    end
+  end
+  object cxGroupBox2: TcxGroupBox
+    AlignWithMargins = True
+    Left = 5
+    Top = 43
+    Hint = ''
+    Margins.Left = 5
+    Margins.Top = 0
+    Margins.Right = 5
+    Margins.Bottom = 10
+    Align = alTop
+    Style.BorderStyle = ebsNone
+    Style.LookAndFeel.NativeStyle = True
+    StyleDisabled.LookAndFeel.NativeStyle = True
+    StyleFocused.LookAndFeel.NativeStyle = True
+    StyleHot.LookAndFeel.NativeStyle = True
+    TabOrder = 2
+    ExplicitWidth = 433
+    DesignSize = (
+      439
+      78)
+    Height = 78
+    Width = 439
+    object feFileExcelPath: TcxFilenameEdit
+      Left = 2
+      Top = 5
+      Hint = ''
+      ParentFont = False
+      Properties.Buttons = <
+        item
+          Default = True
+          Glyph.Data = {
+            36030000424D3603000000000000360000002800000010000000100000000100
+            18000000000000030000C40E0000C40E00000000000000000000FF00FF0274AC
+            0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274
+            AC0274ACFF00FFFF00FF0274AC138AC457B7E06BCBF84BBFF74ABFF74ABFF74A
+            BFF74ABFF64ABFF74ABFF64BC0F72398CC0274ACFF00FFFF00FF0274AC33AAE0
+            2392C489D9FA54C7F854C7F753C7F854C7F754C7F854C7F854C7F853C7F7279D
+            CE6ACBE50274ACFF00FF0274AC57CAF80274AC99E3FB5ED1FA5ED1FA5ED1FA5E
+            D1FA5ED1FA5FD1FA5ED1F85ED1F82CA1CE99EDF70274ACFF00FF0274AC5ED3FA
+            0B81B782D5EF79E0FA6ADCFA69DCFB69DCFB6ADCFB69DCFB69DCFA6ADDFB2FA6
+            CF9FF0F70274ACFF00FF0274AC68DAFB2BA4D14AB2D797EBFC74E5FB74E5FB74
+            E5FC74E5FC74E5FB74E5FC046B0B33A9CFA3F4F752BBD70274AC0274AC70E3FB
+            5CD1EF1184B6FCFFFFB8F4FEBAF4FEBAF4FEBAF4FEB8F4FE046B0B25AA42046B
+            0BD4F7FACAF3F70274AC0274AC7AEBFE7AEBFC0A7FB50274AC0274AC0274AC02
+            74AC0274AC046B0B38CE6547E77F29B44A046B0B0274AC0274AC0274AC83F2FE
+            82F3FE82F3FE83F2FC83F3FE82F3FE83F2FE046B0B2DC0513FDC6E3ED86E46E5
+            7B28B04A046B0BFF00FF0274ACFEFEFE89FAFF89FAFE89FAFE8AF8FE8AFAFE04
+            6B0B046B0B046B0B046B0B3CD86A2EBF53046B0B046B0B046B0BFF00FF0274AC
+            FEFEFE8FFEFF8FFEFF8FFEFF0273A32BA4D12BA4D12BA4D1046B0B35D35E20A7
+            3A046B0BFF00FFFF00FFFF00FFFF00FF0274AC0274AC0274AC0274ACFF00FFFF
+            00FFFF00FFFF00FF046B0B28C24A046B0BFF00FFFF00FFFF00FFFF00FFFF00FF
+            FF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF046B0B17A42B19A730046B
+            0BFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF
+            00FFFF00FF046B0B11A122046B0BFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF
+            FF00FFFF00FFFF00FFFF00FFFF00FF046B0B046B0B046B0B046B0BFF00FFFF00
+            FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF046B0B046B0B04
+            6B0B046B0BFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF}
+          Kind = bkGlyph
+        end>
+      Properties.ReadOnly = False
+      Properties.ViewStyle = vsHideCursor
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -16
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.TextColor = clGray
+      Style.IsFontAssigned = True
+      TabOrder = 0
+      Text = #1059#1082#1072#1078#1080#1090#1077' '#1087#1091#1090#1100' '#1082' '#1092#1072#1081#1083#1091
+      DialogKind = dkOpen
+      DialogOptions = [ofEnableSizing]
+      DialogOptionsEx = []
+      Filter = #1042#1089#1077' '#1092#1072#1081#1083#1099' (*.xlsx)|*.xlsx'
+      Width = 429
+    end
+    object cxRemark: TcxTextEdit
+      Left = 190
+      Top = 45
+      Hint = ''
+      Anchors = [akRight, akBottom]
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clSilver
+      Style.Font.Height = -16
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.TextColor = clBlack
+      Style.IsFontAssigned = True
+      TabOrder = 1
+      Text = #1041#1077#1079' '#1074#1099#1075#1088#1091#1079#1082#1080
+      ExplicitLeft = 184
+      Width = 245
+    end
+    object cxBoxNo: TcxTextEdit
+      Left = 3
+      Top = 45
+      Hint = ''
+      Anchors = [akLeft, akBottom]
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clSilver
+      Style.Font.Height = -16
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.TextColor = clGray
+      Style.IsFontAssigned = True
+      TabOrder = 2
+      Text = #1052#1077#1089#1090#1086' '#1088#1072#1079#1084'.'
+      Width = 121
+    end
+  end
+  object gbPlaceid: TcxGroupBox
+    AlignWithMargins = True
+    Left = 5
+    Top = 43
+    Hint = ''
+    Margins.Left = 5
+    Margins.Top = 0
+    Margins.Right = 5
+    Margins.Bottom = 10
+    Align = alTop
+    Style.BorderStyle = ebsNone
+    Style.LookAndFeel.NativeStyle = True
+    StyleDisabled.LookAndFeel.NativeStyle = True
+    StyleFocused.LookAndFeel.NativeStyle = True
+    StyleHot.LookAndFeel.NativeStyle = True
+    TabOrder = 1
+    Visible = False
+    Height = 78
+    Width = 433
+    object cxLicNo: TcxLookupComboBox
+      Left = 2
+      Top = 5
+      Hint = ''
+      Align = alTop
+      FindSelection = False
+      ParentFont = False
+      Properties.Buttons = <
+        item
+        end>
+      Properties.GlyphButtonIndex = 0
+      Properties.KeyFieldNames = 'LICENCENO'
+      Properties.ListColumns = <
+        item
+          Caption = #8470' '#1087'/'#1087
+          FieldName = 'PLACEID'
+        end
+        item
+          Caption = #1051#1080#1094#1077#1085#1079#1080#1103
+          FieldName = 'LICENCENO'
+        end>
+      Properties.ListFieldIndex = 1
+      Properties.ListOptions.SyncMode = True
+      Properties.ListSource = dsStores
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -16
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 0
+      Width = 429
+    end
+    object tcxWayBill: TcxTextEdit
+      Left = 184
+      Top = 45
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clSilver
+      Style.Font.Height = -16
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.TextColor = clGray
+      Style.IsFontAssigned = True
+      TabOrder = 2
+      Width = 245
+    end
+    object refWayBillCode: TcxReferenceEdit
+      Left = 3
+      Top = 45
+      Hint = ''
+      ParentFont = False
+      Properties.Buttons = <
+        item
+          Default = True
+          ImageIndex = 17
+          Images = MultiLanguageDataModule.ilDefaultImages16
+          Kind = bkGlyph
+        end>
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = 3481376
+      Style.Font.Height = -16
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+      RefField = 'PAPERCODE'
+      RefFilter = 'PAPER_IS_WAYBILL=1'
+      RefFilterID = 0
+      RefName = 'PAPERS.DB'
+      Width = 121
+    end
+  end
+  object qryMaxID: TUniQuery
+    Active = False
+    Filtered = False
+    DatabaseName = 'STS_DB'
+    UpdateMode = upWhereAll
+    Params = <>
+    SQL.Strings = (
+      'SELECT (MAX(ID)+1) AS ID FROM KRD_MAIN')
+    Left = 30248
+    Top = 80
+  end
+  object qryMaxG32: TUniQuery
+    Active = False
+    Filtered = False
+    DatabaseName = 'STS_DB'
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftUnknown
+        Name = 'ID'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      'SELECT MAX(G32) as G32 FROM KRD_COMM WHERE ID=:ID')
+    Left = 168
+  end
+  object dsStores: TUniDataSource
+    DataSet = qryStores
+    Left = 72
+  end
+  object qryStores: TUniQuery
+    Active = False
+    Filtered = False
+    DatabaseName = 'STS_DB'
+    UpdateMode = upWhereAll
+    Params = <>
+    SQL.Strings = (
+      'SELECT PLACEID, LICENCENO FROM STORES'
+      'WHERE IN_ARCHIVE!=1 OR IN_ARCHIVE IS NULL'
+      'ORDER BY PLACEID')
+    Left = 48
+    Top = 128
+  end
+end

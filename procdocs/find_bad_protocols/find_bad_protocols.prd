@@ -1,0 +1,93 @@
+// *****************************************************************************
+// Название: Поиск перепутанных протоколов
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: Перепутанные протоколы
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 0
+// *****************************************************************************
+//
+
+VAR ('sSQL', String, '');
+VAR ('iDays', Integer, IF (SHIFTPRESSED (), INPUTTEXT ('Период проверки', 'Количество дней', '7'), 7));
+EXECUTESCRIPT ('ProcDocs\open_monitor_db.prd');
+
+sSQL := 'SELECT' +
+        ' L.WHDOCNUM,L.WHDOCDATE,L.WHPROCESSID,' +
+        ' M.BACKUPFILE,M.INCOMING,M.PROCESSEDAT,M.MSGID' +
+        ' FROM LOG_WH L' +
+        ' LEFT JOIN ED_PROCMESSAGES M ON M.WHID=L.WHID AND M.WHDOCID=L.WHDOCID AND M.WHDOCID2=L.WHDOCID2' +
+        ' WHERE' +
+        ' M.MSGID IN (' +char(39)+ 'CMN.13009' +char(39)+',' +char(39)+ 'CMN.13011' +char(39)+ ')' +
+        ' AND' +
+        ' M.PROCESSEDAT >= ' + DBFORMATDATETIME (Date() - 7, GETDATABASETYPE ('dbMonitor'), 0, 1);
+OPENQUERY ('qDOList', 'dbMonitor', sSQL, 1);
+//SELECTRECORDS ('Просмотр', 'qDOList', [], 'qSelected', '', 'dbMonitor');
+
+// подключаем функцию GetBackupFile
+EXECUTESCRIPT ('ProcDocs/utils/get_backup_file.prd');
+VAR ('sBackupFile', String, '');
+VAR ('sLog', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\find_bad_protocols.log');
+CREATELOGFILE (sLog, 0);
+
+VAR ('iNotFound', Integer, 1);
+VAR ('xBackupFile', Integer);
+VAR ('xObject', Integer);
+VAR ('xDocument', Integer);
+
+APPENDLOGFILE (sLog, 'Поиск перепутанных протоколов: ' + FDT ('DD.MM.YYYY HH:NN:SS', Date() + Time(1)), '');
+SHOWINFORMATION ('Пожалуйста, подождите..');
+TRYFINALLY (
+  Block(
+    WHILE (EOF ('qDOList') = 0,
+      Block(
+        sBackupFile := GetBackupFile (qDOList.BACKUPFILE, qDOList.INCOMING);
+        IF (FILEEXISTS (sBackupFile),
+          Block(
+            // открываем документ, ищем номер отчета, сравниваем с whdocnum
+            xBackupFile := XMLDOCUMENTCREATE (sBackupFile);
+            xObject := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLDOCUMENTROOT (xBackupFile), 'Envelope'), 'Body'), 'Signature'), 'Object');
+            CASE (qDOList.MSGID,
+              [
+                'CMN.13009', Block(
+                  xDocument := XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (xObject, 'ED_Container'), 'ContainerDoc'), 'DocBody'), 'Signature'), 'Object'), 'DO1Report');
+                  IF (XMLNODEVALUE (XMLNODEFIND (xDocument, 'ReportNumber')) <> qDOList.WHDOCNUM,
+                    Block(
+                      APPENDLOGFILE (sLog, 'В протоколе ДО-1 №' + qDOList.WHDOCNUM + ' от ' + FDT ('DD.MM.YYYY', qDOList.WHDOCDATE) + ' передан отчет №' + XMLNODEVALUE (XMLNODEFIND (xDocument, 'ReportNumber')) + ' от ' + FDT ('DD.MM.YYYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (xDocument, 'ReportDate')), 'YYYY-MM-DD', '-')), 'Идентификатор процедуры: ' + qDOList.WHPROCESSID, '');
+                      iNotFound := 0;
+                    )
+                  ); // IF
+                ),
+                'CMN.13011', Block(
+                  xDocument := XMLNODEFIND (xObject, 'DO2Report');
+                  IF (XMLNODEVALUE (XMLNODEFIND (xDocument, 'ReportNumber')) <> qDOList.WHDOCNUM,
+                    Block(
+                      APPENDLOGFILE (sLog, 'В протоколе ДО-2 №' + qDOList.WHDOCNUM + ' от ' + FDT ('DD.MM.YYYY', qDOList.WHDOCDATE) + ' передан отчет №' + XMLNODEVALUE (XMLNODEFIND (xDocument, 'ReportNumber')) + ' от ' + FDT ('DD.MM.YYYY', STRTODATE (XMLNODEVALUE (XMLNODEFIND (xDocument, 'ReportDate')), 'YYYY-MM-DD', '-')), 'Идентификатор процедуры: ' + qDOList.WHPROCESSID, '');
+                      iNotFound := 0;
+                    )
+                  ); // IF
+                )
+              ],
+            ); // CASE
+            XMLDESTROY (xBackupFile);
+          )
+        ); // IF
+        NEXT ('qDOList');
+      )
+    ); // WHILE
+  ),
+  Block(
+    HIDEINFORMATION ()
+  )
+); // TRYFINALLY
+
+IF (iNotFound,
+  APPENDLOGFILE (sLog, 'Не найдено перепутанных протоколов за период с ' + FDT ('DD.MM.YYYY', Date() - iDays)),
+  APPENDLOGFILE (sLog, 'Обратитесь в техническую поддержку ООО "СТМ" по телефону (812) 325-97-47');
+); // IF
+
+APPENDLOGFILE (sLog, '', 'Выполнение завершено');
+CLOSEDATASET ('qDOList');
+CLOSEDATASET ('dbMonitor');
+SHOWLOGFILE (sLog, 'Поиск перепутанных протоколов');

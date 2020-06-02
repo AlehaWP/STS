@@ -1,0 +1,100 @@
+// *****************************************************************************
+// Название: функция определение параметров полдкючения к базе ВЭД Склад
+// Описание: функция определение параметров полдкючения к базе ВЭД Склад. анализируется файл sts.ini
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+
+//
+
+//функция определение параметров полдкючения к базе ВЭД Склад. анализируется файл sts.ini
+// возвращает записывает значения в переменные:
+// bSTSConnect True (если параметры удлалось определить)
+// sSTS_DataBase тип базы данных (PARADOX, OACLE и т.д.)
+// sSTS_ConnString строку соединения с базой данных ВЭД Склад
+FUNC ( 'STSParams', ,
+     BLOCK (
+            VAR('sTypeDB', String, INIFILE ('Database', 'DbmsType', 'PARADOX'));
+            VAR('sDatabase', String, '');
+            VAR('sServerName',   String, '' );
+            VAR('sDatabaseName', String, '' );
+            VAR('sUserName',     String, '' );
+            VAR('sPassword',     String, '' );
+            VAR('sOwnerDB',      String, '' );
+
+            VAR('bSTSConnect', Boolean, False );
+            VAR('sSTS_DataBase', String, '' );
+            VAR('sSTS_ConnString',String, '' );
+
+            CASE (sTypeDB,
+                 ['PARADOX', Block(
+                                    sSTS_DataBase := 'STANDARD';
+                                    VAR('sDatabase', String, INIFILE ('LocalDB', 'Database', 'C:\Program Files (x86)\CTM\STS\DATA\'));
+                                    VAR('sUserName', String, INIFILE ('LocalDB', 'UserName', 'SYSDBA'));
+                                    sSTS_ConnString := 'PATH=' + sDatabase + CHAR(13) + 'WIN CODING=0';
+                             ),
+                  'ORACLE',  Block(
+                                  sSTS_DataBase := 'ORACLE';
+                                  sServerName := INIFILE ('Database', 'ServerName',   '') ;
+                                  sUserName := INIFILE ('Database', 'UserName',     '') ;
+                                  sPassword := INIFILE ('Database', 'Password',     '') ;
+                                  sSTS_ConnString := 'SERVER NAME=' + sServerName + char(13) + 'USER NAME=' + sUserName + char(13) + 'PASSWORD=' + sPassword + char(13) + 'PASSWORDCHECK=1';
+                             ),
+                  'INTRBASE', Block(
+                                  sSTS_DataBase := 'INTRBASE';
+                                  sServerName := INIFILE ('Database', 'ServerName',   '') ;
+                                  sUserName := INIFILE ('Database', 'UserName',     '') ;
+                                  sPassword := INIFILE ('Database', 'Password',     '') ;
+                                  sSTS_ConnString := 'SERVER NAME=' + sServerName + char(13) + 'USER NAME=' + sUserName + char(13) + 'PASSWORD=' + sPassword + char(13) + 'PASSWORDCHECK=1';
+                             ),
+                  'MSSQL',  Block(
+                                  sSTS_DataBase := 'MSSQL';
+                                  sServerName := INIFILE ('Database', 'ServerName',   '') ;
+                                  sDatabaseName := INIFILE ('Database', 'DatabaseName', '') ;
+                                  sUserName := INIFILE ('Database', 'UserName',     '') ;
+                                  sPassword := INIFILE ('Database', 'Password',     '') ;
+                                  sOwnerDB := INIFILE ('Database', 'OwnerDB',      '') ;
+                                  sSTS_ConnString := 'SERVER NAME=' + sServerName + char(13) + 'USER NAME=' + sUserName + char(13) + 'PASSWORD=' + sPassword + char(13) + 'PASSWORDCHECK=1';
+                             ),
+                  'SQL Server',  Block(
+                                  sSTS_DataBase := 'SQL Server';
+                                  sServerName := INIFILE ('Database', 'ServerName',   '') ;
+                                  sDatabaseName := INIFILE ('Database', 'DatabaseName', '') ;
+                                  sUserName := INIFILE ('Database', 'UserName',     '') ;
+                                  sPassword := INIFILE ('Database', 'Password',     '') ;
+                                  sOwnerDB := INIFILE ('Database', 'OwnerDB',      '') ;
+                                  sSTS_ConnString := 'ODBC DSN=' + sServerName + char(13) + 'USER NAME=' + sUserName + char(13) + 'PASSWORD=' + sPassword + char(13) + 'PASSWORDCHECK=1';
+                             ),
+                  'SQL Native Client',  Block(
+                                  sSTS_DataBase := 'SQL Native Client';
+                                  sServerName := INIFILE ('Database', 'ServerName',   '') ;
+                                  sDatabaseName := INIFILE ('Database', 'DatabaseName', '') ;
+                                  sUserName := INIFILE ('Database', 'UserName',     '') ;
+                                  sPassword := INIFILE ('Database', 'Password',     '') ;
+                                  sOwnerDB := INIFILE ('Database', 'OwnerDB',      '') ;
+                                  sSTS_ConnString := 'ODBC DSN=' + sServerName + char(13) + 'USER NAME=' + sUserName + char(13) + 'PASSWORD=' + sPassword + char(13) + 'PASSWORDCHECK=1';
+                             )
+                  ], );
+                  if ( sSTS_ConnString <> '', bSTSConnect := True, bSTSConnect := False);
+
+     )// end block
+);// end func STSParams
+
+STSParams();
+
+if ( bSTSConnect,
+   Block(
+        FORMCREATE (frmShow, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'forms\ShowDB.cfm');
+        FORMSETPROPERTY(frmShow, 'rtDatabase1.Connected', 'False');
+        FORMSETPROPERTY(frmShow, 'rtDatabase1.Params', sSTS_ConnString);
+        FORMSETPROPERTY(frmShow, 'rtDatabase1.DriverName', sSTS_DataBase);
+        FORMSETPROPERTY(frmShow, 'rtDatabase1.Connected', 'True');
+        FORMSETPROPERTY(frmShow, 'rtQuery1.Active', 'True');
+        //showmessage('DRIVER NAME=' + FORMGETPROPERTY (frmShow, 'rtDatabase1.DriverName') + CHAR(13) + 'PARAMS' + CHAR(13) + FORMGETPROPERTY (frmShow, 'rtDatabase1.Params'));
+        if(FORMSHOWMODAL(frmShow)=2, RAISEEXCEPTION('Выполнение отменено'));
+   ),
+);//end if
+

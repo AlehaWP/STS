@@ -1,0 +1,227 @@
+object frDODocsDtDocs: TScriptMultiLanguageForm
+  BorderIcons = [biSystemMenu]
+  ClientHeight = 377
+  ClientWidth = 579
+  Color = 15461611
+  Constraints.MaxHeight = 416
+  Constraints.MaxWidth = 595
+  Constraints.MinHeight = 409
+  Constraints.MinWidth = 589
+  Font.Charset = RUSSIAN_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -13
+  Font.Name = 'Cambria'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'BorderStyle=bsSingle'
+    'Position=poMainFormCenter')
+  SaveEvents.Strings = (
+    
+      'cxGrid1DBTableView1.OnCustomDrawCell=cxGrid1DBTableView1CustomDr' +
+      'awCell')
+  PixelsPerInch = 96
+  TextHeight = 15
+  object cxGrid1: TcxGrid
+    Left = 0
+    Top = 0
+    Width = 293
+    Height = 320
+    BorderStyle = cxcbsNone
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -16
+    Font.Name = 'Cambria'
+    Font.Style = []
+    ParentFont = False
+    TabOrder = 0
+    LookAndFeel.NativeStyle = False
+    object cxGrid1DBTableView1: TcxGridDBTableView
+      Navigator.Buttons.CustomButtons = <>
+      DataController.DataSource = dsDO1Doc
+      DataController.Summary.DefaultGroupSummaryItems = <>
+      DataController.Summary.FooterSummaryItems = <>
+      DataController.Summary.SummaryGroups = <>
+      OptionsCustomize.ColumnFiltering = False
+      OptionsCustomize.ColumnGrouping = False
+      OptionsCustomize.ColumnHidingOnGrouping = False
+      OptionsCustomize.ColumnHorzSizing = False
+      OptionsCustomize.ColumnMoving = False
+      OptionsCustomize.ColumnSorting = False
+      OptionsData.CancelOnExit = False
+      OptionsData.Deleting = False
+      OptionsData.DeletingConfirmation = False
+      OptionsData.Editing = False
+      OptionsData.Inserting = False
+      OptionsSelection.CellSelect = False
+      OptionsSelection.HideFocusRectOnExit = False
+      OptionsSelection.HideSelection = True
+      OptionsSelection.InvertSelect = False
+      OptionsSelection.UnselectFocusedRecordOnExit = False
+      OptionsView.FocusRect = False
+      OptionsView.ScrollBars = ssVertical
+      OptionsView.GroupByBox = False
+      OptionsView.HeaderHeight = 30
+      object cxGrid1DBTableView1PAPERNO: TcxGridDBColumn
+        Caption = #1044#1086#1082#1091#1084#1077#1085#1090#1099' '#1044#1054'1'
+        DataBinding.FieldName = 'PAPERNO'
+        PropertiesClassName = 'TcxTextEditProperties'
+        Properties.Alignment.Horz = taCenter
+        Properties.ReadOnly = True
+        FooterAlignmentHorz = taCenter
+        GroupSummaryAlignment = taCenter
+        HeaderAlignmentHorz = taCenter
+        HeaderGlyphAlignmentHorz = taCenter
+        Options.Editing = False
+        Options.Filtering = False
+        Options.FilteringAddValueItems = False
+        Options.FilteringFilteredItemsList = False
+        Options.FilteringMRUItemsList = False
+        Options.FilteringPopup = False
+        Options.FilteringPopupMultiSelect = False
+        Options.FilteringWithFindPanel = False
+        Options.Focusing = False
+        Options.AutoWidthSizable = False
+        Options.GroupFooters = False
+        Options.Grouping = False
+        Options.SortByDisplayText = isbtOff
+        Options.Sorting = False
+        Width = 293
+      end
+    end
+    object cxGrid1Level1: TcxGridLevel
+      GridView = cxGrid1DBTableView1
+    end
+  end
+  object cxGrid2: TcxGrid
+    Left = 293
+    Top = 0
+    Width = 293
+    Height = 320
+    BorderStyle = cxcbsNone
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -16
+    Font.Name = 'Cambria'
+    Font.Style = []
+    ParentFont = False
+    TabOrder = 1
+    LookAndFeel.NativeStyle = False
+    object cxGrid2DBTableView1: TcxGridDBTableView
+      Navigator.Buttons.CustomButtons = <>
+      DataController.DataSource = dsDTDoc
+      DataController.Summary.DefaultGroupSummaryItems = <>
+      DataController.Summary.FooterSummaryItems = <>
+      DataController.Summary.SummaryGroups = <>
+      OptionsView.ScrollBars = ssVertical
+      OptionsView.GroupByBox = False
+      OptionsView.HeaderHeight = 30
+      object cxGrid2DBTableView1prDocumentNumber: TcxGridDBColumn
+        Caption = #1044#1086#1082#1091#1084#1077#1085#1090#1099' '#1044#1058
+        DataBinding.FieldName = 'prDocumentNumber'
+        PropertiesClassName = 'TcxTextEditProperties'
+        Properties.Alignment.Horz = taCenter
+        HeaderAlignmentHorz = taCenter
+        MinWidth = 293
+        Options.Editing = False
+        Options.Filtering = False
+        Options.FilteringAddValueItems = False
+        Options.FilteringFilteredItemsList = False
+        Options.FilteringMRUItemsList = False
+        Options.FilteringPopup = False
+        Options.FilteringPopupMultiSelect = False
+        Options.FilteringWithFindPanel = False
+        Options.Focusing = False
+        Options.IgnoreTimeForFiltering = False
+        Options.IncSearch = False
+        Options.ShowEditButtons = isebNever
+        Options.GroupFooters = False
+        Options.Grouping = False
+        Options.HorzSizing = False
+        Options.Moving = False
+        Options.SortByDisplayText = isbtOff
+        Options.Sorting = False
+        Width = 293
+      end
+    end
+    object cxGrid2Level1: TcxGridLevel
+      GridView = cxGrid2DBTableView1
+    end
+  end
+  object cxButton1: TcxButton
+    Left = 304
+    Top = 336
+    Width = 265
+    Height = 33
+    Caption = #1047#1072#1082#1088#1099#1090#1100
+    ModalResult = 1
+    TabOrder = 2
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -13
+    Font.Name = 'Cambria'
+    Font.Style = []
+    ParentFont = False
+  end
+  object qryDO1Doc: TUniQuery
+    Active = False
+    Filtered = False
+    Database = MainForm.Database
+    DatabaseName = 'STS_DB'
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftUnknown
+        Name = 'ID'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'ID'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      
+        'SELECT DISTINCT PAPERNO FROM KR_PAPER WHERE ID=:ID AND PAPERCODE' +
+        ' LIKE '#39'02%'#39
+      'UNION'
+      'SELECT DISTINCT PAPERNO FROM KRD_DCD WHERE ID=:ID')
+    Left = 8
+    Top = 320
+  end
+  object dsDO1Doc: TUniDataSource
+    DataSet = qryDO1Doc
+    Left = 48
+    Top = 320
+  end
+  object qryDTDoc: TUniQuery
+    Active = False
+    Filtered = False
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftUnknown
+        Name = 'JMID'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      'SELECT DISTINCT prDocumentNumber FROM TransportDoc2'
+      'WHERE JOURNAL_MASTER_ID=:JMID')
+    Left = 240
+    Top = 320
+  end
+  object dsDTDoc: TUniDataSource
+    DataSet = qryDTDoc
+    Left = 280
+    Top = 320
+  end
+end

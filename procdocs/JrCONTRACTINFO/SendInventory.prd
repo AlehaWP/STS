@@ -1,0 +1,34 @@
+// *****************************************************************************
+// Название: 
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: 
+// Язык: FuncScript
+// Вызов по событию: 
+// *****************************************************************************
+//
+  // Каталог для записи документа
+  VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+  IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+  FORCEDIRECTORIES (sDir);
+
+  VAR ('sRegNumber', String, '');
+
+  FORMCREATE (frmIR, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'FORMS\genInventoryRequest.cfm');
+  IF (FORMSHOWMODAL (frmIR) = 2, RAISEEXCEPTION ('Отменено пользователем'));
+  sRegNumber := REPLACESTR (FORMGETPROPERTY (frmIR, 'rtRegNumber.Text'), '/', '-');
+
+  IF (LENGTH (TRIM (sRegNumber)) <> 23, RAISEEXCEPTION ('Ошибка: регистрационный номер описи введен неверно'));
+
+  VAR ('XmlReqDoc',         Integer, XMLDOCUMENTCREATE ());
+  VAR ('XmlReqRoot',        Integer, XMLDOCUMENTROOT (XmlReqDoc));
+  VAR ('XmlInventoryRequest', Integer, XMLNODEADDCHILD (XmlReqRoot, 'InventoryRequest'));
+
+  XMLNODESETVALUE (XmlInventoryRequest, sRegNumber);
+
+  XMLDOCUMENTSAVE (XmlReqDoc, sDir + 'InventoryRequest_' + sRegNumber + '.xml');
+
+  showmessage ('Запрос описи отправлен.');
+
+
+

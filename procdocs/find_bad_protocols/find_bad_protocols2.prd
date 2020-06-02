@@ -1,0 +1,217 @@
+// *****************************************************************************
+// Название: Поиск перепутанных протоколов
+// Описание: 
+// Кнопка вызова: 1
+// Подпись кнопки: Перепутанные протоколы
+// Язык: FuncScript
+// Вызов по событию: 
+// Без подтверждения: 1
+// *****************************************************************************
+//
+
+EXECUTESCRIPT ('PROCDOCS\writelog.prd');
+EXECUTESCRIPT ('PROCDOCS\open_monitor_db.prd');
+EXECUTESCRIPT ('ProcDocs\utils\get_backup_file.prd');
+
+VAR ('dtBegin', DateTime, Date());
+VAR ('dtEnd', DateTime, Date()+Time(1));
+IF (INPUTDATERANGE ('dtBegin', 'dtEnd', 'Выберите период'),
+  Block(
+    WRITEINIFILE ('FBP', 'Begin', dtBegin);
+    WRITEINIFILE ('FBP', 'End', dtEnd);
+  ),
+  RAISEEXCEPTION ('Отменено пользователем')
+);
+
+
+VAR ('sSQL', String, '');
+VAR ('iSelectedCount', Integer, GETSELECTEDCOUNT());
+VAR ('iSelectedIndex', Integer, 1);
+VAR ('sFilter', String, '');
+VAR ('bFindBadProtocol', Boolean, False);
+CREATELOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\fbp.log', 0);
+
+FUNC ('CheckDO1',
+  Block(
+    PARAM ('pWhId', Integer, 0);
+    PARAM ('pWhDocId', String, 1);
+    PARAM ('pDocNo', String, 2);
+    PARAM ('pDocDate', String, 3);
+  ),
+  Block(
+    VAR ('sBackupFile', String, '');
+    sSQL := 'SELECT' +
+            ' BACKUPFILE, INCOMING' +
+            ' FROM' +
+            ' ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' MSGID=' +char(39)+ 'CMN.13009' +char(39)+
+            ' AND WHID=' + pWhId +
+            ' AND WHDOCID=' +char(39)+ pWhDocId +char(39);
+    OPENQUERY ('qEdProcMessages', 'dbMonitor', sSQL, 1);
+    sBackupFile := GetBackupFile (qEdProcMessages.BACKUPFILE, qEdProcMessages.INCOMING);
+    IF (FILEEXISTS (sBackupFile),
+      Block(
+        VAR ('xBackupFile', Integer, XMLDOCUMENTCREATE (sBackupFile));
+        VAR ('xEnvelope', Integer, XMLNODECHILD (XMLDOCUMENTROOT (xBackupFile), 0));
+        VAR ('xDO1Report', Integer, xEnvelope.Body.Signature.Object.ED_Container.ContainerDoc.DocBody.Signature.Object.DO1Report);
+        IF (pDocNo <> xDO1Report.ReportNumber,
+          Block(
+            bFindBadProtocol := True;
+            WriteLog (
+                'fbp',
+                'В протоколе ДО-1 №' + pDocNo + ' от ' + pDocDate + ' передан отчет №' + xDO1Report.ReportNumber + ' от ' + FDT ('DD.MM.YYYY', STRTODATE (xDO1Report.ReportDate, 'YYYY-MM-DD', '-')) + ' DOCUMENTID: ' + pWhDocId
+            );
+          )
+        ); // IF
+      ),
+      Block(
+{
+        WriteLog (
+            'fbp',
+            'Не найден файл резервной копии по ДО-1 №' + pDocNo + ' (' + qEdProcMessages.BACKUPFILE + ')'
+        ); // WriteLog
+}
+      )
+    ); // IF
+    CLOSEDATASET ('qEdProcMessages');
+  )
+),
+
+
+FUNC ('CheckDO2',
+  Block(
+    PARAM ('pWhId', Integer, 0);
+    PARAM ('pWhDocId', String, 1);
+    PARAM ('pWhDocId2', Integer, 2);
+    PARAM ('pDocNo', String, 3);
+    PARAM ('pDocDate', String, 4);
+  ),
+  Block(
+    VAR ('sBackupFile', String, '');
+    sSQL := 'SELECT' +
+            ' BACKUPFILE, INCOMING' +
+            ' FROM' +
+            ' ED_PROCMESSAGES' +
+            ' WHERE' +
+            ' MSGID=' +char(39)+ 'CMN.13011' +char(39)+
+            ' AND WHID=' + pWhId +
+            ' AND WHDOCID=' +char(39)+ pWhDocId +char(39)+
+            ' AND WHDOCID2=' + pWhDocId2;
+    OPENQUERY ('qEdProcMessages', 'dbMonitor', sSQL, 1);
+    sBackupFile := GetBackupFile (qEdProcMessages.BACKUPFILE, qEdProcMessages.INCOMING);
+    IF (FILEEXISTS (sBackupFile),
+      Block(
+        VAR ('xBackupFile', Integer, XMLDOCUMENTCREATE (sBackupFile));
+        VAR ('xEnvelope', Integer, XMLNODECHILD (XMLDOCUMENTROOT (xBackupFile), 0));
+        VAR ('xDO2Report', Integer, xEnvelope.Body.Signature.Object.DO2Report);
+        IF (pDocNo <> xDO2Report.ReportNumber,
+          Block(
+            bFindBadProtocol := True;
+            WriteLog (
+                'fbp',
+                'В протоколе ДО-2 №' + pDocNo + ' от ' + pDocDate + ' передан отчет №' + xDO2Report.ReportNumber + ' от ' + FDT ('DD.MM.YYYY', STRTODATE (xDO2Report.ReportDate, 'YYYY-MM-DD', '-')) + ' DOCUMENTID: ' + pWhDocId
+            );
+          )
+        ); // IF
+      ),
+      Block(
+{
+        WriteLog (
+            'fbp',
+            'Не найден файл резервной копии по ДО-2 №' + pDocNo + ' (' + qEdProcMessages.BACKUPFILE + ')'
+        ); // WriteLog
+}
+      )
+    ); // IF
+    CLOSEDATASET ('qEdProcMessages');
+  )
+),
+
+{
+IF (iSelectedCount > 0,
+  Block(
+    GETSELECTEDDOCS ('qSelectedKrdMain', 'PLACEID', 'ID', 'DOCUMENTID', 'NBD', 'BD_DATE');
+    SHOWPROGRESS ('Поиск перепутанных протоколов..');
+    FIRST ('qSelectedKrdMain');
+    WHILE (EOF ('qSelectedKrdMain') = 0,
+      Block(
+        CheckDO1 (qSelectedKrdMain.PLACEID, qSelectedKrdMain.DOCUMENTID, qSelectedKrdMain.NBD, FDT ('DD.MM.YYYY', qSelectedKrdMain.BD_DATE));
+        sFilter := 'PLACEID=' + qSelectedKrdMain.PLACEID +
+                   ' AND ID=' + qSelectedKrdMain.ID;
+        SETFILTER ('REL_MAIN_2', sFilter);
+        WHILE (EOF ('REL_MAIN_2') = 0,
+          Block(
+            CheckDO2(REL_MAIN_2.PLACEID, REL_MAIN_2.DOCUMENTID, REL_MAIN_2.MAIN_COUNTER, REL_MAIN_2.RELEASE_NO, FDT ('DD.MM.YYYY', REL_MAIN_2.OUT_DATE));
+            NEXT ('REL_MAIN_2');
+          )
+        ); // WHILE
+        SETFILTER ('REL_MAIN_2', '');
+        NEXT ('qSelectedKrdMain');
+        SETPROGRESS (iSelectedIndex, iSelectedCount, 100);
+      )
+    ); // WHILE
+    HIDEPROGRESS ();
+  ),
+  Block(
+    CheckDO1 (KRD_MAIN.PLACEID, KRD_MAIN.DOCUMENTID, KRD_MAIN.NBD, KRD_MAIN.BD_DATE);
+    sFilter := 'PLACEID=' + KRD_MAIN.PLACEID +
+               ' AND ID=' + KRD_MAIN.ID;
+    SETFILTER ('REL_MAIN_2', sFilter);
+    WHILE (EOF ('REL_MAIN_2') = 0,
+      Block(
+        CheckDO2(REL_MAIN_2.PLACEID, REL_MAIN_2.DOCUMENTID, REL_MAIN_2.MAIN_COUNTER, REL_MAIN_2.RELEASE_NO, FDT ('DD.MM.YYYY', REL_MAIN_2.OUT_DATE));
+        NEXT ('REL_MAIN_2');
+      )
+    ); // WHILE
+    SETFILTER ('REL_MAIN_2', '');
+  )
+); // IF
+}
+
+sSQL := 'SELECT' +
+        ' PLACEID, ID, DOCUMENTID, NBD, BD_DATE' +
+        ' FROM KRD_MAIN' +
+        ' WHERE' +
+        ' BD_DATE BETWEEN ' + DBFORMATDATETIME (dtBegin, GETDATABASETYPE ('STS_DB'), 1, 1, 1) + ' AND ' + DBFORMATDATETIME (dtEnd, GETDATABASETYPE ('STS_DB'), 1, 1, 1);
+OPENQUERY ('qKrdMain', 'STS_DB', sSQL, 1);
+VAR ('iRecordCount', Integer, RECORDCOUNT ('qKrdMain'));
+VAR ('iRecordIndex', Integer, 1);
+SHOWPROGRESS ('Проверка ДО-1 за период с ' + FDT('DD.MM.YYYY', dtBegin) + ' по ' + FDT('DD.MM.YYYY', dtEnd));
+
+WHILE (EOF ('qKrdMain') = 0,
+  Block(
+    CheckDO1 (qKrdMain.PLACEID, qKrdMain.DOCUMENTID, qKrdMain.NBD, FDT ('DD.MM.YYYY', qKrdMain.BD_DATE));
+    NEXT ('qKrdMain');
+    SETPROGRESS (iRecordIndex, iRecordCount, 100);
+  )
+); // WHILE
+CLOSEDATASET ('qKrdMain');
+HIDEPROGRESS ();
+
+sSQL := 'SELECT' +
+        ' PLACEID, MAIN_ID, MAIN_COUNTER, DOCUMENTID, RELEASE_NO, OUT_DATE' +
+        ' FROM ' + CORRECTTABLENAME ('RELEASE') +
+        ' WHERE' +
+        ' OUT_DATE BETWEEN ' + DBFORMATDATETIME (dtBegin, GETDATABASETYPE ('STS_DB'), 1, 1, 1) + ' AND ' + DBFORMATDATETIME (dtEnd, GETDATABASETYPE ('STS_DB'), 1, 1, 1);
+OPENQUERY ('qRelMain', 'STS_DB', sSQL, 1);
+iRecordCount := RECORDCOUNT ('qRelMain');
+iRecordIndex := 1;
+
+SHOWPROGRESS ('Проверка ДО-2 за период с ' + FDT('DD.MM.YYYY', dtBegin) + ' по ' + FDT('DD.MM.YYYY', dtEnd));
+WHILE (EOF ('qRelMain') = 0,
+  Block(
+    CheckDO2(qRelMain.PLACEID, qRelMain.DOCUMENTID, qRelMain.MAIN_COUNTER, qRelMain.RELEASE_NO, FDT ('DD.MM.YYYY', qRelMain.OUT_DATE));
+    NEXT ('qRelMain');
+    SETPROGRESS (iRecordIndex, iRecordCount, 100);
+  )
+); // WHILE
+CLOSEDATASET ('qRelMain');
+HIDEPROGRESS ();
+
+CLOSEDATABASE ('dbMonitor');
+IF (bFindBadProtocol,
+  WriteLog ('FBP', ''),
+  WriteLog ('FBP', 'За период с ' + FDT ('DD.MM.YYYY HH:NN', dtBegin) + ' по ' + FDT ('DD.MM.YYYY HH:NN', dtEnd) + ' не найдено перепутанных протоколов')
+);
+SHOWLOGFILE (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'LOGS\fbp.log', 'Поиск перепутанных протоколов');

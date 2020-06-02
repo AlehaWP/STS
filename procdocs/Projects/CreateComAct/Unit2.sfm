@@ -1,0 +1,399 @@
+object LinkGoods: TScriptMultiLanguageForm
+  Caption = 'LinkGoods'
+  ClientHeight = 720
+  ClientWidth = 1046
+  Color = 15857143
+  Font.Charset = RUSSIAN_CHARSET
+  Font.Color = clBlack
+  Font.Height = -13
+  Font.Name = 'Cambria'
+  Font.Style = [fsBold]
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'Position=poMainFormCenter')
+  SaveEvents.Strings = (
+    'Self.OnActivate=LinkGoodsActivate'
+    'cxGrid1DBTableView1.OnMouseDown=cxGrid1DBTableView1MouseDown'
+    'btUp.OnClick=btUpDownClick'
+    'btDown.OnClick=btUpDownClick'
+    'SelectUV.OnClick=SelectUVClick'
+    'btChangeG32.OnClick=btChangeG32Click'
+    
+      'cxGrid1DBTableView1.OnTopRecordIndexChanged=cxGrid1DBTableView1T' +
+      'opRecordIndexChanged'
+    
+      'cxGridDOGoods.OnTopRecordIndexChanged=cxGridDOGoodsTopRecordInde' +
+      'xChanged')
+  DesignSize = (
+    1046
+    720)
+  PixelsPerInch = 96
+  TextHeight = 15
+  object btOK: TcxButton
+    Left = 782
+    Top = 686
+    Width = 105
+    Height = 25
+    Anchors = [akRight, akBottom]
+    Caption = #1057#1086#1079#1076#1072#1090#1100
+    ModalResult = 1
+    TabOrder = 0
+  end
+  object btCancel: TcxButton
+    Left = 910
+    Top = 686
+    Width = 105
+    Height = 25
+    Anchors = [akRight, akBottom]
+    Caption = #1054#1090#1084#1077#1085#1072
+    ModalResult = 2
+    TabOrder = 1
+  end
+  object cxGroupBox1: TcxGroupBox
+    Left = 8
+    Top = 8
+    Hint = ''
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    Style.BorderStyle = ebsNone
+    TabOrder = 2
+    DesignSize = (
+      1029
+      641)
+    Height = 641
+    Width = 1029
+    object cxGroupBox2: TcxGroupBox
+      Left = 490
+      Top = 88
+      Hint = ''
+      Alignment = alTopCenter
+      Anchors = [akTop, akRight, akBottom]
+      Caption = #1058#1086#1074#1072#1088#1099' '#1091#1074#1077#1076#1086#1084#1083#1077#1085#1080#1103
+      TabOrder = 0
+      DesignSize = (
+        536
+        538)
+      Height = 545
+      Width = 536
+      object cxGrid1: TcxGrid
+        Left = 16
+        Top = 24
+        Width = 473
+        Height = 490
+        Anchors = [akLeft, akTop, akRight, akBottom]
+        TabOrder = 0
+        object cxGrid1DBTableView1: TcxGridDBTableView
+          Navigator.Buttons.CustomButtons = <>
+          Navigator.Buttons.First.Visible = True
+          Navigator.Buttons.PriorPage.Visible = True
+          Navigator.Buttons.Prior.Visible = True
+          Navigator.Buttons.Next.Visible = True
+          Navigator.Buttons.NextPage.Visible = True
+          Navigator.Buttons.Last.Visible = True
+          Navigator.Buttons.Insert.Visible = True
+          Navigator.Buttons.Append.Visible = False
+          Navigator.Buttons.Delete.Visible = True
+          Navigator.Buttons.Edit.Visible = True
+          Navigator.Buttons.Post.Visible = True
+          Navigator.Buttons.Cancel.Visible = True
+          Navigator.Buttons.Refresh.Visible = True
+          Navigator.Buttons.SaveBookmark.Visible = True
+          Navigator.Buttons.GotoBookmark.Visible = True
+          Navigator.Buttons.Filter.Visible = True
+          DataController.DataSource = dsUvGoods
+          DataController.Summary.DefaultGroupSummaryItems = <>
+          DataController.Summary.FooterSummaryItems = <>
+          DataController.Summary.SummaryGroups = <>
+          OptionsData.CancelOnExit = False
+          OptionsData.Deleting = False
+          OptionsData.DeletingConfirmation = False
+          OptionsData.Editing = False
+          OptionsData.Inserting = False
+          OptionsSelection.MultiSelect = True
+          OptionsView.GroupByBox = False
+          object cxGrid1DBTableView1ID: TcxGridDBColumn
+            DataBinding.FieldName = 'JOURNAL_MASTER_ID'
+            Visible = False
+          end
+          object cxGrid1DBTableView1JCHID: TcxGridDBColumn
+            DataBinding.FieldName = 'JOURNAL_CHILD_ID'
+            Visible = False
+          end
+          object cxGrid1DBTableView1G32: TcxGridDBColumn
+            Caption = #8470' '#1074' '#1044#1054'1'
+            DataBinding.FieldName = 'G32'
+            SortIndex = 0
+            SortOrder = soAscending
+          end
+          object cxGrid1DBTableView1GoodsTNVEDCode: TcxGridDBColumn
+            Caption = #1058#1053' '#1042#1069#1044
+            DataBinding.FieldName = 'GoodsTNVEDCode'
+            Width = 82
+          end
+          object cxGrid1DBTableView1GoodsDescription: TcxGridDBColumn
+            Caption = #1054#1087#1080#1089#1072#1085#1080#1077' '#1090#1086#1074#1072#1088#1072
+            DataBinding.FieldName = 'GoodsDescription'
+            Width = 140
+          end
+          object cxGrid1DBTableView1PlaceNumber: TcxGridDBColumn
+            Caption = #1050#1086#1083'-'#1074#1086
+            DataBinding.FieldName = 'PlaceNumber'
+          end
+          object cxGrid1DBTableView1BruttoVolQuantity: TcxGridDBColumn
+            Caption = #1041#1088#1091#1090#1090#1086
+            DataBinding.FieldName = 'BruttoVolQuantity'
+          end
+          object cxGrid1DBTableView1InvoiceCost: TcxGridDBColumn
+            Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100
+            DataBinding.FieldName = 'InvoiceCost'
+            Width = 68
+          end
+          object cxGrid1DBTableView1CurrencyCode: TcxGridDBColumn
+            Caption = #1042#1072#1083#1102#1090#1072
+            DataBinding.FieldName = 'CurrencyCode'
+          end
+          object cxGrid1DBTableView1PlaceDescription: TcxGridDBColumn
+            Caption = #1043#1088'. '#1084#1077#1089#1090#1072
+            DataBinding.FieldName = 'PlaceDescription'
+            Width = 69
+          end
+        end
+        object cxGrid1Level1: TcxGridLevel
+          GridView = cxGrid1DBTableView1
+        end
+      end
+      object btUp: TcxButton
+        Left = 496
+        Top = 22
+        Width = 33
+        Height = 99
+        Anchors = [akTop, akRight]
+        TabOrder = 1
+      end
+      object btDown: TcxButton
+        Left = 496
+        Top = 144
+        Width = 33
+        Height = 105
+        Anchors = [akTop, akRight]
+        TabOrder = 2
+      end
+      object btChangeG32: TcxButton
+        Left = 496
+        Top = 288
+        Width = 33
+        Height = 65
+        Hint = #1042#1099#1076#1077#1083#1080#1090#1077' 2 '#1090#1086#1074#1072#1088#1072' '#1076#1083#1103' '#1087#1077#1088#1077#1084#1077#1097#1077#1085#1080#1103
+        Anchors = [akTop, akRight]
+        TabOrder = 3
+      end
+    end
+    object cxGroupBox3: TcxGroupBox
+      Left = 0
+      Top = 88
+      Hint = ''
+      Alignment = alTopCenter
+      Anchors = [akLeft, akTop, akBottom]
+      BiDiMode = bdLeftToRight
+      Caption = #1058#1086#1074#1072#1088#1099' '#1044#1054
+      ParentBiDiMode = False
+      TabOrder = 1
+      DesignSize = (
+        497
+        538)
+      Height = 545
+      Width = 497
+      object cxGrid2: TcxGrid
+        Left = 8
+        Top = 24
+        Width = 481
+        Height = 490
+        Anchors = [akLeft, akTop, akRight, akBottom]
+        TabOrder = 0
+        object cxGridDOGoods: TcxGridDBTableView
+          Navigator.Buttons.CustomButtons = <>
+          Navigator.Buttons.First.Visible = True
+          Navigator.Buttons.PriorPage.Visible = True
+          Navigator.Buttons.Prior.Visible = True
+          Navigator.Buttons.Next.Visible = True
+          Navigator.Buttons.NextPage.Visible = True
+          Navigator.Buttons.Last.Visible = True
+          Navigator.Buttons.Insert.Visible = True
+          Navigator.Buttons.Append.Visible = False
+          Navigator.Buttons.Delete.Visible = True
+          Navigator.Buttons.Edit.Visible = True
+          Navigator.Buttons.Post.Visible = True
+          Navigator.Buttons.Cancel.Visible = True
+          Navigator.Buttons.Refresh.Visible = True
+          Navigator.Buttons.SaveBookmark.Visible = True
+          Navigator.Buttons.GotoBookmark.Visible = True
+          Navigator.Buttons.Filter.Visible = True
+          DataController.DataSource = dsDOGoods
+          DataController.Summary.DefaultGroupSummaryItems = <>
+          DataController.Summary.FooterSummaryItems = <>
+          DataController.Summary.SummaryGroups = <>
+          OptionsData.CancelOnExit = False
+          OptionsData.Deleting = False
+          OptionsData.DeletingConfirmation = False
+          OptionsData.Editing = False
+          OptionsData.Inserting = False
+          OptionsView.GroupByBox = False
+          object cxGridDOGoodsACCEPTDATE: TcxGridDBColumn
+            Caption = #1044#1072#1090#1072' '#1087#1086#1084#1077#1097#1077#1085#1080#1103
+            DataBinding.FieldName = 'ACCEPTDATE'
+          end
+          object cxGridDOGoodsSTORAGE_DATE: TcxGridDBColumn
+            Caption = #1057#1088#1086#1082' '#1093#1088#1072#1085#1077#1085#1080#1103
+            DataBinding.FieldName = 'STORAGE_DATE'
+          end
+          object cxGridDOGoodsREMARK: TcxGridDBColumn
+            Caption = #1055#1088#1080#1084#1077#1095#1072#1085#1080#1103
+            DataBinding.FieldName = 'REMARK'
+          end
+          object cxGridDOGoodsG42_CURRENCY: TcxGridDBColumn
+            Caption = #1042#1072#1083#1102#1090#1072
+            DataBinding.FieldName = 'G42_CURRENCY'
+            Width = 70
+          end
+          object cxGridDOGoodsG42: TcxGridDBColumn
+            Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100
+            DataBinding.FieldName = 'G42'
+            Width = 70
+          end
+          object cxGridDOGoodsG35: TcxGridDBColumn
+            Caption = #1041#1088#1091#1090#1090#1086
+            DataBinding.FieldName = 'G35'
+            Width = 59
+          end
+          object cxGridDOGoodsG311: TcxGridDBColumn
+            Caption = #1050#1086#1083'-'#1074#1086
+            DataBinding.FieldName = 'G311'
+          end
+          object cxGridDOGoodsG312: TcxGridDBColumn
+            Caption = #1054#1087#1080#1089#1072#1085#1080#1077' '#1090#1086#1074#1072#1088#1072
+            DataBinding.FieldName = 'G312'
+            Width = 130
+          end
+          object cxGridDOGoodsG33: TcxGridDBColumn
+            Caption = #1058#1053' '#1042#1069#1044
+            DataBinding.FieldName = 'G33'
+            Width = 85
+          end
+          object cxGridDOGoodsG32: TcxGridDBColumn
+            Caption = #8470' '#1074' '#1044#1054'1'
+            DataBinding.FieldName = 'G32'
+            Width = 70
+          end
+        end
+        object cxGrid2Level1: TcxGridLevel
+          GridView = cxGridDOGoods
+        end
+      end
+    end
+    object ListBox1: TListBox
+      Left = 496
+      Top = 8
+      Width = 497
+      Height = 73
+      ItemHeight = 15
+      TabOrder = 2
+    end
+    object SelectUV: TcxButton
+      Left = 986
+      Top = 6
+      Width = 33
+      Height = 75
+      Anchors = [akTop, akRight]
+      TabOrder = 3
+    end
+  end
+  object qryUvGoods: TUniQuery
+    Active = False
+    Filtered = True
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereKeyOnly
+    Params = <>
+    SQL.Strings = (
+      'SELECT  TOP(70)  *'
+      'FROM GOODINFO2  '
+      'ORDER BY  G32'
+      '')
+    Left = 552
+  end
+  object UpQuery: TUniQuery
+    Active = False
+    Filtered = False
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereKeyOnly
+    Params = <>
+    Left = 24
+    Top = 656
+  end
+  object dsUvGoods: TUniDataSource
+    DataSet = qryUvGoods
+    Left = 608
+  end
+  object dsDOGoods: TUniDataSource
+    DataSet = qryDOGoods
+    Left = 160
+    Top = 8
+  end
+  object qryDOGoods: TUniQuery
+    Active = False
+    Filtered = False
+    DatabaseName = 'STS_DB'
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftUnknown
+        Name = 'iPLACEID'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'iID'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'iG32Count'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'iUvCount'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      'SELECT *'
+      'FROM KRD_COMM '
+      'WHERE PLACEID=:iPLACEID and ID=:iID'
+      'UNION '
+      
+        'SELECT * FROM KRD_COMM WHERE PLACEID=-1 AND ID=-1 AND G32>:iG32C' +
+        'ount AND G32<=:iUvCount')
+    Left = 328
+    Top = 16
+  end
+  object qryTmpGoods: TUniQuery
+    Active = False
+    Filtered = False
+    DatabaseName = 'STS_DB'
+    UpdateMode = upWhereAll
+    Params = <>
+    SQL.Strings = (
+      
+        'SELECT MAX(G32) as G32Max FROM KRD_COMM WHERE PLACEID=5500 AND I' +
+        'D=5500')
+    Left = 400
+    Top = 32
+  end
+end

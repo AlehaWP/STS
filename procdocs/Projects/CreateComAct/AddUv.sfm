@@ -1,0 +1,249 @@
+object frSelectGoods: TScriptMultiLanguageForm
+  Caption = #1058#1086#1074#1072#1088#1099' '#1082' '#1074#1099#1076#1072#1095#1077
+  ClientHeight = 714
+  ClientWidth = 904
+  Color = 16773091
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = 7214336
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  HelpFile = 'Z:\Program Files\CTM\JOURNALS_BRONKA\journals.chm'
+  KeyPreview = True
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'Position=poMainFormCenter')
+  SaveEvents.Strings = (
+    'BtGetGoods.OnClick=BtGetGoodsClick'
+    'Self.OnActivate=frSelectGoodsActivate'
+    
+      'cxPartGoodsDBTableView1.OnDblClick=cxPartGoodsDBTableView1DblCli' +
+      'ck')
+  DesignSize = (
+    904
+    714)
+  PixelsPerInch = 96
+  TextHeight = 13
+  object GroupBox5: TcxGroupBox
+    Left = 8
+    Top = 8
+    Hint = ''
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    Caption = #1058#1086#1074#1072#1088#1099
+    ParentFont = False
+    Style.Font.Charset = ANSI_CHARSET
+    Style.Font.Color = 7214336
+    Style.Font.Height = -15
+    Style.Font.Name = 'Cambria'
+    Style.Font.Style = [fsBold]
+    Style.IsFontAssigned = True
+    TabOrder = 0
+    ExplicitWidth = 875
+    ExplicitHeight = 650
+    DesignSize = (
+      883
+      651)
+    Height = 658
+    Width = 883
+    object cxPartGoods: TcxGrid
+      Left = 8
+      Top = 24
+      Width = 866
+      Height = 602
+      Anchors = [akLeft, akTop, akRight, akBottom]
+      Font.Charset = ANSI_CHARSET
+      Font.Color = 7214336
+      Font.Height = -15
+      Font.Name = 'Cambria'
+      Font.Style = []
+      ParentFont = False
+      TabOrder = 0
+      ExplicitWidth = 858
+      ExplicitHeight = 594
+      object cxPartGoodsDBTableView1: TcxGridDBTableView
+        Navigator.Buttons.CustomButtons = <>
+        FindPanel.DisplayMode = fpdmAlways
+        FindPanel.InfoText = #1042#1074#1077#1076#1080#1090#1077' '#1090#1077#1082#1089#1090' '#1076#1083#1103' '#1087#1086#1080#1089#1082#1072
+        FindPanel.ShowFindButton = False
+        DataController.DataSource = dsWBLGoods
+        DataController.Summary.DefaultGroupSummaryItems = <>
+        DataController.Summary.FooterSummaryItems = <>
+        DataController.Summary.SummaryGroups = <>
+        OptionsData.CancelOnExit = False
+        OptionsData.Deleting = False
+        OptionsData.DeletingConfirmation = False
+        OptionsData.Editing = False
+        OptionsData.Inserting = False
+        OptionsSelection.MultiSelect = True
+        OptionsView.GroupByBox = False
+        object cxPartGoodsDBTableView1PartsNO: TcxGridDBColumn
+          Caption = #1059#1085#1080#1082'. '#8470
+          DataBinding.FieldName = 'PARTS_NO'
+        end
+        object cxPartGoodsDBTableView1CargoNO: TcxGridDBColumn
+          DataBinding.FieldName = 'CARGO_NO'
+          Visible = False
+        end
+        object cxPartGoodsDBTableView1WBLNUM: TcxGridDBColumn
+          Caption = #8470' '#1050#1086#1085
+          DataBinding.FieldName = 'WBL_NO'
+          SortIndex = 0
+          SortOrder = soDescending
+          Width = 102
+        end
+        object cxPartGoodsDBTableView1NPPWBL: TcxGridDBColumn
+          Caption = #8470' '#1087'/'#1087
+          DataBinding.FieldName = 'JCHID'
+          Width = 56
+        end
+        object cxPartGoodsDBTableView1NAMECARGO: TcxGridDBColumn
+          Caption = #1053#1072#1080#1084#1077#1085#1086#1074#1072#1085#1080#1077
+          DataBinding.FieldName = 'NAME_CARGO'
+          Width = 162
+        end
+        object cxPartGoodsDBTableView1Brutto: TcxGridDBColumn
+          Caption = #1041#1088#1091#1090#1090#1086
+          DataBinding.FieldName = 'BRUTTO_REST'
+          Width = 55
+        end
+        object cxPartGoodsDBTableView1QTYPLACE: TcxGridDBColumn
+          Caption = #1050#1086#1083'-'#1074#1086
+          DataBinding.FieldName = 'QTY_PLACE_REST'
+          Width = 55
+        end
+        object cxPartGoodsDBTableView1NUMTC: TcxGridDBColumn
+          Caption = #8470' '#1058#1057
+          DataBinding.FieldName = 'TC_NUM_FACT'
+          Width = 92
+        end
+        object cxPartGoodsDBTableView1NUMRT: TcxGridDBColumn
+          Caption = #8470' RT'
+          DataBinding.FieldName = 'RT_NUM_FACT'
+          Width = 103
+        end
+        object cxPartGoodsDBTableView1WBLDATE: TcxGridDBColumn
+          DataBinding.FieldName = 'WBL_DATE'
+          Visible = False
+        end
+        object cxPartGoodsDBTableViewDeclNum: TcxGridDBColumn
+          DataBinding.FieldName = 'DECL_NUM'
+          Visible = False
+          Width = 87
+        end
+        object cxPartGoodsDBTableView1VIN: TcxGridDBColumn
+          Caption = 'VIN'
+          DataBinding.FieldName = 'VIN_FACT'
+          Width = 81
+        end
+        object cxPartGoodsDBTableView1VES_NAME: TcxGridDBColumn
+          Caption = #1057#1091#1076#1085#1086
+          DataBinding.FieldName = 'VES_NAME'
+          Width = 56
+        end
+        object cxPartGoodsDBTableView1VOYAGE: TcxGridDBColumn
+          Caption = #8470' '#1088#1077#1081#1089#1072
+          DataBinding.FieldName = 'VOYAGE'
+        end
+        object cxPartGoodsDBTableView1Marking: TcxGridDBColumn
+          Caption = #1052#1072#1088#1082#1080#1088#1086#1074#1082#1072
+          DataBinding.FieldName = 'MARKING'
+          Width = 88
+        end
+        object cxPartGoodsDBTableView1Column1: TcxGridDBColumn
+          Caption = #8470' '#1082#1086#1085#1090#1077#1081#1085#1077#1088#1072
+          DataBinding.FieldName = 'CONT_NO_FACT'
+          Width = 100
+        end
+      end
+      object cxPartGoodsLevel1: TcxGridLevel
+        GridView = cxPartGoodsDBTableView1
+      end
+    end
+  end
+  object BtGetGoods: TcxButton
+    Left = 558
+    Top = 679
+    Width = 145
+    Height = 28
+    Anchors = [akRight, akBottom]
+    Caption = #1042#1099#1073#1088#1072#1090#1100
+    ModalResult = 1
+    TabOrder = 1
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = 7214336
+    Font.Height = -13
+    Font.Name = 'Cambria'
+    Font.Style = [fsBold]
+    ParentFont = False
+    ExplicitLeft = 550
+    ExplicitTop = 671
+  end
+  object btCancelGetGoods: TcxButton
+    Left = 742
+    Top = 679
+    Width = 145
+    Height = 28
+    Anchors = [akRight, akBottom]
+    Caption = #1054#1090#1084#1077#1085#1072
+    ModalResult = 2
+    TabOrder = 2
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = 7214336
+    Font.Height = -13
+    Font.Name = 'Cambria'
+    Font.Style = [fsBold]
+    ParentFont = False
+    ExplicitLeft = 734
+    ExplicitTop = 671
+  end
+  object qryWBLGoods: TUniQuery
+    Active = False
+    Filtered = False
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereKeyOnly
+    Params = <
+      item
+        DataType = ftInteger
+        Name = 'iFID'
+        ParamType = ptUnknown
+        Value = '4'
+      end>
+    SQL.Strings = (
+      'DECLARE @Forwarder integer;'
+      'Set @Forwarder=:iFID;'
+      
+        'Select V.VOYAGE, V.VES_NAME, VP.FORWARDER_ID,  VP.WBL_NO,VP.WBL_' +
+        'DATE, VP.SEA_VOYAGE_NO, VP.PARTS_NO, '
+      
+        'VG.CARGO_NO, VP.WBL_DATE, VG.RT_NUM_FACT, VG.DECL_NUM, VG.TC_NUM' +
+        '_FACT, VG.NAME_CARGO, VG.VIN_FACT, VG.VIN, '
+      'VG.BRUTTO_REST , VG.QTY_PLACE_REST, VG.WIDTH, '
+      'VG.HEIGHT, VG.LENGTH, VG.UNIT_TYPE, '
+      'VG.JOURNAL_CHILD_ID AS JCHID, VG.RT_WEIGHT, '
+      'VG.RT_TYPE, VG.RT_SIZE, VG.SEAL_FACT, VG.VOLUME, '
+      'VG.TRAILER_NO, VG.REMARK, VG.DAMAGES, VG.DANGER_CLASS, '
+      'VG.TEMP_MODE, VG.WH_PLACE_NO, VG.MARKING, VG.CONT_NO_FACT '
+      'FROM '
+      
+        '(VESSEL_GOODS VG LEFT JOIN VESSEL_PARTS VP ON (VG.JOURNAL_MASTER' +
+        '_ID=VP.JOURNAL_MASTER_ID)) '
+      'LEFT JOIN VESSEL V ON (VP.SEA_VOYAGE_NO=V.SEA_VOYAGE_NO) '
+      'WHERE '
+      'VP.COMPLETED=0 AND VG.COMPLETED=0 AND VG.TO_DEL=0 '
+      'AND (@Forwarder IS NULL or VP.FORWARDER_ID = @Forwarder)'
+      '')
+    Left = 680
+  end
+  object dsWBLGoods: TUniDataSource
+    DataSet = qryWBLGoods
+    Left = 728
+  end
+end

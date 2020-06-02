@@ -1,8 +1,8 @@
 *
 !*/
 !.gitignore
-!/ProcDocs/*
-!/Events/*
+!/ProcDocs/**
+!/Events/**
 !Data/impex/scripts/**
 !Fr/Fr3/**
 !Journals/Descr/Archive/**

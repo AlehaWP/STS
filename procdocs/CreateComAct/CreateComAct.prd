@@ -1,0 +1,609 @@
+// *****************************************************************************
+// Название: Создание ком. акта
+// Описание: Создать ком. акта
+// Кнопка вызова: 0
+// Подпись кнопки: Создать ком. акта
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+FUNC ('GetDir',,
+      BLOCK(
+        VAR('sDir', string);
+        SELECTDIRECTORY ('sDir');
+        sDir := INCLUDETRAILINGBACKSLASH(sDir);
+        WRITEINIFILE ('CreateComAct', 'DirectoryPath', sDir);
+        sDir;
+      )
+),
+
+
+FUNC('GetDTNumber',,
+     BLOCK(
+	   VAR('iGDTNumber', integer,XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLROOT,0), 3),'DocBody'),'Inventory'),'GTDNumber'));
+	   Var('sDt',string);
+     sDtDate:=XMLNODEVALUE(XMLNODECHILD(iGDTNumber,1));
+	   var('SecondPart', string, EXTRACTSTR (sDtDate, 3, '-')+EXTRACTSTR (sDtDate, 2, '-')+RIGHT(EXTRACTSTR (sDtDate, 1, '-'),2));
+	   sDT:=XMLNODEVALUE(XMLNODECHILD(iGDTNumber,0))+'-'+SecondPart+'-'+XMLNODEVALUE(XMLNODECHILD(iGDTNumber,2));
+	   sDT
+	 )
+),
+
+FUNC('EndScript',
+     PARAM('MessageText', string,0),
+     BLOCK(
+       CLOSEDATABASE ('TMP_DB');
+       RAISEEXCEPTION (MessageText);
+	 )
+),
+
+Func('ShowModal',
+     PARAM('iFormShowModal', integer, 0),
+     BLOCK(
+       CASE(iFormShowModal,
+            [1, DoAsLinked(),
+             2, BLOCK(FORMDESTROY (frmShow); EndScript('Выполнение отменено.');),
+             3, DOasDT(),
+             4, LinkDTDO()
+
+            ],,
+       );
+     )
+),
+
+FUNC('FindNumber',
+     BLOCK(
+       PARAM('sStroka', string, 0),
+       PARAM('PriznakNahozdenia', string,1),
+       //PARAM('KolvoSimvolov', integer, 2)
+     ),
+     BLOCK(
+        VAR('sPart', string, '');
+        VAR('iCountPart', integer, SPLITSTR (sStroka, PriznakNahozdenia, sPart));
+        VAR('iCounter', integer, 1);
+        VAR('dNumber', float, 0);
+        VAR('sNumber', string, '');
+        VAR('iLengthPart', integer, 0);
+        VAR('sLetter', string, '');
+        
+        WHILE((iCounter<=iCountPart)*(dNumber=0),//бежим по частям пока не найдем число
+              BLOCK(
+                sPart:= TRIM (EXTRACTSTR (sStroka, iCounter, PriznakNahozdenia));
+                iLengthPart := LENGTH (sPart);
+                sNumber := '';
+                While(iLengthPart>0,
+                      BLOCK(
+                        sLetter := COPY(sPart, iLengthPart, 1);
+                        IF(sLetter=',', sLetter:='.');
+                        
+                        IF(STRPOS (sLetter, '0123456789.'),
+                             sNumber := sLetter + sNumber,
+                             IF((sNumber<>'')*(sLetter<>' '), iLengthPart:=0)// Если число закончилось и начались буквы(исключая пробелы), прекращаем чтение
+                        );
+                        iLengthPart :=iLengthPart-1;
+                      )
+                );
+                //showmessage(sNumber);
+                IF(sNumber<>'', dNumber:=convert(sNumber, float));
+                iCounter:=iCounter+1;
+              );
+        );
+        dNumber
+        //showmessage(EXTRACTSTR (sStroka, 1, PriznakNahozdenia));
+     )
+),
+
+FUNC('LinkDTDO',,
+     BLOCK(
+        //Удаляем предыдущие привязки к товару (К одному товару ДТ может быть привязан только один товар ДО, остальные добавляются как новые)
+        EXECUTESQL('TMP_DB', 'UPDATE tmpComm SET G32=0 WHERE ID='+char(39)+qryDTComms.ID+char(39)+' AND G32='+qryComms.G32);
+        //Привязываем
+        EXECUTESQL('TMP_DB', 'UPDATE tmpComm SET G32='+qryComms.G32+' WHERE ID='+char(39)+qryDTComms.ID+char(39)+' AND GN='+qryDTComms.GN);
+
+        //Обновляем отображаемую пользователю таблицу
+        FORMSETPROPERTY(frmShow, 'qryDTComms.Active', 'false');
+        FORMSETPROPERTY(frmShow, 'qryDTComms.Active', 'True');
+        showmodal(FormshowModal(frmShow));
+        //FORMDESTROY (frmShow);
+     )
+),
+
+FUNC('CreateNewComAct',PARAM('ActCounter', integer, 0),
+     BLOCK(
+         APPENDRECORD('KRD_DOP_2');
+         EDIT('KRD_DOP_2');
+         SETFIELDVALUE('KRD_DOP_2',
+                       'PLACEID',KRD_MAIN.PLACEID,
+                       'ID',KRD_MAIN.ID,
+                       'COUNTER',ActCounter,
+                       'DOC_NAME','Коммерческий акт',
+                       'DOC_NO',SOLVE (LEFTPAD(GENNO('CA_KPS'+KRD_MAIN.PLACEID, '№ комм. акта'), 7, '0')),
+                       'DOC_DATETIME',NOW(),
+         );
+         POST('KRD_DOP_2');
+     )
+),
+
+FUNC('AddCommsInCSDM',BLOCK(
+       PARAM('iSDMKind', string,0),
+       PARAM('iCounter', integer, 1)
+     ),
+     BLOCK(
+         APPENDRECORD('KRD_CSDM_2');
+         EDIT('KRD_CSDM_2');
+         SETFIELDVALUE( 'KRD_CSDM_2',
+                        'PLACEID',KRD_MAIN.PLACEID,
+                        'ID',KRD_MAIN.ID,
+                        'G32',GETDOGOODS.G32,
+                        'COUNTER',iCounter,
+                        'SDM_KIND',iSDMKind, 
+                        'SDM_STAGE', '1',
+                        'SDM_DATETIME',NOW(),
+                        'SDM_REASONS', 'Измененение сведений согласно ДТ',
+                        'DOC_G33', GETDOGOODS.G33,
+                        'DOC_G312',GETDOGOODS.G312,
+                        'DOC_G42',GETDOGOODS.G42,
+                        'DOC_G42_CURRENCY',GETDOGOODS.G42_CURRENCY,
+                        'DOC_G311',GETDOGOODS.G311,
+                        'DOC_G315A',GETDOGOODS.G315A,
+                        'DOC_G35',GETDOGOODS.G35,
+                        'DOC_G315C',GETDOGOODS.G315C,
+                        'DOC_G315CN',,
+                        'DOC_G31_82',GETDOGOODS.G31_82,
+                        'COMMERCEACT',sCommActText
+         );
+         POST('KRD_CSDM_2');
+     )
+),
+
+
+FUNC('EditKRD_COMM',PARAM('iG32', integer, 0),
+     EXECUTESQL('STS_DB', 'UPDATE KRD_COMM SET ' +
+                          ' G33='+char(39)+GET_DT_GOODS.G33+char(39)+
+                          ' , G312='+char(39)+GET_DT_GOODS.G312+char(39)+
+                          ' , G311='+GET_DT_GOODS.G311+
+                          ' , G35='+GET_DT_GOODS.G35+
+                          ' , G38='+GET_DT_GOODS.G38+
+                          ' , G315A='+GET_DT_GOODS.G315A+
+                          ' , G315='+char(39)+GET_DT_GOODS.G315+char(39)+
+                          ' , G315C='+GET_DT_GOODS.G315C+
+                          ' , G42='+GET_DT_GOODS.G42+
+                          ' , G42_CURRENCY='+char(39)+GET_DT_GOODS.G42_CUR+char(39)+
+                          ' WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID+' AND G32='+iG32
+     )
+),
+
+FUNC('AppendRecKRD_COMM',
+     BLOCK(
+       PARAM('iG32', integer, 0),
+       PARAM('iGN', integer, 1)
+     ),
+     BLOCK(
+         
+         APPENDRECORD('KRD_COMM_2');
+         EDIT('KRD_COMM_2');
+         SETFIELDVALUE('KRD_COMM_2',
+                       'PLACEID',KRD_MAIN.PLACEID,
+                       'ID',KRD_MAIN.ID,
+                       'G32',iG32,
+                       'GN',iGN,
+                       'G33',GET_DT_GOODS.G33,
+                       'G312',GET_DT_GOODS.G312,
+                       'G311',GET_DT_GOODS.G311,
+                       'G35',GET_DT_GOODS.G35,
+                       'G38',GET_DT_GOODS.G38,
+                       'G315A',GET_DT_GOODS.G315A,
+                       'G315',GET_DT_GOODS.G315,
+                       'G315C',GET_DT_GOODS.G315C,
+                       'G42',GET_DT_GOODS.G42,
+                       'G42_CURRENCY',CURRENCYCODE (GET_DT_GOODS.G42_Cur)
+         );
+         POST('KRD_COMM_2');
+     )
+),
+
+FUNC('AppendRecCSDM',
+     BLOCK(
+       PARAM('iG32', integer, 0),
+       PARAM('iCounter', integer,1)
+     ),
+     BLOCK(
+         APPENDRECORD('KRD_CSDM_2');
+         EDIT('KRD_CSDM_2');
+         SETFIELDVALUE( 'KRD_CSDM_2',
+                        'PLACEID',KRD_MAIN.PLACEID,
+                        'ID',KRD_MAIN.ID,
+                        'G32',iG32,
+                        'COUNTER', iCounter,
+                        'SDM_KIND','2',
+                        'SDM_STAGE','1',
+                        'SDM_DATETIME',NOW(),
+                        'SDM_REASONS', 'Измененение сведений согласно ДТ',
+                        'COMMERCEACT',sCommActText
+         );
+         POST('KRD_CSDM_2');
+     )
+),
+
+FUNC('DOasDT',,
+    BLOCK(
+         OPENQUERY('GETDOGOODS', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+KRD_MAIN.PLACEID+ ' AND ID='+KRD_MAIN.ID);
+
+         OPENQUERY('GET_DT_GOODS', 'SELECT * FROM tmpComm WHERE PLACEID='+KRD_MAIN.PLACEID+ ' AND ID='+KRD_MAIN.ID, 'TMP_DB');
+              
+         VAR('iDoGoodsCount', integer, RECORDCOUNT('GETDOGOODS'));
+         VAR('iDTGoodsCount', integer, RECORDCOUNT('GET_DT_GOODS'));
+
+         VAR('DelTovFrom', integer, 100000);
+         VAR('AddTovFrom', integer, 0);
+         IF(iDOGoodsCount>iDTGoodsCount, DelTovFrom := iDTGoodsCount);
+         IF(iDOGoodsCount<iDTGoodsCount, AddTovFrom := iDOGoodsCount);
+
+         //Проверяем старые акты, если есть то заканчиваем выполнение
+         OPENQUERY('OLD_ACTS', 'STS_DB', 'SELECT * FROM KRD_DOP WHERE PLACEID='+ KRD_MAIN.PLACEID + ' AND ID='+KRD_MAIN.ID);
+         //showmessage(RECORDCOUNT('OLD_ACTS'));
+         IF(RECORDCOUNT('OLD_ACTS')<>0, EndScript('На данное ДО уже создан ком. акт, подгрузка невозможна. Удалите предшествующие ком.акты, после чего выполните загрузку еще раз!'));
+         CLOSEDATASET('OLD_ACTS');
+
+         //Создаем новый акт
+         CreateNewComAct(1);
+
+         FIRST('GETDOGOODS');
+         WHILE(EOF('GETDOGOODS')=0,
+               BLOCK(
+                 AddCommsInCSDM(IF(GETDOGOODS.G32>DelTovFrom, '1', '0'), 1);//Если товаров в ДТ меньше чем в ДО, то ставим признак "отсутствует" у лишних товаров в ДО
+                 
+                 NEXT('GETDOGOODS');
+               )
+         );
+         //Если товаров в ДТ больше, то добавляем пустышки
+         IF(AddTovFrom>0,
+            WHILE(AddTovFrom<iDTGoodsCount,
+                    BLOCK(
+                       AddTovFrom := AddTovFrom + 1;
+                       AppendRecCSDM(AddTovFrom, 1);
+                    )
+            )
+         );
+         
+         FIRST('GET_DT_GOODS');
+         WHILE(EOF('GET_DT_GOODS')=0,
+               BLOCK(
+                  OPENQUERY('GET_G32', 'STS_DB', 'SELECT MAX(G32) as G32 FROM KRD_COMM WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID);
+                  VAR('iG32', integer, GET_G32.G32);
+                  CLOSEDATASET('GET_G32');
+
+                  OPENQUERY('GET_GN','STS_DB', 'SELECT MAX(GN) AS GN FROM KRD_COMM WHERE PLACEID IN (SELECT PLACEID FROM KRD_MAIN WHERE MAIN_ID='+KRD_MAIN.MAIN_ID+')');
+                  VAR('iGN', integer, GET_GN.GN);
+                  CLOSEDATASET('GET_GN');
+               
+                  OPENQUERY('Find_Goods', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID+' AND G32='+GET_DT_GOODS.GN);
+
+                  IF(RECORDCOUNT('Find_Goods')<>0,
+                     EditKRD_COMM(GET_DT_GOODS.GN),
+                     BLOCK(
+                       iG32:=iG32 + 1;
+                       iGN:=iGN+1;
+                       AppendRecKRD_COMM(iG32, iGN);
+                     )
+                  );
+                  //showmessage(2);
+                  NEXT('GET_DT_GOODS');
+               )
+         );
+
+
+    )
+),
+
+FUNC('DoAsLinked',,
+    BLOCK(
+       VAR('iActCounter', integer, 1);
+       //Смотрим старые акты, и получаем текущий counter
+       OPENQUERY('OLD_ACTS', 'STS_DB', 'SELECT MAX(COUNTER) as COUNTER FROM KRD_DOP WHERE PLACEID='+ KRD_MAIN.PLACEID + ' AND ID='+KRD_MAIN.ID);
+       IF(RECORDCOUNT('OLD_ACTS')<>0, iActCounter := OLD_ACTS.COUNTER + 1);
+       CLOSEDATASET('OLD_ACTS');
+       
+       //Создаем новый акт
+       CreateNewComAct(iActCounter);
+       //добавляем привязанные товары -------------------------------------------------------------------------------------------------
+       OPENQUERY('GET_DT_GOODS', 'SELECT * FROM tmpComm WHERE PLACEID='+KRD_MAIN.PLACEID+ ' AND ID='+KRD_MAIN.ID +' AND G32<>0', 'TMP_DB');
+       IF(RECORDCOUNT('GET_DT_GOODS')<>0,
+          BLOCK(
+             FIRST('GET_DT_GOODS');
+             WHILE(EOF('GET_DT_GOODS')=0,
+                   BLOCK(
+                       OPENQUERY('GETDOGOODS', 'STS_DB', 'SELECT * FROM KRD_COMM WHERE PLACEID='+KRD_MAIN.PLACEID+ ' AND ID='+KRD_MAIN.ID + ' AND G32='+GET_DT_GOODS.G32);
+                      //Проверяем созданны ли на товар ком. акты, если созданы, тогда KRD_CSDM не трогаем
+                      
+                      OPENQUERY('Find_Goods_CSDM', 'STS_DB', 'SELECT * FROM KRD_CSDM WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID+' AND G32='+GETDOGOODS.G32);
+                      IF(RECORDCOUNT('Find_Goods_CSDM')=0,
+                         AddCommsInCSDM('0', iActCounter),
+                         COPYRECORD ('Find_Goods_CSDM', 'KRD_CSDM_2', 
+                                                        'PLACEID=Find_Goods_CSDM.PLACEID',
+                                                        'ID=Find_Goods_CSDM.ID',
+                                                        'G32=Find_Goods_CSDM.G32',
+                                                        'COUNTER=iActCounter',
+                                                        'SDM_KIND=Find_Goods_CSDM.SDM_KIND',
+                                                        'SDM_STAGE=Find_Goods_CSDM.SDM_STAGE',
+                                                        'SDM_DATETIME=Find_Goods_CSDM.SDM_DATETIME',
+                                                        'SDM_REASONS=Find_Goods_CSDM.SDM_REASONS',
+                                                        'DOC_G33=Find_Goods_CSDM.DOC_G33',
+                                                        'DOC_G312=Find_Goods_CSDM.DOC_G312',
+                                                        'DOC_G42=Find_Goods_CSDM.DOC_G42',
+                                                        'DOC_G42_CURRENCY=Find_Goods_CSDM.DOC_G42_CURRENCY',
+                                                        'DOC_G311=Find_Goods_CSDM.DOC_G311',
+                                                        'DOC_G315A=Find_Goods_CSDM.DOC_G315A',
+                                                        'DOC_G35=Find_Goods_CSDM.DOC_G35',
+                                                        'DOC_G315C=Find_Goods_CSDM.DOC_G315C',
+                                                        'DOC_G315CN=Find_Goods_CSDM.DOC_G315CN',
+                                                        'DOC_G31_8=Find_Goods_CSDM.DOC_G31_8',
+                                                        'COMMERCEACT=Find_Goods_CSDM.COMMERCEACT'
+                         )
+                      );
+                      EditKRD_COMM(GET_DT_GOODS.G32);
+                      CLOSEDATASET('GETDOGOODS');
+                      CLOSEDATASET('Find_Goods_CSDM');
+                      NEXT('GET_DT_GOODS');
+                   )
+             );
+          )
+       );
+       CLOSEDATASET('GET_DT_GOODS');
+       //-----------------------------------------------------------------------------------------------------------------------------------
+       
+       // Добавляем товары из ДТ, которые не привязанны к ДО, как новые----------------------------------------------------------------------------------------------
+       OPENQUERY('GET_DT_GOODS', 'SELECT * FROM tmpComm WHERE PLACEID='+KRD_MAIN.PLACEID+ ' AND ID='+KRD_MAIN.ID +' AND G32=0', 'TMP_DB');
+       IF(RECORDCOUNT('GET_DT_GOODS')<>0,
+          BLOCK(
+             OPENQUERY('GET_G32', 'STS_DB', 'SELECT MAX(G32) as G32 FROM KRD_COMM WHERE PLACEID='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID);
+             VAR('iG32', integer, GET_G32.G32);
+             CLOSEDATASET('GET_G32');
+             
+             OPENQUERY('GET_GN','STS_DB', 'SELECT MAX(GN) AS GN FROM KRD_COMM WHERE PLACEID IN (SELECT PLACEID FROM KRD_MAIN WHERE MAIN_ID='+KRD_MAIN.MAIN_ID+')');
+             VAR('iGN', integer, GET_GN.GN);
+             CLOSEDATASET('GET_GN');
+
+             FIRST('GET_DT_GOODS');
+             WHILE(EOF('GET_DT_GOODS')=0,
+                   BLOCK(
+                      iG32 := iG32 + 1;
+                      iGN := iGN + 1;
+                      //Добавляем товар в KRD_COMM
+                      AppendRecKRD_COMM(iG32, iGN);
+                      
+                      //Добавляем пустышку в CSDM
+                      //showmessage(1);
+                      AppendRecCSDM(iG32, iActCounter);
+                      
+                      NEXT('GET_DT_GOODS');
+                   )
+             );
+          )
+       );
+       //--------------------------------------------------------------------------------------------------------------------------------------
+    )
+),
+
+FUNC('AppendRecTmpComm',,
+     BLOCK(
+         iGN:=iGN + 1;
+         VAR('iVesPallete', float, 0);
+         iVesPallete := FINDNUMBER(XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND (XMLNODEFIND (iGoods, 'ESADGoodsPackaging'), 'catESAD_cu:PalleteInformation'), 'catESAD_cu:PalleteDescription')), 'кг');
+         APPENDRECORD('tmpComm');
+         EDIT('tmpComm');
+         SETFIELDVALUE('tmpComm',
+                       'ND', sNDT,
+                       'GN', iGN,
+                       'G32_DT', XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GoodsNumeric')),
+                       'G312', XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GoodsDescription')),
+                       'G35', XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GrossWeightQuantity'))+ iVesPallete,
+                       'G38', XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:NetWeightQuantity')),
+                       'G42', XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:InvoicedCost')),
+                       'G42_CUR', sG42CUR,
+                       'G33', XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GoodsTNVEDCode')),
+                       'G311', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iGoods, 'ESADGoodsPackaging'), 'catESAD_cu:PakageQuantity')),
+                       'G315CN', XMLNODEVALUE(XMLNODEFIND (XMLNODEFIND (XMLNODEFIND (iGoods, 'catESAD_cu:GoodsGroupDescription'), 'catESAD_cu:GoodsGroupInformation'), 'catESAD_cu:Manufacturer')),
+                       'G315A', XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iGoods, 'SupplementaryGoodsQuantity'), 'cat_ru:GoodsQuantity')),
+                       'G315',  XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iGoods, 'SupplementaryGoodsQuantity'), 'cat_ru:MeasureUnitQualifierName')),
+
+         );
+         POST('tmpComm');
+      )
+),
+//showmessage(FindNumber('123 asd 123 456,78 ( ) кг 345345 кг', 'кг'));
+//RAISEEXCEPTION ('');
+//Создаём временную базу
+   VAR ('sTempDBPath', String, PROGRAMPATH() + 'TMP_DB\');
+   VAR ('sSQL', string, '');
+   
+
+   FORCEDIRECTORIES(TEMPDIRECTORY() + 'TMP_DB\');
+   sTempDBPath := TEMPDIRECTORY() + 'TMP_DB\';
+   DELETEFILE (sTempDBPath+'tmpCOMM.DBF');
+
+
+    OPENDATABASE ('TMP_DB', 'STANDARD','PATH='+ sTempDBPath);
+
+    sSQL := 'CREATE TABLE '+CHAR(39)+sTempDBPath+'tmpCOMM.DBF'+CHAR(39);
+    sSQL := sSQL + ' (';
+      sSQL := sSQL + 'PLACEID INT, ';
+      sSQL := sSQL + 'ID INT, ';
+      sSQL := sSQL + 'ND CHARACTER(50), ';
+      sSQL := sSQL + 'G32 INT, ';
+      sSQL := sSQL + 'G32_DT INT, ';
+      sSQL := sSQL + 'GN INT, ';
+      sSQL := sSQL + 'G33 CHARACTER(21), ';
+      sSQL := sSQL + 'G312 BLOB, ';
+      sSQL := sSQL + 'G311 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G35 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G38 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315A NUMERIC(19,2), ';
+      sSQL := sSQL + 'G315 CHARACTER(50), ';
+      sSQL := sSQL + 'G315CN CHARACTER(50), ';
+      sSQL := sSQL + 'G315C NUMERIC(19,2), ';
+      sSQL := sSQL + 'G42 NUMERIC(19,2), ';
+      sSQL := sSQL + 'G42_CUR CHARACTER(15) ';
+    sSQL := sSQL + ')';
+    sSQL := sSQL + '';
+    EXECUTESQL ('TMP_DB', sSQL);
+    
+    OPENTABLE('tmpCOMM', sTempDBPath+'tmpCOMM.DBF', 'ND', 'TMP_DB', 1);
+    COPYFILE(sTempDBPath+'tmpCOMM.DBF', 'C:\Temp\tmpCOMM.DBF');
+    //showmessage(sTempDBPath);
+
+
+VAR('sDirPath', string, INIFILE ('CreateComAct', 'DirectoryPath', ''));
+
+IF((SHIFTPRESSED()=1)|(sDirPath =''), sDirPath:=GetDir());
+
+IF(sDirPath='', EndScript('Не указан каталог хранения ДТ, выполнение прекращено'));
+
+//Читаем ДТ в каталоге, записываем данные во временную таблицу, перемещаем файл в бэкап
+
+
+var('mFileList', Memo, GETFILELIST(sDirPath, '*.xml', '|'));
+VAR('iTotalFile', integer, 0);
+VAR('iCount', integer, 0);
+VAR('sDTFileName', string, '');
+VAR('sTemp', string, '');
+
+
+//showmessage(sDirPath+mFileList);
+// кол-во файлов в папке
+iTotalFile := SPLITSTR (mFileList, '|', sTemp);
+// счетчик
+iCount := 1;
+
+VAR('sBackupDir', string, sDirPath+ '\BACKUP\'+FORMATDATETIME('DDMMYY', DATE()));
+IF(DIRECTORYEXISTS(sBackupDir)=0, FORCEDIRECTORIES(sBackupDir));
+VAR('iGN', integer, 0);
+
+
+While ( iCount <= iTotalFile,
+  Block(
+    sDTFileName := sDirPath+EXTRACTSTR (mFileList, iCount, '|');
+    
+    VAR('iXML', integer, XMLDOCUMENTCREATE());
+    XMLDOCUMENTLOAD(iXML, sDTFileName);
+    
+    VAR('XMLRoot', integer, XMLDOCUMENTROOT(iXML));
+    VAR('DtNode', integer, XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLNODECHILD(XMLROOT,0), 1),0),0));
+    
+    IF((XMLNODENAME(DtNode)='ESADout_CU')*(XMLNODENAME(DtNode)<>''),
+       BLOCK(
+         VAR('sDtDate', string);
+         VAR('sNDT', string, GetDTNumber());
+         VAR('sCommActText', string, 'ДТ,'+ EXTRACTSTR (sNDT, 1,'-')+'/'+EXTRACTSTR (sNDT, 2,'-')+'/'+EXTRACTSTR (sNDT, 3,'-')+','+ sDTDate);
+         VAR('iGoodsShipment', integer, XMLNODECHILD (DtNode, 'ESADout_CUGoodsShipment'));
+         VAR('iGoodsCount', integer, XMLNODECHILDCOUNT (iGoodsShipment));
+         VAR('iGoodsCounter', integer, 0);
+         VAR('sG42CUR', string, XMLNODEVALUE(XMLNODECHILD(XMLNODECHILD(iGoodsShipment, 'ESADout_CUMainContractTerms'), 'catESAD_cu:ContractCurrencyCode')));
+         
+         sDTDate := EXTRACTSTR (sDtDate, 3, '-')+'.'+EXTRACTSTR (sDtDate, 2, '-')+'.'+EXTRACTSTR (sDtDate, 1, '-');
+         
+         WHILE(iGoodsCounter< iGoodsCount,
+               BLOCK(
+                 IF(XMLNODENAME(XMLNODECHILD(iGoodsShipment, iGoodsCounter))='ESADout_CUGoods',
+                    BLOCK(
+                       VAR('iGoods', integer, XMLNODECHILD(iGoodsShipment, iGoodsCounter));
+                       //Смотрим был ли уже добавлен подобный код ТНВЭД, если нет то добавляем новую запись, если да, то суммируем старые значения с новыми.
+                       OPENQUERY('FIND_G33', 'SELECT GN FROM tmpComm WHERE G33='+char(39)+XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GoodsTNVEDCode'))+char(39), 'TMP_DB');
+                       IF(RECORDCOUNT('FIND_G33')<>0,
+                          BLOCK(
+                              VAR('iVesPallete', float, 0);
+                              iVesPallete := FINDNUMBER(XMLNODEVALUE(XMLNODEFIND(XMLNODEFIND (XMLNODEFIND (iGoods, 'ESADGoodsPackaging'), 'catESAD_cu:PalleteInformation'), 'catESAD_cu:PalleteDescription')), 'кг');
+                              EXECUTESQL('TMP_DB', 'UPDATE tmpComm SET '+
+                                                   '  G35=(G35+'+ (XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:GrossWeightQuantity'))+iVesPallete) +')'+
+                                                   ', G38=(G38+'+ XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:NetWeightQuantity'))+')'+
+                                                   ', G42=(G42+'+ XMLNODEVALUE(XMLNODECHILD(iGoods, 'catESAD_cu:InvoicedCost'))+')'+
+                                                   ', G311=(G35+'+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iGoods, 'ESADGoodsPackaging'), 'catESAD_cu:PakageQuantity'))+')'+
+                                                   ', G315A=(G315A+'+ XMLNODEVALUE (XMLNODEFIND (XMLNODEFIND (iGoods, 'SupplementaryGoodsQuantity'), 'cat_ru:GoodsQuantity'))+')'+
+                                                   ' WHERE '+
+                                                   ' GN='+FIND_G33.GN
+                             );
+                          ),
+                          AppendRecTmpComm()
+                       );
+
+                    )
+                 );
+
+                 iGoodsCounter :=iGoodsCounter+1;
+               )
+         );
+         
+         DELETEFILE(sDTFileName);
+         XMLDOCUMENTSAVE(iXML, INCLUDETRAILINGBACKSLASH(sDirPath) + sNDT + '.xml');
+       )
+    );
+    iCount := iCount + 1;
+  )
+);
+
+//Даем пользователю выбрать номера ДТ для загрузки
+
+OPENQUERY('GET_DT', 'SELECT DISTINCT ND FROM tmpComm.dbf', 'TMP_DB');
+IF(recordcount('GET_DT')=0, EndScript('В выбранном каталоге отсутствуют файлы с ДТ'));
+
+IF(SELECTRECORDS ('Укажите ДТ для загрузки', 'GET_DT', [['ND', 'Номер ДТ',30]], 'Selected_DT', , 'STS_DB'),
+   BLOCK(
+     //showmessage(RecordCount('Selected_DT'));
+     VAR('sSelectedDtNum', string, UNIONVALUES ('Selected_DT', ['ND'],  char(39) + ' , '+char(39), ));
+     sSelectedDTNum := char(39) + TRIM(REMOVECHAR (sSelectedDtNum, ' ')) + char(39);
+     
+
+
+
+     //Проставляем в ыбранных ДТ ID нашей ДО, он нам потом понадобится для привязки товаров
+     
+     
+     EXECUTESQL('TMP_DB', 'UPDATE tmpComm SET PLACEID='+KRD_MAIN.PLACEID+' , ID='+KRD_MAIN.ID+' WHERE ND IN ('+sSelectedDTNum +')');
+
+//-------------------------------------------------------------------- Показываем пользователь окно с возможность привязать товары -----------------------------------------------------
+
+
+
+    //Подключаемся к БД ВЭД-Склад
+
+    TRYEXCEPT (EXECUTESCRIPT (PROGRAMPATH() + 'Procdocs\CreateComAct\CreateDO_DT_link.prd'),,EndScript('Выполнение прекращено.'));
+
+    if ( bSTSConnect,,EndScript('Нет соединения с БД ВЭД-Склад'));//end if
+
+    //Настраиваем подключение DataGrid к KRD_COMM
+    FORMCREATE (frmShow, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'forms\CreateDO_DT_Link.cfm');
+    FORMSETPROPERTY(frmShow, 'dbSTS.Connected', 'False');
+    FORMSETPROPERTY(frmShow, 'dbSTS.Params', sSTS_ConnString);
+    FORMSETPROPERTY(frmShow, 'dbSTS.DriverName', sSTS_DataBase);
+    FORMSETPROPERTY(frmShow, 'dbSTS.Connected', 'True');
+    FORMSETPROPERTY(frmShow, 'qryComms.Active', 'false');
+    FORMSETPROPERTY(frmShow, 'qryComms.SQL', 'Select * from KRD_COMM where Placeid='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID);
+    FORMSETPROPERTY(frmShow, 'qryComms.Active', 'True');
+
+    //Настраиваем подключение DataGrid к tmpComm
+    FORMSETPROPERTY(frmShow, 'dbDT.Connected', 'False');
+    FORMSETPROPERTY(frmShow, 'dbDT.Params', 'PATH=' + sTempDBPath + CHAR(13) + 'WIN CODING=0');
+    FORMSETPROPERTY(frmShow, 'dbDT.DriverName', 'STANDARD');
+    FORMSETPROPERTY(frmShow, 'dbDT.Connected', 'True');
+    FORMSETPROPERTY(frmShow, 'qryDTComms.Active', 'false');
+    FORMSETPROPERTY(frmShow, 'qryDTComms.SQL', 'Select * from tmpComm where Placeid='+KRD_MAIN.PLACEID+' AND ID='+KRD_MAIN.ID);
+    FORMSETPROPERTY(frmShow, 'qryDTComms.Active', 'True');
+            //showmessage('DRIVER NAME=' + FORMGETPROPERTY (frmShow, 'rtDatabase1.DriverName') + CHAR(13) + 'PARAMS' + CHAR(13) + FORMGETPROPERTY (frmShow, 'rtDatabase1.Params'));
+    //VAR('i', integer, FormshowModal(frmShow));
+
+    //Зацикливаем функция по formshowmodal=4, выход 1,2,3
+    ShowModal(FormshowModal(frmShow));
+
+    FORMDESTROY (frmShow);
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+     
+   ), EndScript('Вы не выбрали ДТ, выполнение прекращено')
+);
+
+
+
+//COPYFILE(sTempDBPath+'tmpCOMM.DBF', 'C:\Temp\tmpCOMM.DBF');
+CLOSEDATABASE ('TMP_DB');
+GLOBALREFRESH ();

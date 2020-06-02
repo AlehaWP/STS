@@ -1,0 +1,360 @@
+object frSelectBase: TScriptMultiLanguageForm
+  BorderIcons = [biSystemMenu, biMinimize]
+  Caption = #1053#1072#1089#1090#1088#1086#1081#1082#1080' '#1041#1044
+  ClientHeight = 443
+  ClientWidth = 396
+  Color = clBtnFace
+  Font.Charset = RUSSIAN_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'MS Sans Serif'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'BorderStyle=bsSingle'
+    'Position=poMainFormCenter')
+  SaveEvents.Strings = (
+    'Self.OnActivate=frSelectBaseActivate')
+  PixelsPerInch = 96
+  TextHeight = 13
+  object rtGroupFrame1: TcxGroupBox
+    Left = 8
+    Top = 96
+    Hint = ''
+    PanelStyle.Active = True
+    TabOrder = 2
+    Height = 185
+    Width = 388
+    object SQL: TcxRadioButton
+      Left = 8
+      Top = 8
+      Width = 75
+      Height = 25
+      Caption = 'SQL'
+      Font.Charset = RUSSIAN_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -13
+      Font.Name = 'Cambria'
+      Font.Style = []
+      ParentFont = False
+      TabOrder = 0
+      GroupIndex = 1
+      Transparent = True
+    end
+    object txPathSQL: TcxLabel
+      Left = 27
+      Top = 36
+      Hint = ''
+      Caption = #1048#1084#1103' '#1089#1077#1088#1074#1077#1088#1072
+      ParentFont = False
+      Style.BorderStyle = ebsNone
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -13
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+    end
+    object rtLabel2: TcxLabel
+      Left = 27
+      Top = 66
+      Hint = ''
+      Caption = #1053#1072#1079#1074#1072#1085#1080#1077' '#1041#1044
+      ParentFont = False
+      Style.BorderStyle = ebsNone
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -13
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 2
+    end
+    object UseBuiltAuth: TcxCheckBox
+      Left = 27
+      Top = 92
+      Hint = ''
+      Caption = #1048#1089#1087#1086#1083#1100#1079#1086#1074#1072#1090#1100' '#1074#1089#1090#1088#1086#1077#1085#1085#1091#1102' '#1072#1074#1090#1086#1088#1080#1079#1072#1094#1080#1102
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -13
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 3
+      Transparent = True
+    end
+    object rtLabel1: TcxLabel
+      Left = 45
+      Top = 120
+      Hint = ''
+      Caption = #1055#1086#1083#1100#1079#1086#1074#1072#1090#1077#1083#1100
+      ParentFont = False
+      Style.BorderStyle = ebsNone
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -13
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 4
+    end
+    object rtLabel3: TcxLabel
+      Left = 45
+      Top = 148
+      Hint = ''
+      Caption = #1055#1072#1088#1086#1083#1100
+      ParentFont = False
+      Style.BorderStyle = ebsNone
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -13
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 5
+    end
+    object User: TcxTextEdit
+      Left = 144
+      Top = 115
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -15
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = [fsBold]
+      Style.IsFontAssigned = True
+      TabOrder = 6
+      Width = 233
+    end
+    object Password: TcxTextEdit
+      Left = 144
+      Top = 146
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -15
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = [fsBold]
+      Style.IsFontAssigned = True
+      TabOrder = 7
+      Width = 233
+    end
+    object NameBD: TcxTextEdit
+      Left = 144
+      Top = 62
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -15
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = [fsBold]
+      Style.IsFontAssigned = True
+      TabOrder = 8
+      Width = 233
+    end
+    object PathSQL: TcxTextEdit
+      Left = 144
+      Top = 31
+      Hint = ''
+      ParentFont = False
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -15
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = [fsBold]
+      Style.IsFontAssigned = True
+      TabOrder = 9
+      Width = 233
+    end
+  end
+  object rtGroupFrame2: TcxGroupBox
+    Left = 8
+    Top = 8
+    Hint = ''
+    PanelStyle.Active = True
+    TabOrder = 3
+    Height = 73
+    Width = 388
+    object Paradox: TcxRadioButton
+      Left = 8
+      Top = 8
+      Width = 107
+      Height = 25
+      Caption = 'PARADOX'
+      Checked = True
+      Font.Charset = RUSSIAN_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -13
+      Font.Name = 'Cambria'
+      Font.Style = []
+      ParentFont = False
+      TabOrder = 0
+      TabStop = True
+      GroupIndex = 1
+      Transparent = True
+    end
+    object rtLabel4: TcxLabel
+      Left = 27
+      Top = 35
+      Hint = ''
+      Caption = #1055#1091#1090#1100' '#1082' '#1041#1044
+      ParentFont = False
+      Style.BorderStyle = ebsNone
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -13
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = []
+      Style.IsFontAssigned = True
+      TabOrder = 1
+    end
+    object PathAccess: TcxFilenameEdit
+      Left = 144
+      Top = 29
+      Hint = ''
+      ParentFont = False
+      Properties.Buttons = <
+        item
+          Default = True
+          Glyph.Data = {
+            36030000424D3603000000000000360000002800000010000000100000000100
+            18000000000000030000C40E0000C40E00000000000000000000FF00FF0274AC
+            0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274AC0274
+            AC0274ACFF00FFFF00FF0274AC138AC457B7E06BCBF84BBFF74ABFF74ABFF74A
+            BFF74ABFF64ABFF74ABFF64BC0F72398CC0274ACFF00FFFF00FF0274AC33AAE0
+            2392C489D9FA54C7F854C7F753C7F854C7F754C7F854C7F854C7F853C7F7279D
+            CE6ACBE50274ACFF00FF0274AC57CAF80274AC99E3FB5ED1FA5ED1FA5ED1FA5E
+            D1FA5ED1FA5FD1FA5ED1F85ED1F82CA1CE99EDF70274ACFF00FF0274AC5ED3FA
+            0B81B782D5EF79E0FA6ADCFA69DCFB69DCFB6ADCFB69DCFB69DCFA6ADDFB2FA6
+            CF9FF0F70274ACFF00FF0274AC68DAFB2BA4D14AB2D797EBFC74E5FB74E5FB74
+            E5FC74E5FC74E5FB74E5FC046B0B33A9CFA3F4F752BBD70274AC0274AC70E3FB
+            5CD1EF1184B6FCFFFFB8F4FEBAF4FEBAF4FEBAF4FEB8F4FE046B0B25AA42046B
+            0BD4F7FACAF3F70274AC0274AC7AEBFE7AEBFC0A7FB50274AC0274AC0274AC02
+            74AC0274AC046B0B38CE6547E77F29B44A046B0B0274AC0274AC0274AC83F2FE
+            82F3FE82F3FE83F2FC83F3FE82F3FE83F2FE046B0B2DC0513FDC6E3ED86E46E5
+            7B28B04A046B0BFF00FF0274ACFEFEFE89FAFF89FAFE89FAFE8AF8FE8AFAFE04
+            6B0B046B0B046B0B046B0B3CD86A2EBF53046B0B046B0B046B0BFF00FF0274AC
+            FEFEFE8FFEFF8FFEFF8FFEFF0273A32BA4D12BA4D12BA4D1046B0B35D35E20A7
+            3A046B0BFF00FFFF00FFFF00FFFF00FF0274AC0274AC0274AC0274ACFF00FFFF
+            00FFFF00FFFF00FF046B0B28C24A046B0BFF00FFFF00FFFF00FFFF00FFFF00FF
+            FF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF046B0B17A42B19A730046B
+            0BFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF
+            00FFFF00FF046B0B11A122046B0BFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF
+            FF00FFFF00FFFF00FFFF00FFFF00FF046B0B046B0B046B0B046B0BFF00FFFF00
+            FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF046B0B046B0B04
+            6B0B046B0BFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FF}
+          Kind = bkGlyph
+        end>
+      Style.Font.Charset = RUSSIAN_CHARSET
+      Style.Font.Color = clWindowText
+      Style.Font.Height = -15
+      Style.Font.Name = 'Cambria'
+      Style.Font.Style = [fsBold]
+      Style.IsFontAssigned = True
+      TabOrder = 2
+      DialogKind = dkOpen
+      DialogOptions = [ofEnableSizing]
+      DialogOptionsEx = []
+      Filter = #1042#1089#1077' '#1092#1072#1081#1083#1099' (*.mdb)|*.mdb'
+      Width = 233
+    end
+  end
+  object rtButton1: TcxButton
+    Left = 176
+    Top = 416
+    Width = 107
+    Height = 25
+    Caption = 'OK'
+    ModalResult = 1
+    TabOrder = 0
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -15
+    Font.Name = 'Cambria'
+    Font.Style = [fsBold]
+    ParentFont = False
+  end
+  object rtButton2: TcxButton
+    Left = 304
+    Top = 416
+    Width = 91
+    Height = 25
+    Caption = #1054#1090#1084#1077#1085#1072
+    ModalResult = 2
+    TabOrder = 1
+    Font.Charset = RUSSIAN_CHARSET
+    Font.Color = clWindowText
+    Font.Height = -15
+    Font.Name = 'Cambria'
+    Font.Style = [fsBold]
+    ParentFont = False
+  end
+  object cxGroupBox2: TcxGroupBox
+    Left = 8
+    Top = 296
+    Hint = ''
+    PanelStyle.Active = True
+    ParentFont = False
+    Style.Font.Charset = RUSSIAN_CHARSET
+    Style.Font.Color = clWindowText
+    Style.Font.Height = -13
+    Style.Font.Name = 'Cambria'
+    Style.Font.Style = []
+    Style.IsFontAssigned = True
+    TabOrder = 4
+    Height = 89
+    Width = 388
+    object cxDbList: TcxRadioButton
+      Left = 8
+      Top = 8
+      Width = 225
+      Height = 25
+      Hint = #1042#1099#1073#1086#1088' '#1080#1079' '#1089#1087#1080#1089#1082#1072' '#1087#1086#1076#1082#1083#1102#1095#1077#1085#1085#1099#1093' '#1074' '#1042#1069#1044'-'#1057#1082#1083#1072#1076' '#1041#1044
+      Caption = #1042#1067#1041#1056#1040#1058#1068' '#1048#1047' '#1057#1055#1048#1057#1050#1040
+      Font.Charset = RUSSIAN_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -13
+      Font.Name = 'Cambria'
+      Font.Style = []
+      ParentFont = False
+      TabOrder = 0
+      GroupIndex = 1
+      Transparent = True
+    end
+    object cbDBList: TComboBox
+      Left = 30
+      Top = 41
+      Width = 343
+      Height = 25
+      Font.Charset = RUSSIAN_CHARSET
+      Font.Color = clWindowText
+      Font.Height = -15
+      Font.Name = 'Cambria'
+      Font.Style = [fsBold]
+      ParentFont = False
+      TabOrder = 1
+      Text = 'cbDBList'
+    end
+  end
+  object UniQuery1: TUniQuery
+    Active = False
+    Filtered = False
+    UpdateMode = upWhereAll
+    Params = <>
+    Left = 136
+    Top = 8
+  end
+end

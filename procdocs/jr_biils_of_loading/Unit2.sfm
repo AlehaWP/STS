@@ -1,0 +1,82 @@
+object frmBillOfLoading: TScriptMultiLanguageForm
+  Caption = #1050#1086#1085#1086#1089#1072#1084#1077#1085#1090
+  ClientHeight = 721
+  ClientWidth = 621
+  Color = 15723755
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = 3481376
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'Position=poScreenCenter')
+  SaveEvents.Strings = (
+    'btnSave.OnClick=btnSaveClick'
+    'Self.OnCreate=frmBillOfLoadingCreate')
+  PixelsPerInch = 96
+  TextHeight = 13
+  object teBOL_Number: TcxTextEdit
+    Left = 192
+    Top = 8
+    Hint = ''
+    TabOrder = 0
+    Text = 'teBOL_Number'
+    Width = 121
+  end
+  object deBOL_Date: TcxDateEdit
+    Left = 448
+    Top = 8
+    Hint = ''
+    FindSelection = False
+    Properties.Buttons = <
+      item
+      end>
+    Properties.GlyphButtonIndex = 0
+    TabOrder = 1
+    Width = 121
+  end
+  object deBookingDate: TcxDateEdit
+    Left = 448
+    Top = 32
+    Hint = ''
+    FindSelection = False
+    Properties.Buttons = <
+      item
+      end>
+    Properties.GlyphButtonIndex = 0
+    TabOrder = 2
+    Width = 121
+  end
+  object teBooking_Number: TcxTextEdit
+    Left = 192
+    Top = 32
+    Hint = ''
+    TabOrder = 3
+    Text = 'teBooking_Number'
+    Width = 121
+  end
+  object cxTextEdit3: TcxTextEdit
+    Left = 192
+    Top = 56
+    Hint = ''
+    TabOrder = 4
+    Text = 'teDocument_Language'
+    Width = 121
+  end
+  object btnSave: TcxButton
+    Left = 536
+    Top = 688
+    Width = 75
+    Height = 25
+    Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100
+    TabOrder = 5
+  end
+end

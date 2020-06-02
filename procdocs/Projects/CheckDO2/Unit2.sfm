@@ -1,0 +1,653 @@
+object Form2: TScriptMultiLanguageForm
+  BorderIcons = [biSystemMenu, biMaximize]
+  Caption = #1057#1088#1072#1074#1085#1077#1085#1080#1077' '#1044#1054'2 '#1089' '#1044#1058
+  ClientHeight = 766
+  ClientWidth = 1074
+  Color = 15461611
+  Constraints.MinHeight = 693
+  Constraints.MinWidth = 994
+  Font.Charset = RUSSIAN_CHARSET
+  Font.Color = 3481376
+  Font.Height = -13
+  Font.Name = 'Cambria'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'Position=poMainFormCenter')
+  SaveEvents.Strings = (
+    'cxGrgGoodsTV.OnCustomDrawCell=cxGrgGoodsTVCustomDrawCell'
+    'btOptions.OnClick=btOptionsClick'
+    'Self.OnResize=Form2Resize'
+    'btClose.OnClick=btCloseClick'
+    'btResetAllOptions.OnClick=btResetAllOptionsClick'
+    'showDOandDTDocs.OnClick=showDOandDTDocsClick')
+  PixelsPerInch = 96
+  TextHeight = 15
+  object cxGroupBox2: TcxGroupBox
+    AlignWithMargins = True
+    Left = 3
+    Top = 3
+    Hint = ''
+    Align = alClient
+    TabOrder = 0
+    ExplicitWidth = 1062
+    ExplicitHeight = 700
+    Height = 600
+    Width = 1068
+    object cxGrgGoods: TcxGrid
+      Left = 3
+      Top = 24
+      Width = 1062
+      Height = 680
+      Align = alClient
+      TabOrder = 0
+      ExplicitWidth = 1056
+      ExplicitHeight = 673
+      object cxGrgGoodsTV: TcxGridBandedTableView
+        Navigator.Buttons.CustomButtons = <>
+        Navigator.Buttons.PriorPage.Visible = False
+        Navigator.Buttons.NextPage.Visible = False
+        Navigator.Buttons.Insert.Visible = False
+        Navigator.Buttons.Append.Visible = False
+        Navigator.Buttons.Delete.Visible = False
+        Navigator.Buttons.Edit.Visible = False
+        Navigator.Buttons.Post.Visible = False
+        Navigator.Buttons.Cancel.Visible = False
+        Navigator.Buttons.Refresh.Visible = False
+        Navigator.Buttons.Filter.Visible = False
+        Navigator.InfoPanel.Visible = True
+        Navigator.Visible = True
+        DataController.Summary.DefaultGroupSummaryItems = <>
+        DataController.Summary.FooterSummaryItems = <>
+        DataController.Summary.SummaryGroups = <>
+        OptionsCustomize.ColumnFiltering = False
+        OptionsCustomize.ColumnGrouping = False
+        OptionsCustomize.ColumnMoving = False
+        OptionsCustomize.ColumnSorting = False
+        OptionsCustomize.BandMoving = False
+        OptionsData.CancelOnExit = False
+        OptionsData.Deleting = False
+        OptionsData.DeletingConfirmation = False
+        OptionsData.Editing = False
+        OptionsData.Inserting = False
+        OptionsView.CellEndEllipsis = True
+        OptionsView.CellAutoHeight = True
+        OptionsView.CellTextMaxLineCount = 10
+        OptionsView.ColumnAutoWidth = True
+        OptionsView.GroupByBox = False
+        OptionsView.HeaderHeight = 34
+        OptionsView.BandHeaderHeight = 30
+        Bands = <
+          item
+          end
+          item
+            Width = 153
+          end
+          item
+            Width = 92
+          end
+          item
+            Width = 184
+          end
+          item
+            Caption = #1042#1077#1089
+            Width = 255
+          end
+          item
+            Caption = #1050#1086#1083'-'#1074#1086' '#1084#1077#1089#1090
+            Width = 126
+          end
+          item
+            Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100
+            Width = 136
+          end
+          item
+            Caption = #1050#1086#1076' '#1074#1072#1083#1102#1090#1099
+            Width = 112
+          end
+          item
+            Caption = #1044#1072#1090#1072' '#1074#1099#1087#1091#1089#1082#1072
+            Width = 146
+          end>
+        object cxGrgGoodsTVColumn1: TcxGridBandedColumn
+          Caption = #8470' '#1087'/'#1087
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 0
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn2: TcxGridBandedColumn
+          Caption = #1050#1086#1076' '#1058#1053#1042#1069#1044
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 2
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn3: TcxGridBandedColumn
+          Caption = #1054#1087#1080#1089#1072#1085#1080#1077
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 3
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn4: TcxGridBandedColumn
+          Caption = #1044#1054'2'
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 6
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn5: TcxGridBandedColumn
+          Caption = #1044#1058
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 6
+          Position.ColIndex = 1
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn6: TcxGridBandedColumn
+          Caption = #1044#1054'2'
+          HeaderAlignmentHorz = taCenter
+          Width = 71
+          Position.BandIndex = 4
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn7: TcxGridBandedColumn
+          Caption = #1044#1058' '#1090#1086#1074'.'
+          HeaderAlignmentHorz = taCenter
+          Width = 60
+          Position.BandIndex = 4
+          Position.ColIndex = 2
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn8: TcxGridBandedColumn
+          Caption = #1044#1054'2'
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 5
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn9: TcxGridBandedColumn
+          Caption = #1044#1058
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 5
+          Position.ColIndex = 1
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn10: TcxGridBandedColumn
+          Caption = #1044#1058' '#1091#1087#1072#1082'.'
+          HeaderAlignmentHorz = taCenter
+          Width = 57
+          Position.BandIndex = 4
+          Position.ColIndex = 3
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn11: TcxGridBandedColumn
+          Caption = #1044#1058' '#1086#1073#1097'.'
+          HeaderAlignmentHorz = taCenter
+          Width = 66
+          Position.BandIndex = 4
+          Position.ColIndex = 1
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn12: TcxGridBandedColumn
+          Caption = #1044#1054'2'
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 7
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn13: TcxGridBandedColumn
+          Caption = #1044#1058
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 7
+          Position.ColIndex = 1
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn14: TcxGridBandedColumn
+          Caption = #1056#1077#1079#1091#1083#1100#1090#1072#1090
+          HeaderAlignmentHorz = taCenter
+          Position.BandIndex = 1
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn15: TcxGridBandedColumn
+          Caption = #1044#1054'2'
+          HeaderAlignmentHorz = taCenter
+          Width = 74
+          Position.BandIndex = 8
+          Position.ColIndex = 0
+          Position.RowIndex = 0
+        end
+        object cxGrgGoodsTVColumn16: TcxGridBandedColumn
+          Caption = #1044#1058
+          Width = 64
+          Position.BandIndex = 8
+          Position.ColIndex = 1
+          Position.RowIndex = 0
+        end
+      end
+      object cxGrgGoodsLevel1: TcxGridLevel
+        GridView = cxGrgGoodsTV
+      end
+    end
+  end
+  object gbOptions: TcxGroupBox
+    AlignWithMargins = True
+    Left = 3
+    Top = 609
+    Hint = ''
+    Align = alBottom
+    Caption = #1053#1072#1089#1090#1088#1086#1081#1082#1080' '#1087#1088#1086#1074#1077#1088#1082#1080
+    TabOrder = 1
+    Visible = False
+    Height = 101
+    Width = 1068
+    object CheckDateOut: TcxCheckBox
+      AlignWithMargins = True
+      Left = 14
+      Top = 60
+      Hint = ''
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1055#1088#1086#1074#1077#1088#1103#1090#1100' '#1076#1072#1090#1091' '#1074#1099#1087#1091#1089#1082#1072
+      Constraints.MaxHeight = 30
+      Constraints.MaxWidth = 937
+      State = cbsChecked
+      TabOrder = 0
+      Height = 28
+      Width = 235
+    end
+    object CheckWeight: TcxCheckBox
+      AlignWithMargins = True
+      Left = 14
+      Top = 20
+      Hint = ''
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1055#1088#1086#1074#1077#1088#1103#1090#1100' '#1074#1077#1089
+      Constraints.MaxHeight = 34
+      State = cbsChecked
+      TabOrder = 1
+      Height = 34
+      Width = 245
+    end
+    object CheckPlace: TcxCheckBox
+      AlignWithMargins = True
+      Left = 254
+      Top = 20
+      Hint = ''
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1055#1088#1086#1074#1077#1088#1103#1090#1100' '#1082#1086#1083'-'#1074#1086' '#1084#1077#1089#1090
+      Constraints.MaxHeight = 34
+      State = cbsChecked
+      TabOrder = 2
+      Height = 34
+      Width = 245
+    end
+    object CheckCost: TcxCheckBox
+      AlignWithMargins = True
+      Left = 499
+      Top = 20
+      Hint = ''
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1055#1088#1086#1074#1077#1088#1103#1090#1100' '#1089#1090#1086#1080#1084#1086#1089#1090#1100
+      Constraints.MaxHeight = 34
+      State = cbsChecked
+      TabOrder = 3
+      Height = 34
+      Width = 245
+    end
+    object CheckCurrency: TcxCheckBox
+      AlignWithMargins = True
+      Left = 728
+      Top = 20
+      Hint = ''
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1055#1088#1086#1074#1077#1088#1103#1090#1100' '#1082#1086#1076'-'#1074#1072#1083#1102#1090#1099
+      Constraints.MaxHeight = 34
+      State = cbsChecked
+      TabOrder = 4
+      Height = 34
+      Width = 245
+    end
+    object CheckBy4Symbol: TcxCheckBox
+      AlignWithMargins = True
+      Left = 499
+      Top = 60
+      Hint = 
+        #1057#1088#1072#1074#1085#1080#1074#1072#1090#1100' '#1082#1086#1076' '#1090#1086#1074#1072#1088#1072' '#1074' '#1044#1054'2 '#1089' '#1082#1086#1076#1086#1084' '#1090#1086#1074#1072#1088#1072' '#1074' '#1044#1058' '#1087#1086' '#1087#1077#1088#1074#1099#1084' 4 '#1079#1085#1072#1082 +
+        #1072#1084
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1057#1074#1077#1088'. '#1082#1086#1076' '#1058#1053#1042#1069#1044' '#1087#1086' '#1087#1077#1088#1074'. 4 '#1089#1080#1084#1074'.'
+      Constraints.MaxHeight = 30
+      State = cbsChecked
+      TabOrder = 5
+      Height = 28
+      Width = 222
+    end
+    object CheckGroupCodes: TcxCheckBox
+      AlignWithMargins = True
+      Left = 254
+      Top = 60
+      Hint = #1043#1088#1091#1087#1087#1080#1088#1086#1074#1072#1090#1100' '#1086#1076#1080#1085#1072#1082#1086#1074#1099#1077' '#1082#1086#1076#1099' '#1090#1086#1074#1072#1088#1072' '#1074' '#1044#1054'2'
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1043#1088#1091#1087#1087#1080#1088#1086#1074#1072#1090#1100' '#1082#1086#1076#1099' '#1058#1053#1042#1069#1044' '#1074' '#1044#1054'2'
+      Constraints.MaxHeight = 30
+      Constraints.MaxWidth = 937
+      State = cbsChecked
+      TabOrder = 6
+      Height = 28
+      Width = 243
+    end
+    object CheckTSDinDOandDT: TcxCheckBox
+      AlignWithMargins = True
+      Left = 728
+      Top = 60
+      Hint = 
+        #1057#1088#1072#1074#1085#1080#1074#1072#1090#1100' '#1090#1086#1074#1072#1088#1086'-'#1089#1086#1087#1088#1086#1074#1086#1076#1080#1090#1077#1083#1100#1085#1099#1077' '#1076#1086#1082#1091#1084#1077#1085#1090#1099' '#1091#1082#1072#1079#1072#1085#1085#1099#1077' '#1074' '#1044#1054'1 '#1089' '#1091 +
+        #1082#1072#1079#1072#1085#1085#1099#1084#1080' '#1074' '#1044#1058
+      Margins.Right = 50
+      AutoSize = False
+      Caption = #1057#1088#1072#1074#1085#1080#1074#1072#1090#1100' '#1058#1057#1044' '#1080#1079' '#1044#1054' '#1089' '#1044#1058
+      Constraints.MaxHeight = 34
+      State = cbsChecked
+      TabOrder = 7
+      Height = 28
+      Width = 245
+    end
+  end
+  object cxGroupBox3: TcxGroupBox
+    Left = 0
+    Top = 713
+    Hint = ''
+    Align = alBottom
+    Style.BorderStyle = ebsNone
+    TabOrder = 2
+    ExplicitTop = 706
+    ExplicitWidth = 1068
+    DesignSize = (
+      1074
+      53)
+    Height = 53
+    Width = 1074
+    object btClose: TcxButton
+      AlignWithMargins = True
+      Left = 855
+      Top = 0
+      Width = 208
+      Height = 49
+      Anchors = [akRight, akBottom]
+      Caption = #1047#1072#1082#1088#1099#1090#1100
+      ModalResult = 1
+      TabOrder = 0
+      ExplicitLeft = 849
+    end
+    object btOptions: TcxButton
+      Left = 14
+      Top = 6
+      Width = 145
+      Height = 35
+      Anchors = [akLeft, akBottom]
+      Caption = #1053#1072#1089#1090#1088#1086#1081#1082#1080' '#1087#1088#1086#1074#1077#1088#1082#1080
+      TabOrder = 1
+    end
+    object btResetAllOptions: TcxButton
+      Left = 174
+      Top = 6
+      Width = 145
+      Height = 35
+      Anchors = [akLeft, akBottom]
+      Caption = #1057#1073#1088#1086#1089#1080#1090#1100' '#1085#1072#1089#1090#1088#1086#1081#1082#1080
+      TabOrder = 2
+    end
+    object showDOandDTDocs: TcxButton
+      Left = 462
+      Top = 0
+      Width = 377
+      Height = 49
+      Cursor = crHandPoint
+      Anchors = [akRight, akBottom]
+      Caption = '!!! '#1053#1086#1084#1077#1088#1072' '#1058#1057#1044' '#1080#1079' '#1044#1054'1 '#1085#1077' '#1085#1072#1081#1076#1077#1085#1099' '#1074' '#1044#1058
+      Colors.DefaultText = clRed
+      LookAndFeel.Kind = lfFlat
+      LookAndFeel.NativeStyle = True
+      OptionsImage.Glyph.Data = {
+        42100000424D4210000000000000420000002800000020000000200000000100
+        20000300000000100000000000000000000000000000000000000000FF0000FF
+        0000FF0000000000000000000000000000000000000000000000000000000000
+        00000000000F0000003900000062050505820808069B080807AB090B09B60D0D
+        0DBC0E0E0EBD0D0D0CBB0B0B09B5070907A8050505960202027C0000005A0000
+        002F000000090000000000000000000000000000000000000000000000000000
+        00000000000000000000000000000000000000000000000000090000004E0404
+        04B1090909EF111110FE191917FE212120FF2D2D2CFF3A3B39FF484945FF5153
+        4DFF52544FFF484A45FF3D3E3AFF323330FF282825FF1D1D1CFF141412FE0C0C
+        0BFD060606E8030404A10000003B000000030000000000000000000000000000
+        0000000000000000000000000000000000000000000000000048060707CA0D0E
+        0DFE101110FF151514FF1B1B1CFF232427FF2D2F34FF383A42FF42444CFF494C
+        52FF484B51FF3F4247FF36383BFF2F3031FF272826FF20201EFF191917FF1313
+        12FF0D0E0EFF0A0B0BFF050506BB000000300000000000000000000000000000
+        000000000000000000000000000000000000000000000000000E0A0D0DBF0D0E
+        0DFF111111FF151617FF1C1D21FF26272EFF31333FFF3B3D4FFF42455BFF494D
+        65FF4B4F68FF454860FF3C3F52FF333543FF2A2B33FF212125FF1A1A1BFF1314
+        13FF0E0F0EFF0B0C0CFF08090B9B000000080000000000000000000000000000
+        00000000000000000000000000000000000000000000000000000C0F0FA40E0F
+        0FFF111213FF17171BFF1E1F26FF282935FF333548FF3B3E59FF41466AFF484F
+        77FF4E557DFF484E77FF3F4366FF363951FF2C2E3DFF22232CFF1A1A20FF1414
+        17FF0F0F10FF0B0D0DFF0A0C0C77000000000000000000000000000000000000
+        00000000000000000000000000000000000000000000000000000E0F0F900E0F
+        10FF111215FF16171CFF1D1E26FF262837FF32344DFF3A3E65FF40477CFF4853
+        8CFF4D5A92FF47518BFF3D4478FF353A5DFF2D2F46FF232532FF1B1C24FF1415
+        19FF0F1012FF0C0D0EFF0B0D0D5C000000000000000000000000000000000000
+        00000000000000000000000000000000000000000000000000000E12127B0D0F
+        10FF101114FF14151BFF1A1B25FF242537FF303353FF393F76FF404C8FFF4459
+        A2FF455FA9FF4155A0FF3A458BFF353A6DFF2F3250FF26283AFF1D1E29FF1516
+        1BFF0F1013FF0C0D0FFF070F0F40000000000000000000000000000000000000
+        00000000000000000000000000000000000000000000000000010E1313670D0E
+        10FF101114FF14151BFF1A1B25FF242539FF30335BFF384082FF3C4D9DFF3B58
+        B2FF3952BAFF3853B4FF35469DFF323A7EFF2F335BFF282A41FF20212DFF1617
+        1DFF101113FF0C0E0FFF070E0E23000000000000000000000000000000000000
+        00000000000000000000000000000000000000000000000000000F1616500E0F
+        11FF101114FF1A1A1EFF282931FF3C3E4FFF5A5D74FF7C8199FF959EB2FFA4B3
+        C0FFA6B8C5FFA3B2BCFF838AA2FF626882FF494D64FF363947FF292A30FF1C1C
+        1EFF101112FF0D0E0FFD00000007000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000111316
+        46B92E327DFB3A3FA3FF4146B9FF494FC2FF585ECAFF646AC6FF5D64AEFF535A
+        9BFF555D99FF4B5491FF414C8FFF39427CFF30375EFF2B2F48FF3D404DFF6B6C
+        71FF5E5F66FC101120AD00000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000001F24
+        9383383EB1F73B42C4FF3E45CEFF434AD1FF4951D4FF4B53CDFF4149B2FF343C
+        9CFF2C3691FF273288FF26348EFF273488FF232C69FF202650FF1F233CFF2E31
+        3DFF7F8089F82525496500000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000001E26
+        A07F353DC5F13840D7FB3B43DDFD3D45DCFE3D45DBFE3841D4FE2A34BCFE232E
+        AEFF3344C9FF1A2AA2FF1529A6FE162EB1FE172AA0FE192587FD18206BFB141B
+        58F4383D69E51919415900000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000001C24
+        A77D353BCEF0363EE2F8353EE7FB333CE6FC2F39E8FD202AE8FD0812D5FE111C
+        A8FF2036D4FF0C1FA1FF011FCAFE0225DCFE041ED9FE0415BEFB06109FF5050E
+        80E90B115CD710103D4F00000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000001B23
+        AA79333BCFF4353DE4FA343CEAFC333CE9FE2D36E8FE101BE2FE0915CFFE0A14
+        A7FF0A1DB1FF061CA0FF0227BEFF052DD3FF0828D3FE0418CAFD0511A9F7050F
+        87EC0A105FDA0A0E404700000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000001722
+        AE75313ACFF9323BE6FC333BEEFD3039F0FE2436F4FE4150F4FF3448F2FF152B
+        E4FF0A27D7FF0531D1FF0136CBFF0246E0FF0336E1FE021BD3FD0411B7FA050D
+        8BEF171C6CE0080C413E00000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000001622
+        B1702F39CEFC313BE7FD323BF1FE3441F8FE3A4BFAFF223FF9FF1734F6FF0B29
+        EFFF0E3FE6FF001FC2FF002CC9FF0133DCFF023AE7FF0424DFFE0514C9FC040D
+        9AF3292D79E60409463600000000000000000000000000000000000000000000
+        000000000000000000000000000000000000000000000000000000000000131F
+        B1692E39CCFE313CE7FE2E3BF5FF192DFBFF283DFBFF3B54FAFF4054F9FF394E
+        F8FF2754FAFF1848F8FF0540E8FF1653EAFF032CE6FF0326E7FE0616D7FD0E17
+        B5F6313685EB00054B2F00000000000000000000000000000000000000000000
+        000000000000000000000000000000000000000000000000000000000000121F
+        B0612E39CBFE303DE8FF1E2DF3FF1229FBFF3E49FBFF5359FBFF4D6EFAFF2748
+        FAFF0523F6FF011BE5FF032AE9FF094BF5FF0222EBFF0114E5FE0413DEFD2830
+        D1FA2E3497F00006502600000000000000000000000000000000000000000000
+        000000000000000000000000000000000000000000000000000000000000111C
+        AD582D3ACBFF2E3DE7FF1020F0FF1330FBFF3647FCFF495AFCFF2441FBFF0618
+        F8FF0216F0FF000CE8FF0012EBFF011BF2FF001AF1FF072DEEFF1526E8FE363F
+        DFFD2C30B3F50000511C00000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000D1A
+        AF4D2C39CDFE2433E6FF0D1BEEFF0D23F9FF1931FCFF1731FCFF0717F9FF020D
+        F4FF0108F3FF0110F2FF0114F4FF010FF6FF0112F5FF102FF4FF2D39EDFE333B
+        E3FD2A2FC0F800005A1100000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000F1B
+        AC412B38D0FE1B2AE7FF0D1AEFFF0D22FAFF0E28FCFF0718FCFF0310F8FF0106
+        F7FF0108F8FF0011FBFF021AFAFF0210F9FF0611F7FF242AF3FF2D31ECFF323A
+        E2FE282CC0F800006D0700000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000F19
+        AF332934D1FE2E39EAFF1021F3FF0E21F9FF0B1FFBFF0716FBFF030BFAFF010D
+        FBFF0110FCFF0110FCFF010FFBFF0A20FBFF1D27F9FF2B39F6FF3B57F3FE323C
+        E0FE272CBCF10000FF0100000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000715
+        A023242ECFFE0F1CEAFF101DF2FF0F1DF7FF0B1AFAFF081FFCFF0624FCFF0219
+        FCFF021DFDFF0320FDFF082DFDFF183FFDFF223DFAFF2933F3FE333FEBFE363F
+        DBFE282EB0E30000000000000000000000000000000000000000000000000000
+        000000000000000000000000000000000000000000000000000000000000000D
+        93131D26C8FC0F1CEAFE101BF2FF1126F9FF0D1FFAFF0C3AFCFF0D4CFCFF0D47
+        FCFF093FFDFF1759FDFF3388FDFF469BFDFF3979FBFF2D3DF2FE353EE8FD4149
+        D0FC2B3095CE0000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        7F041721B6F7101CE6FE1221F3FE1632F8FF0E1BF9FF0A25FAFF1E6AFBFF4492
+        FBFF57AFFCFF68B7FCFFA4D0FCFFE4EBFCFFB0CCFBFE4C6DF5FE4D5AE2FD5157
+        B8F82A2F7BB20000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000141DA5E4111AD5FD1424F0FE142FF5FF0F1AF6FF0B1BF8FF0B25F6FF2958
+        F7FF5289F9FF77A1F9FFD6DDF9FFDCE1FAFFA6BFF9FE6887F3FE6B78DCFA494F
+        A4F3272C729C0000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000101A99C9111BC3FC1629ECFE1747F1FE155DF4FE1B60F8FF0512F0FF0728
+        F1FF2158F5FF507BF5FE9DBDF8FEB8D3FAFF93B7F8FE8296ECFC5D69CFF83E45
+        9AF5232A728F0000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        00000F1B8DA9111CB2F91421E1FC163DECFD1C69EFFE2F91F2FE2A77EFFF1B48
+        ECFE447CF6FE4177F1FE83ACF1FEABCBF5FE8DABEDFD6179DBFA4957BAF94149
+        9CFA222E707F0000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        00000D1A7A870F1F9CF41221D0F81326E2FB1747E9FD1E60ECFE2C62E6FE325D
+        DEFE3764D9FE4070CFFD578BD3FC5A8FDDFC466ED2FB4159BEFB4F5FB6FC4E56
+        A0FD1C306C6A0000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000071562460E238CE91023ABF21024CAF71026DAFB112BE2FC0F2AD5FD132F
+        C3FD2144B6FC315AA6FB4F7CB6FA5D8ACDFB4F70C4FC4357B1FD5A65AAFE5E69
+        A2FC1E386B320000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        0000000000000B1B6D70122C9CDA1634C0EF1832D0F61A31DBFB273ACDFC3547
+        B8FC4D61B0FD8898C0FCC8D2DFFDDCE3ECFEC2CAE0FD909CCBFD6D7DB1F0435B
+        8A6D000000000000000000000000000000000000000000000000000000000000
+        0000000000000000000000000000000000000000000000000000000000000000
+        000000000000000000000000330A13277F40445AB47F4B60C8AC4D60C8C95361
+        B4D9656FACDEA1A8C9D8CCCFDFC8C5C8D9A99FA9C57D6578A14438558D090000
+        0000000000000000000000000000000000000000000000000000000000000000
+        000000000000}
+      OptionsImage.Margin = 0
+      OptionsImage.Spacing = 10
+      PopupAlignment = paRight
+      TabOrder = 3
+      Font.Charset = RUSSIAN_CHARSET
+      Font.Color = 3481376
+      Font.Height = -16
+      Font.Name = 'Cambria'
+      Font.Style = [fsBold]
+      ParentFont = False
+      ExplicitLeft = 456
+    end
+  end
+  object qryRC: TUniQuery
+    Active = False
+    Filtered = False
+    Database = MainForm.Database
+    DatabaseName = 'STS_DB'
+    ReferenceMode = True
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftUnknown
+        Name = 'PID'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'ID'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'COUNTER'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      
+        'SELECT  RC.G32, RC.RELEASE_G33, RC.RELEASE_G35, RC.RELEASE_G311,' +
+        ' RC.RELEASE_G42'
+      ',ISNULL(RC.RELEASE_OUT_DATE, R.OUT_DATE) as OUT_DATE'
+      
+        ',KC.G33, CAST(KC.G312 as VARCHAR(1000)) as G312 , KC.G42_Currenc' +
+        'y, KC.ValCode   '
+      'FROM REL_COMM RC'
+      
+        '   LEFT JOIN KRD_COMM KC ON(KC.PLACEID=RC.PLACEID AND KC.ID=RC.I' +
+        'D AND KC.G32=RC.G32)'
+      
+        '   INNER JOIN RELEASE R ON(RC.PLACEID=R.PLACEID AND RC.ID=R.ID A' +
+        'ND RC.COUNTER=R.COUNTER)'
+      'WHERE RC.PLACEID=:PID AND RC.ID=:ID AND RC.COUNTER=:COUNTER')
+    Left = 56
+    Top = 416
+  end
+  object qDTGoods: TUniQuery
+    Active = False
+    Filtered = False
+    Database = JournalsDataModule.dbJournals
+    DatabaseName = 'dbJournals'
+    UpdateMode = upWhereAll
+    Params = <
+      item
+        DataType = ftUnknown
+        Name = 'DOC_NO'
+        ParamType = ptUnknown
+      end
+      item
+        DataType = ftUnknown
+        Name = 'G33'
+        ParamType = ptUnknown
+      end>
+    SQL.Strings = (
+      
+        'SELECT G.GoodsTNVEDCODE, G.CurrencyCode, G.PlaceNumber, G.PlaceD' +
+        'escription, G.Journal_Master_id as JMID,'
+      'G.InvoiceCost, G.BruttoVolQuantity, G.MeasureQuantity, '
+      
+        'J.PrDocumentNumber, CAST((CAST(J.SendDate as varchar(12)) +'#39' '#39'+ ' +
+        'J.SendTime) as DateTime) as SendDate, J.ReleaseDate'
+      'FROM GOODINFO2 G '
+      
+        'Inner Join JrGoodOut2 J On (J.JOURNAL_MASTER_ID=G.JOURNAL_MASTER' +
+        '_ID)'
+      'WHERE J.PrDocumentNumber=:DOC_NO AND G.GoodsTNVEDCODE=:G33')
+    Left = 168
+    Top = 432
+  end
+  object dsRC: TUniDataSource
+    AutoEdit = False
+    DataSet = qryRC
+    Left = 104
+    Top = 432
+  end
+end

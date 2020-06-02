@@ -1,0 +1,424 @@
+object frRelGoods: TScriptMultiLanguageForm
+  Caption = #1044#1054'2'
+  ClientHeight = 502
+  ClientWidth = 818
+  Color = 15723755
+  Font.Charset = ANSI_CHARSET
+  Font.Color = 3481376
+  Font.Height = -13
+  Font.Name = 'Cambria'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poDesigned
+  ShowHint = True
+  OnCloseQuery = FormCloseQuery
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  SaveProps.Strings = (
+    'Visible=False'
+    'Position=poMainFormCenter')
+  SaveEvents.Strings = (
+    'Self.OnActivate=frRelGoodsActivate'
+    'cxSaveDO2.OnClick=cxSaveDO2Click'
+    'cxBtCancelDO2.OnClick=cxBtCancelDO2Click'
+    'cxGrid1DBTableView1.OnCellClick=cxGrid1DBTableView1CellClick'
+    'cxDBTextEdit3.OnExit=UpdateqryRelGoods'
+    'cxDBTextEdit5.OnExit=UpdateqryRelGoods'
+    'cxDBDateEdit3.OnExit=UpdateqryRelGoods'
+    'cxDBTextEdit4.OnExit=UpdateqryRelGoods')
+  PixelsPerInch = 96
+  TextHeight = 15
+  object GroupBox1: TGroupBox
+    Left = 8
+    Top = 8
+    Width = 793
+    Height = 57
+    Caption = #1044#1054'2'
+    TabOrder = 0
+    object Label1: TLabel
+      Left = 463
+      Top = 29
+      Width = 28
+      Height = 15
+      Caption = #1044#1072#1090#1072
+    end
+    object Label2: TLabel
+      Left = 23
+      Top = 29
+      Width = 14
+      Height = 15
+      Caption = #8470
+    end
+    object cxDBTextEdit1: TcxDBTextEdit
+      Left = 56
+      Top = 24
+      Hint = ''
+      DataBinding.DataField = 'RELEASE_NO'
+      DataBinding.DataSource = ds_ReleaseGoodsFrorm
+      TabOrder = 0
+      Width = 233
+    end
+    object cxDBDateEdit1: TcxDBDateEdit
+      Left = 520
+      Top = 24
+      Hint = ''
+      FindSelection = False
+      DataBinding.DataField = 'OUT_DATE'
+      DataBinding.DataSource = ds_ReleaseGoodsFrorm
+      Properties.Buttons = <
+        item
+        end>
+      Properties.GlyphButtonIndex = 0
+      Properties.Kind = ckDateTime
+      TabOrder = 1
+      Width = 249
+    end
+  end
+  object GroupBox2: TGroupBox
+    Left = 8
+    Top = 80
+    Width = 793
+    Height = 57
+    Caption = #1042#1099#1087#1091#1089#1082#1072#1102#1097#1080#1081' '#1076#1086#1082#1091#1084#1077#1085#1090
+    TabOrder = 1
+    object Label3: TLabel
+      Left = 167
+      Top = 29
+      Width = 14
+      Height = 15
+      Caption = #8470
+    end
+    object Label4: TLabel
+      Left = 463
+      Top = 29
+      Width = 28
+      Height = 15
+      Caption = #1044#1072#1090#1072
+    end
+    object Label5: TLabel
+      Left = 23
+      Top = 29
+      Width = 23
+      Height = 15
+      Caption = #1058#1080#1087
+    end
+    object cxDBTextEdit2: TcxDBTextEdit
+      Left = 200
+      Top = 24
+      Hint = ''
+      DataBinding.DataField = 'DOC_NO'
+      DataBinding.DataSource = ds_ReleaseGoodsFrorm
+      TabOrder = 0
+      Width = 233
+    end
+    object cxDBDateEdit2: TcxDBDateEdit
+      Left = 520
+      Top = 24
+      Hint = ''
+      FindSelection = False
+      DataBinding.DataField = 'RELEASE_DATE'
+      DataBinding.DataSource = ds_ReleaseGoodsFrorm
+      Properties.Buttons = <
+        item
+        end>
+      Properties.GlyphButtonIndex = 0
+      Properties.Kind = ckDateTime
+      TabOrder = 1
+      Width = 249
+    end
+    object cxDBReferenceEdit1: TcxDBReferenceEdit
+      Left = 56
+      Top = 24
+      Hint = ''
+      Properties.Buttons = <
+        item
+          Default = True
+          Glyph.Data = {
+            36030000424D3603000000000000360000002800000010000000100000000100
+            18000000000000030000120B0000120B00000000000000000000FF00FFFF00FF
+            FF00FFFF00FFFF00FFDEC0B2DABFB2D5BCB1D0B7ACD1B4A6DDBAA9FF00FFFF00
+            FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFE1BFB0E6D7D0E3E5E6DCE0E6CE
+            C7C7C4BDBFBCBCC0B7AFADB8A49DDDBAA9FF00FFFF00FFFF00FFFF00FFFF00FF
+            E3C1B2F0EDE9F0F8FCDEBFB1CB7E59C9734AC77249C27653C09C8EB1AFB1B4A4
+            A0D1B2A4FF00FFFF00FFFF00FFE1BDADF6F0EFFAFFFFD38B69BC4616BF4A1AF3
+            D8C9EEC7B5BD4616BF4918C17E5EB7B4B7B8AAA6DDBAA9FF00FFFF00FFF0E1D9
+            FFFFFFDA9A7ABA4111BD4B1BBF4E1FE2AA8EDE9F81BD4C1CBD4C1CBF4515C583
+            65BFBDC1CCB5ACFF00FFE3C1B2FEFCFCF4DED1C25524BF4C1DBD4A1CC25728DE
+            9F80D78B67BD4A1ABF4E1EBF4C1CBF4F1FCAB1A6C9C4C4DDBAA9EACEC2FFFFFF
+            E2A787C45723C55A29BF4F1EC65D2FFEF8F4F8EBE5C15425BB4616BF4F1FBD45
+            16CB896BD5D8DDDCBCAFEED7CEFFFFFFDC976DCA662DCA6631C75E2BC15423E7
+            B79FFFFFFFEBC9B7C2592BBC4919BC4717CA754DE1E6EDDDC2B6EED7CCFFFFFF
+            E1A375D07439D0723BCB6933C9632EC65C29E6B69CFFFFFFF4E0D5C45A2CBA41
+            12CC7850EDF3F8E1C5BAE9CCC0FFFFFFEBC09CD57E41D7834CD88754CF723BCB
+            6731C55A26E6B599FFFFFFDC9A79B73B0CD79676F3FAFFE2C4B6E9CCC0FCFAFA
+            FAEEE0DC8E4FF2D1B7FFFFFEE1A377CE6B30C75E25DD9972FFFFFFE2A98AC04D
+            1CEED9CEF3F0EFE2C4B6FF00FFF0E0D7FFFFFFEEC59FE9B282FFFFFFFCF7F3EA
+            BB9CE9BA98FCF6F2FEFAF7D37B4ADEA07FFFFFFFEAD4CAFF00FFFF00FFE6C7BA
+            F8EEEAFFFFFFEDC298EBC092F8E9D9FCF7F2FCF6EFF6E0CFE19E72E3AB84FFFF
+            FFF3E7E2EAD4CAFF00FFFF00FFFF00FFE6C7BAF7EDE9FFFFFFF7E3CFEFC7A0ED
+            C299EABB93EAB892F4D9C5FFFFFFF4E9E3E2C1B1FF00FFFF00FFFF00FFFF00FF
+            FF00FFE6C7BAF3E6E0F8F3F2FEFCFBFFFEFCFEFCFBFCFBFBFAF3F2F2E0D7F2E0
+            D7FF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFFF00FFE5C6B8E5C6B8E9
+            CCC1E9CBBFE6C7BAE6C7BAFF00FFFF00FFFF00FFFF00FFFF00FF}
+          Kind = bkGlyph
+        end>
+      TabOrder = 2
+      RefFilterID = 0
+      DataBinding.DataField = 'DOC_TYPE'
+      DataBinding.DataSource = ds_ReleaseGoodsFrorm
+      Width = 97
+    end
+  end
+  object GroupBox3: TGroupBox
+    Left = 8
+    Top = 152
+    Width = 793
+    Height = 289
+    Caption = #1058#1086#1074#1072#1088#1099
+    TabOrder = 2
+    object cxGrid1: TcxGrid
+      Left = 8
+      Top = 24
+      Width = 609
+      Height = 249
+      TabOrder = 0
+      object cxGrid1DBTableView1: TcxGridDBTableView
+        Navigator.Buttons.CustomButtons = <>
+        DataController.DataSource = ds_RelGoods
+        DataController.Summary.DefaultGroupSummaryItems = <>
+        DataController.Summary.FooterSummaryItems = <>
+        DataController.Summary.SummaryGroups = <>
+        OptionsData.CancelOnExit = False
+        OptionsData.Deleting = False
+        OptionsData.DeletingConfirmation = False
+        OptionsData.Editing = False
+        OptionsData.Inserting = False
+        OptionsView.GroupByBox = False
+        object cxGrid1DBTableView1Column1: TcxGridDBColumn
+          Caption = #8470' '#1074' '#1044#1054'1'
+          DataBinding.FieldName = 'G32'
+        end
+        object cxGrid1DBTableView1Column2: TcxGridDBColumn
+          Caption = #1082#1086#1076' '#1058#1053#1042#1069#1044
+          DataBinding.FieldName = 'RELEASE_G33'
+          Width = 79
+        end
+        object cxGrid1DBTableView1Column6: TcxGridDBColumn
+          Caption = #1050#1086#1083'-'#1074#1086' '#1087#1088#1080#1085'.'
+          DataBinding.FieldName = 'G311'
+          Width = 89
+        end
+        object cxGrid1DBTableView1Column7: TcxGridDBColumn
+          Caption = #1042#1077#1089' '#1087#1088#1080#1085'.'
+          DataBinding.FieldName = 'G35'
+        end
+        object cxGrid1DBTableView1Column8: TcxGridDBColumn
+          Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100' '#1087#1088#1080#1085'.'
+          DataBinding.FieldName = 'G42'
+          Width = 109
+        end
+        object cxGrid1DBTableView1Column3: TcxGridDBColumn
+          Caption = #1050#1086#1083'-'#1074#1086' '#1074#1099#1076'.'
+          DataBinding.FieldName = 'RELEASE_G311'
+          Width = 80
+        end
+        object cxGrid1DBTableView1Column4: TcxGridDBColumn
+          Caption = #1042#1077#1089' '#1074#1099#1076'.'
+          DataBinding.FieldName = 'RELEASE_G35'
+        end
+        object cxGrid1DBTableView1Column5: TcxGridDBColumn
+          Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100' '#1074#1099#1076'.'
+          DataBinding.FieldName = 'RELEASE_G42'
+          Width = 82
+        end
+        object cxGrid1DBTableView1Column9: TcxGridDBColumn
+          Caption = #1050#1086#1083'-'#1074#1086' '#1086#1089#1090'.'
+          DataBinding.FieldName = 'REST_G311'
+        end
+        object cxGrid1DBTableView1Column10: TcxGridDBColumn
+          Caption = #1042#1077#1089' '#1086#1089#1090'.'
+          DataBinding.FieldName = 'REST_G35'
+        end
+        object cxGrid1DBTableView1Column11: TcxGridDBColumn
+          Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100' '#1086#1089#1090'.'
+          DataBinding.FieldName = 'REST_G42'
+          Width = 100
+        end
+      end
+      object cxGrid1DBTableView2: TcxGridDBTableView
+        Navigator.Buttons.CustomButtons = <>
+        DataController.DataSource = ds_EditRelGoods
+        DataController.Summary.DefaultGroupSummaryItems = <>
+        DataController.Summary.FooterSummaryItems = <>
+        DataController.Summary.SummaryGroups = <>
+        OptionsView.GroupByBox = False
+        object cxGrid1DBTableView2Column1: TcxGridDBColumn
+          DataBinding.FieldName = 'RELEASE_G35'
+        end
+      end
+      object cxGrid1Level1: TcxGridLevel
+        Caption = #1056#1072#1089#1093#1086#1076
+        GridView = cxGrid1DBTableView1
+      end
+      object cxGrid1Level2: TcxGridLevel
+        Caption = #1054#1089#1090#1072#1090#1086#1082
+        GridView = cxGrid1DBTableView2
+      end
+    end
+    object GroupBox4: TGroupBox
+      Left = 624
+      Top = 16
+      Width = 153
+      Height = 257
+      Caption = #1056#1072#1089#1093#1086#1076
+      TabOrder = 1
+      object Label6: TLabel
+        Left = 15
+        Top = 24
+        Width = 70
+        Height = 15
+        Caption = #1050#1086#1083#1080#1095#1077#1089#1090#1074#1086
+      end
+      object Label7: TLabel
+        Left = 15
+        Top = 80
+        Width = 20
+        Height = 15
+        Caption = #1042#1077#1089
+      end
+      object Label8: TLabel
+        Left = 15
+        Top = 136
+        Width = 65
+        Height = 15
+        Caption = #1057#1090#1086#1080#1084#1086#1089#1090#1100
+      end
+      object Label9: TLabel
+        Left = 15
+        Top = 192
+        Width = 76
+        Height = 15
+        Caption = #1044#1072#1090#1072' '#1074#1099#1076#1072#1095#1080
+      end
+      object cxDBTextEdit3: TcxDBTextEdit
+        Left = 14
+        Top = 48
+        Hint = ''
+        DataBinding.DataField = 'RELEASE_G311'
+        DataBinding.DataSource = ds_EditRelGoods
+        TabOrder = 0
+        Width = 129
+      end
+      object cxDBTextEdit4: TcxDBTextEdit
+        Left = 14
+        Top = 104
+        Hint = ''
+        DataBinding.DataField = 'RELEASE_G35'
+        DataBinding.DataSource = ds_EditRelGoods
+        TabOrder = 1
+        Width = 129
+      end
+      object cxDBTextEdit5: TcxDBTextEdit
+        Left = 14
+        Top = 160
+        Hint = ''
+        DataBinding.DataField = 'RELEASE_G42'
+        DataBinding.DataSource = ds_EditRelGoods
+        TabOrder = 2
+        Width = 129
+      end
+      object cxDBDateEdit3: TcxDBDateEdit
+        Left = 14
+        Top = 216
+        Hint = ''
+        FindSelection = False
+        DataBinding.DataField = 'RELEASE_OUT_DATE'
+        DataBinding.DataSource = ds_EditRelGoods
+        Properties.Buttons = <
+          item
+          end>
+        Properties.GlyphButtonIndex = 0
+        Properties.Kind = ckDateTime
+        TabOrder = 3
+        Width = 129
+      end
+    end
+  end
+  object cxSaveDO2: TcxButton
+    Left = 544
+    Top = 456
+    Width = 75
+    Height = 25
+    Caption = #1057#1086#1093#1088#1072#1085#1080#1090#1100
+    ModalResult = 1
+    TabOrder = 3
+  end
+  object cxBtCancelDO2: TcxButton
+    Left = 664
+    Top = 456
+    Width = 131
+    Height = 25
+    Caption = #1054#1090#1084#1077#1085#1072
+    ModalResult = 2
+    TabOrder = 4
+  end
+  object ds_ReleaseGoodsFrorm: TDataSource
+    Left = 760
+    Top = 16
+  end
+  object ds_RelGoods: TDataSource
+    DataSet = qryRelGoods
+    Left = 552
+    Top = 152
+  end
+  object qryRelGoods: TQuery
+    ObjectView = True
+    DatabaseName = 'STS_DB'
+    SQL.Strings = (
+      'SELECT RC.*, KC.GN, KC.G35, KC.G311, KC.G42, KC.G33, KC.G312,'
+      
+        '(KC.G35 - (SELECT SUM (RELEASE_G35) as REL_G35 FROM REL_COMM RC2' +
+        ' WHERE RC.PLACEID=RC2.PLACEID AND RC.ID=RC2.ID AND RC.G32=RC2.G3' +
+        '2)) as REST_G35,'
+      
+        '(KC.G311 - (SELECT SUM (RELEASE_G311) as REL_G311 FROM REL_COMM ' +
+        'RC3 WHERE RC.PLACEID=RC3.PLACEID AND RC.ID=RC3.ID AND RC.G32=RC3' +
+        '.G32)) as REST_G311,'
+      
+        '(KC.G42 - (SELECT SUM (RELEASE_G42) as REL_42 FROM REL_COMM RC4 ' +
+        'WHERE RC.PLACEID=RC4.PLACEID AND RC.ID=RC4.ID AND RC.G32=RC4.G32' +
+        ')) as REST_G42'
+      'FROM REL_COMM RC'
+      
+        'LEFT JOIN KRD_COMM KC ON (RC.PLACEID=KC.PLACEID AND RC.ID=KC.ID ' +
+        'AND RC.G32=KC.G32)'
+      'WHERE RC.PLACEID=:iPLCID AND RC.ID=:iID AND RC.COUNTER=:iCOUNTER')
+    UpdateMode = upWhereChanged
+    Left = 520
+    Top = 152
+    ParamData = <
+      item
+        DataType = ftInteger
+        Name = 'iPLCID'
+        ParamType = ptUnknown
+        Value = 0
+      end
+      item
+        DataType = ftInteger
+        Name = 'iID'
+        ParamType = ptUnknown
+        Value = 0
+      end
+      item
+        DataType = ftInteger
+        Name = 'iCOUNTER'
+        ParamType = ptUnknown
+        Value = 0
+      end>
+  end
+  object ds_EditRelGoods: TDataSource
+    Left = 776
+    Top = 152
+  end
+end
