@@ -2,7 +2,7 @@
 // Название: Отправка заявления/ответа на требование
 // Описание:
 // Кнопка вызова:
-// Подпись кнопки: 
+// Подпись кнопки:
 // Вызов по событию:
 // *****************************************************************************
 //
@@ -34,7 +34,7 @@ FUNC('NotFindErrorsInFillingJrData',
           IF (Length (JR_OPERATIONS.REQNUMBER) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен номер заявления!');
           IF (Length (JR_OPERATIONS.REQDATE) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнена дата заявления!');
           IF (Length (JR_OPERATIONS.INSPFIO) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнены ФИО инспектора!');
-                
+
         )
       );
 
@@ -42,8 +42,8 @@ FUNC('NotFindErrorsInFillingJrData',
       IF ((Length (JR_OPERATIONS.DeclOrgName) = 0)*(Length (JR_OPERATIONS.ReprOrgName) = 0), sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен декларант или представитель!');
       //IF (Length (JR_OPERATIONS.GTDNumber) = 0, sCheck :=  IF (sCheck <> '', sCheck +char(13)) + 'Не заполнен номер ДТ');
 
-      IF (LENGTH (sCheck) = 0, 
-        iResult := 1, 
+      IF (LENGTH (sCheck) = 0,
+        iResult := 1,
         showmessage(sCheck)
       );
       iResult
@@ -53,8 +53,8 @@ FUNC('NotFindErrorsInFillingJrData',
 FUNC ('CheckCurrentStatus',,
   Block (
     VAR ('iResult', integer, 0);
-    
-    IF((JR_OPERATIONS.Status = 'Зарегистрировано')|(JR_OPERATIONS.Status = 'Доставлено в АСТО'),
+
+    IF((JR_OPERATIONS.Status = 'Получено решение от инспектора')|(JR_OPERATIONS.Status = sStatementSentStatusText)|(JR_OPERATIONS.Status = 'Доставлено в АСТО'),
       IF(JR_OPERATIONS.DocSign = 0,
         Showmessage('Ответ на текущее требование уже доставлен в таможню!'),
         Showmessage('Текущее заявление уже доставлено в таможню!')
@@ -66,6 +66,23 @@ FUNC ('CheckCurrentStatus',,
   )
 ), //
 
+FUNC ('CheckSentStatements',,
+  Block (
+    VAR ('iResult', integer, 0);
+    VAR ('sSQL', string, '');
+    sSQL := 'SELECT JOURNAL_MASTER_ID as JMID FROM JR_OPERATIONS ' +
+            ' WHERE ID =' + vID +
+            ' AND JOURNAL_MASTER_ID < ' + JR_OPERATIONS.JOURNAL_MASTER_ID +
+            ' AND STATUS IN (' + char(39) + sStatementSentStatusText + char(39) + ', ' + char(39) + 'Доставлено в АСТО' + char(39) + ')';
+    OPENQUERY ('findStatements', sSQL, 'dbJournals');
+    IF (FIELDISNULL ('findStatements', 'JMID'), iResult := 1,
+      showmessage ('У вас есть заявления отправленные в таможню, на которые не был получен ответ. Отправка не возможна!')
+    );
+    CLOSEDATASET ('findStatements');
+    iResult
+  )
+),
+
 
 FUNC ('ValidateXml',
   Param ('sXmlPath', String, 0),
@@ -73,7 +90,7 @@ FUNC ('ValidateXml',
     VAR ('iResult', integer, 0);
     VAR ('v', Variant, CREATEOLEOBJECT ('SchemaValidator.Validator'));
     v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + sXMLVersion + '\';
-    IF (v.ValidateFile (sXmlPath) = 'True', 
+    IF (v.ValidateFile (sXmlPath) = 'True',
       iResult := 1,
       v.ShowResult()
     );
@@ -98,17 +115,17 @@ FUNC ('ShowDocumentFromXml',
   )
 ), // FUNC - ShowDocumentFromXml //
 
-FUNC ('SendDocument', 
+FUNC ('SendDocument',
   Block (
     Param ('pDocumentNameLt', string, 0);
     Param ('pDocumentNameRus', string, 1);
-    Param ('pStatus', string, 2);   
+    Param ('pStatus', string, 2);
   ),
   Block (
     VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
     IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
     VAR ('sXmlFileName', string, sDir + pDocumentNameLt + '_' + vPlaceID + '_' + vDocId +'.xml');
-    
+
     FORCEDIRECTORIES (sDir);
     COPYFILE (sTmpFileName, sDir + pDocumentNameLt + '_' + vPlaceID + '_' + vDocId +'.xml');
     EDIT('JR_OPERATIONS');
@@ -133,7 +150,7 @@ FUNC ('SendDocument',
       0
     ); // WriteEpsLog
   )
-)
+),
 
 
 FUNC ('SendNotifFinish',,
@@ -144,34 +161,34 @@ FUNC ('SendNotifFinish',,
           sTempFileName := GetNotifFinishExpXml (vPlaceID, vDocID);
 
           VAR ('iSend', integer, 0);
-          IF( ValidateXml (sTempFileName), 
+          IF( ValidateXml (sTempFileName),
             IF ( YESNO ('Передать Решение по требованию на проведение операций с товарами?'),
               iSend := 1;
             )
           );
 
-          IF ( iSend, 
+          IF ( iSend,
             SendDOcument('NotifFinishRejectOperations', 'решение на требование', 'Решение отправлено')
-          ); // IF - ValidateXml //          
+          ); // IF - ValidateXml //
         )
-      );      
+      );
   )
 ), //FUNC - SendNotifFinish //
 
 FUNC ('SendReqOperations',,
   BLOCK (
-      // заявление - проверяем заполненность других полей  
+      // заявление - проверяем заполненность других полей
     IF (NotFindErrorsInFillingJrData (),
       Block (
         // Получаем файл xml соответсвующий свежему альбому форматов
         EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sXMLVersion + '\ReqOperations.exp');
         sTempFileName := GetReqOperationsExpXml (vPlaceID, vDocID);
-       
-       //Записать так IF ( ValidateXml (sTempFileName)  * ShowDocumentFromXml (sTempFileName) * YESNO ('Передать Решение по требованию на проведение операций с товарами?') 
+
+       //Записать так IF ( ValidateXml (sTempFileName)  * ShowDocumentFromXml (sTempFileName) * YESNO ('Передать Решение по требованию на проведение операций с товарами?')
        //Не получилось, т.к. даже если первая 0, то проверяет остальные, чего быть не должно
         VAR ('iSend', integer, 0);
-        IF( ValidateXml (sTempFileName), 
-          IF (ShowDocumentFromXml (sTempFileName), 
+        IF( ValidateXml (sTempFileName),
+          IF (ShowDocumentFromXml (sTempFileName),
             IF ( YESNO ('Передать Заявление о проведении операций с товарами?'),
               iSend := 1;
             )
@@ -179,12 +196,12 @@ FUNC ('SendReqOperations',,
         );
 
         IF ( iSend,
-            SendDOcument('ReqWHOperations', 'заявление', 'Заявление отправлено')
+            SendDOcument('ReqWHOperations', 'заявление', sStatementSentStatusText)
         ); // IF - iSend //
 
 
       ),
-    ); // IF - NotFindErrorsInFillingJrData//    
+    ); // IF - NotFindErrorsInFillingJrData//
   )
 ), //FUNC - SendReqOperations //
 
@@ -197,6 +214,7 @@ VAR ('vDocID', String, '123');
 VAR ('sTempFileName', String, '');
 VAR ('iSendResult', integer, 0);
 VAR ('sXmlVersion', String, INIFILE ('XMLFormat', 'Version', ''));
+VAR ('sStatementSentStatusText', string, sStatementSentStatusText);
 
 mSQL := 'SELECT PLACEID, ID, DOCUMENTID, ALBUM_VERSION FROM KRD_MAIN WHERE ID=' + vID;
 OPENQUERY ('qDO1', 'STS_DB', mSQL);
