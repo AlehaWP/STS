@@ -66,7 +66,7 @@ FUNC ('CheckCurrentStatus',,
   )
 ), //
 
-FUNC ('CheckSentStatements',,
+FUNC ('CheckStatementsSentBefore',,
   Block (
     VAR ('iResult', integer, 0);
     VAR ('sSQL', string, '');
@@ -178,7 +178,7 @@ FUNC ('SendNotifFinish',,
 FUNC ('SendReqOperations',,
   BLOCK (
       // за€вление - провер€ем заполненность других полей
-    IF (NotFindErrorsInFillingJrData (),
+    IF (NotFindErrorsInFillingJrData () * CheckStatementsSentBefore(),
       Block (
         // ѕолучаем файл xml соответсвующий свежему альбому форматов
         EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sXMLVersion + '\ReqOperations.exp');
