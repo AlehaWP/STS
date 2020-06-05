@@ -31,7 +31,7 @@ FUNC('GetDate',
   VAR ('XmlRoot', Integer, XMLDOCUMENTROOT (XmlDoc));
 }
 
-OPENTABLE ('OPERATE', 'JRREQOPER', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
+OPENTABLE ('OPERATE', 'JR_OPERATIONS', 'JOURNAL_MASTER_ID', 'dbJournals', 1);
 
 
 VAR ('XmlReqOper', Integer, XMLNODECHILD (XmlRoot, 0));
