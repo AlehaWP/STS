@@ -54,10 +54,10 @@ FUNC ('CheckCurrentStatus',,
   Block (
     VAR ('iResult', integer, 0);
 
-    IF((JR_OPERATIONS.Status = 'Получено решение от инспектора')|(JR_OPERATIONS.Status = sStatementSentStatusText)|(JR_OPERATIONS.Status = 'Доставлено в АСТО'),
+    IF((JR_OPERATIONS.Status = 'Получено решение от инспектора')|(JR_OPERATIONS.Status = sStatementSentStatusText)|(JR_OPERATIONS.Status = 'Рассматривается инспектором')|(JR_OPERATIONS.Status = sNotificationSentStatusText),
       IF(JR_OPERATIONS.DocSign = 0,
         Showmessage('Ответ на текущее требование уже доставлен в таможню!'),
-        Showmessage('Текущее заявление уже доставлено в таможню!')
+        Showmessage('Текущее заявление уже отправлено в таможню!')
       ),
       iResult := 1
     );
@@ -73,7 +73,7 @@ FUNC ('CheckStatementsSentBefore',,
     sSQL := 'SELECT JOURNAL_MASTER_ID as JMID FROM JR_OPERATIONS ' +
             ' WHERE ID =' + vID +
             ' AND JOURNAL_MASTER_ID < ' + JR_OPERATIONS.JOURNAL_MASTER_ID +
-            ' AND STATUS IN (' + char(39) + sStatementSentStatusText + char(39) + ', ' + char(39) + 'Доставлено в АСТО' + char(39) + ')';
+            ' AND STATUS IN (' + char(39) + sStatementSentStatusText + char(39) + ', ' + char(39) + 'Доставлено в АСТО' + char(39) + ', ' + char(39) + 'Рассматривается инспектором' + char(39) + ')';
     OPENQUERY ('findStatements', sSQL, 'dbJournals');
     IF (FIELDISNULL ('findStatements', 'JMID'), iResult := 1,
       showmessage ('У вас есть заявления отправленные в таможню, на которые не был получен ответ. Отправка не возможна!')
@@ -137,7 +137,7 @@ FUNC ('SendDocument',
       vID,
       0,
       vDocId,
-      pDocumentNameRus + ' на проведение операций',
+      'ДО-1',
       JR_OPERATIONS.REQNUMBER,
       JR_OPERATIONS.REQDATE,
       'Отправлено ' + pDocumentNameRus + ' на проведение операций',
@@ -168,7 +168,7 @@ FUNC ('SendNotifFinish',,
           );
 
           IF ( iSend,
-            SendDOcument('NotifFinishRejectOperations', 'решение на требование', 'Решение отправлено')
+            SendDOcument('NotifFinishRejectOperations', 'решение на требование', sNotificationSentStatusText)
           ); // IF - ValidateXml //
         )
       );
@@ -214,7 +214,8 @@ VAR ('vDocID', String, '123');
 VAR ('sTempFileName', String, '');
 VAR ('iSendResult', integer, 0);
 VAR ('sXmlVersion', String, INIFILE ('XMLFormat', 'Version', ''));
-VAR ('sStatementSentStatusText', string, sStatementSentStatusText);
+VAR ('sStatementSentStatusText', string, 'Заявление отправлено');
+VAR ('sNotificationSentStatusText', string, 'Решение отправлено');
 
 mSQL := 'SELECT PLACEID, ID, DOCUMENTID, ALBUM_VERSION FROM KRD_MAIN WHERE ID=' + vID;
 OPENQUERY ('qDO1', 'STS_DB', mSQL);
