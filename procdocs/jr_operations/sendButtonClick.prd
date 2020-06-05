@@ -98,22 +98,60 @@ FUNC ('ShowDocumentFromXml',
   )
 ), // FUNC - ShowDocumentFromXml //
 
+FUNC ('SendDocument', 
+  Block (
+    Param ('pDocumentNameLt', string, 0);
+    Param ('pDocumentNameRus', string, 1);
+    Param ('pStatus', string, 2);   
+  ),
+  Block (
+    VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+    IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+    VAR ('sXmlFileName', string, sDir + pDocumentNameLt + '_' + vPlaceID + '_' + vDocId +'.xml');
+    
+    FORCEDIRECTORIES (sDir);
+    COPYFILE (sTmpFileName, sDir + pDocumentNameLt + '_' + vPlaceID + '_' + vDocId +'.xml');
+    EDIT('JR_OPERATIONS');
+    SETFIELDVALUE ('JR_OPERATIONS', 'Status', 'Рассматривается инспектором');
+    iSendResult := 1;
+
+    VAR ('currDate', string, FDT ('DD.MM.YYYY HH:NN:SS', (Date() + Time(1))));
+    WriteEpsLog (vPLACEID,
+      vID,
+      0,
+      vDocId,
+      pDocumentNameRus + ' на проведение операций',
+      JR_OPERATIONS.REQNUMBER,
+      JR_OPERATIONS.REQDATE,
+      'Отправлено ' + pDocumentNameRus + ' на проведение операций',
+      currDate,
+      GENERATEUUID (),
+      'DOCUMENTID= ' + JR_OPERATIONS.DOCUMENTID,
+      sXmlFileName,
+      1,
+      currDate,
+      0
+    ); // WriteEpsLog
+  )
+)
+
+
 FUNC ('SendNotifFinish',,
   Block (
       IF ( NotFindErrorsInFillingJrData (0),
         Block (
           EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sXMLVersion + '\NotifFinish.exp');
           sTempFileName := GetNotifFinishExpXml (vPlaceID, vDocID);
-          
-          IF ( ValidateXml (sTempFileName)  * YESNO ('Передать Решение по требованию на проведение операций с товарами?'), 
-            Block (
-              VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
-              IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
-              FORCEDIRECTORIES (sDir);
-              COPYFILE (sTmpFileName, sDir + 'NotifFinishRejectOperations_'+ vPlaceID + '_' + vDocId +'.xml');
-              SETFIELDVALUE ('JR_OPERATIONS', 'Status', 'Рассматривается инспектором');
-              iSendResult := 1;
+
+          VAR ('iSend', integer, 0);
+          IF( ValidateXml (sTempFileName), 
+            IF ( YESNO ('Передать Решение по требованию на проведение операций с товарами?'),
+              iSend := 1;
             )
+          );
+
+          IF ( iSend, 
+            SendDOcument('NotifFinishRejectOperations', 'решение на требование', 'Решение отправлено')
           ); // IF - ValidateXml //          
         )
       );      
@@ -140,21 +178,17 @@ FUNC ('SendReqOperations',,
           )
         );
 
-        IF ( iSend, 
-            Block (
-            VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
-            IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
-            FORCEDIRECTORIES (sDir);
-            COPYFILE (sTmpFileName, sDir + 'ReqWHOperations_'+ vPlaceID + '_' + vDocId +'.xml');
-            EDIT('JR_OPERATIONS');
-            SETFIELDVALUE ('JR_OPERATIONS', 'Status', 'Рассматривается инспектором');
-            iSendResult := 1;
-          )
-        ); // IF - ValidateXml //
+        IF ( iSend,
+            SendDOcument('ReqWHOperations', 'заявление', 'Заявление отправлено')
+        ); // IF - iSend //
+
+
       ),
     ); // IF - NotFindErrorsInFillingJrData//    
   )
 ), //FUNC - SendReqOperations //
+
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'ProcDocs\write_eps_log.prd');
 
 VAR ('vPlaceId', String);
 VAR ('vID', String, JR_OPERATIONS.ID);
