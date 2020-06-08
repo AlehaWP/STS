@@ -73,7 +73,7 @@ FUNC ('CheckStatementsSentBefore',,
     sSQL := 'SELECT JOURNAL_MASTER_ID as JMID FROM JR_OPERATIONS ' +
             ' WHERE ID =' + vID +
             ' AND JOURNAL_MASTER_ID < ' + JR_OPERATIONS.JOURNAL_MASTER_ID +
-            ' AND STATUS IN (' + char(39) + sStatementSentStatusText + char(39) + ', ' + char(39) + 'Доставлено в АСТО' + char(39) + ', ' + char(39) + 'Рассматривается инспектором' + char(39) + ')';
+            ' AND STATUS IN (' + char(39) + '0' + char(39) + ', ' + char(39) + 'И' + char(39) + ')';
     OPENQUERY ('findStatements', sSQL, 'dbJournals');
     IF (FIELDISNULL ('findStatements', 'JMID'), iResult := 1,
       showmessage ('У вас есть заявления отправленные в таможню, на которые не был получен ответ. Отправка не возможна!')
@@ -129,7 +129,7 @@ FUNC ('SendDocument',
     FORCEDIRECTORIES (sDir);
     COPYFILE (sTmpFileName, sDir + pDocumentNameLt + '_' + vPlaceID + '_' + vDocId +'.xml');
     EDIT('JR_OPERATIONS');
-    SETFIELDVALUE ('JR_OPERATIONS', 'Status', 'Рассматривается инспектором');
+    SETFIELDVALUE ('JR_OPERATIONS', 'Status', 'Рассматривается инспектором', 'DOC_REG_STATUS', 'И');
     iSendResult := 1;
 
     VAR ('currDate', string, FDT ('DD.MM.YYYY HH:NN:SS', (Date() + Time(1))));
