@@ -54,7 +54,7 @@ FUNC ('CheckCurrentStatus',,
   Block (
     VAR ('iResult', integer, 0);
 
-    IF((JR_OPERATIONS.Status = 'Получено решение от инспектора')|(JR_OPERATIONS.Status = sStatementSentStatusText)|(JR_OPERATIONS.Status = 'Рассматривается инспектором')|(JR_OPERATIONS.Status = sNotificationSentStatusText),
+    IF((JR_OPERATIONS.DOC_REG_STATUS = 'И')|(JR_OPERATIONS.DOC_REG_STATUS = '3')|(JR_OPERATIONS.Status = sNotificationSentStatusText)|(JR_OPERATIONS.Status = 'Получено решение от инспектора'),
       IF(JR_OPERATIONS.DocSign = 0,
         Showmessage('Ответ на текущее требование уже доставлен в таможню!'),
         Showmessage('Текущее заявление уже отправлено в таможню!')

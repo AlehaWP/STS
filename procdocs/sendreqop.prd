@@ -1,0 +1,91 @@
+// *****************************************************************************
+// Название: Отправка заявления о проведении операций в отношении товаров и ТС
+// Описание: 
+// Кнопка вызова: 0
+// Подпись кнопки: Отправка заявл. об операциях с товарами
+// Вызов по событию: 
+// *****************************************************************************
+//
+
+VAR ('vPlaceId', String);
+VAR ('vID', String);
+VAR ('vDocID', String);
+Var ('strStatus', String, '');
+Var ('strSubStatus', String, '');
+Var ('DoType', String, '');
+Var ('DoNo', String, '');
+Var ('DoDate', DateTime);
+Var ('dRegDate', DateTime);
+VAR ('sJourGuid', String);
+VAR ('mSQL', Memo, '');
+VAR ('vDocID', String, '');
+
+
+vPlaceId := JRREQOPER.PLACEID;
+vId := JRREQOPER.ID;
+mSQL := 'SELECT * FROM KRD_MAIN WHERE PLACEID=' + vPlaceID +  ' AND ID=' + vID;
+OPENQUERY ('qDO1', 'STS_DB', mSQL);
+IF (RecordCount ('qDO1', 1) > 0,
+  Block(
+    DoNo := qDO1.NBD;
+    DoDate := qDO1.BD_DATE;
+    vDocID := qDO1.DOCUMENTID;
+  )
+);
+
+VAR ('sXmlVersion', String, IF (TRIM(qDO1.ALBUM_VERSION) <> '', qDO1.ALBUM_VERSION, INIFILE ('XMLFormat', 'Version', '')));
+//ShowMessage(sXMLVersion);
+       
+LOCATE ('STORES', 'PLACEID', [vPlaceId]);
+EXECUTESCRIPT (INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'DATA\IMPEX\SCRIPTS\' + sXMLVersion + '\ReqOperations.exp');
+VAR ('v', Variant, CREATEOLEOBJECT ('SchemaValidator.Validator'));
+v.SchemaPath := INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\SCHEMA\' + sXMLVersion + '\';
+//ShowMessage(sTmpFileName);
+IF (v.ValidateFile (sTmpFileName) = 'True',
+  Block(
+    VAR ('o', Variant, CREATEOLEOBJECT ('svh.Extention'));
+//  IF (o.GetXSLT (sTmpFileName) = 'True',
+    IF (o.GetXSLT3 (sTmpFileName, '1006135E', sXMLVersion) = 'True',
+      Block(
+      IF (o.Transformate() = 'True',
+        Block(
+          o.ShowDocument();
+          IF (YESNO ('Передать Заявление о проведении операций с товарами?'),
+            Block(
+              VAR ('sDir', String, INCLUDETRAILINGBACKSLASH (PROGRAMPATH ()) + 'STS-MED\iin\');
+              IF (USERINFO ('', 'UserUUID') <> '', sDir := sDir + USERINFO ('', 'UserUUID') + '\');
+              FORCEDIRECTORIES (sDir);
+              COPYFILE (sTmpFileName, sDir + 'ReqWHOperations_'+ vPlaceID + '_' + vDocId +'.xml');
+     	      SETFIELDVALUE ('JRREQOPER', 'Status', 'Рассматривается инспектором');
+              DoType   := 'Заявление на проведение операций';
+              strStatus:= 'Заявление отправлено';
+              dRegDate := DATE()+TIME(1);
+              sJourGuid := JRREQOPER.DocumentId;
+              'Передано'
+            ),
+            Block(
+              'Не передано'
+            )
+          ); // IF - //
+        ),
+        Block(
+          //showmessage ('Transformate = False');
+          'Не передано'
+        )
+      ); // IF - //
+    ),
+    Block(
+      //showmessage ('GetXSLT false');
+      'Не передано'
+    )
+  ); // IF - //
+),
+Block(
+  //showmessage ('ShowResult');
+  v.ShowResult();
+  'Не передано'
+  )
+); // IF - //
+          
+ 
+
