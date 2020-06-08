@@ -122,7 +122,7 @@ IF(FIELDISNULL ('FindReqOper', 'JOURNAL_MASTER_ID') = 0,
                           );
 
                           EXECUTESQL('dbJournals',  ' UPDATE JR_OPERATIONS '+
-                                                    ' SET STATUS = ' + char(39) + 'Получено решение от инспектора' + char(39) + ', '
+                                                    ' SET STATUS = ' + char(39) + 'Получено решение от инспектора' + char(39) + ', ' + 
                                                     ' DOC_REG_STATUS = '  + char(39) + '3' + char(39) + 
                                                     ' WHERE JOURNAL_MASTER_ID = ' + FindReqOper.JOURNAL_MASTER_ID 
                           );
