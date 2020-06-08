@@ -72,8 +72,8 @@ FUNC ('CheckStatementsSentBefore',,
     VAR ('sSQL', string, '');
     sSQL := 'SELECT JOURNAL_MASTER_ID as JMID FROM JR_OPERATIONS ' +
             ' WHERE ID =' + vID +
-            ' AND JOURNAL_MASTER_ID < ' + JR_OPERATIONS.JOURNAL_MASTER_ID +
-            ' AND STATUS IN (' + char(39) + '0' + char(39) + ', ' + char(39) + 'И' + char(39) + ')';
+            ' AND JOURNAL_MASTER_ID <> ' + JR_OPERATIONS.JOURNAL_MASTER_ID +
+            ' AND DOC_REG_STATUS IN (' + char(39) + '0' + char(39) + ', ' + char(39) + 'И' + char(39) + ')';
     OPENQUERY ('findStatements', sSQL, 'dbJournals');
     IF (FIELDISNULL ('findStatements', 'JMID'), iResult := 1,
       showmessage ('У вас есть заявления отправленные в таможню, на которые не был получен ответ. Отправка не возможна!')
