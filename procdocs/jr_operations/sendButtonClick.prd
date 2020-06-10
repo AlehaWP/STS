@@ -101,7 +101,7 @@ FUNC ('ValidateXml',
 FUNC ('ShowDocumentFromXml',
   Block (
     Param ('sXmlPath', String, 0);
-    Param ('sXsltID', String, 0);
+    Param ('sXsltID', String, 1);
   ),
   Block (
     VAR ('iResult', integer, 0);
