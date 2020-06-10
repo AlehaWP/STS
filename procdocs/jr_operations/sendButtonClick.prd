@@ -99,11 +99,14 @@ FUNC ('ValidateXml',
 ), // FUNC - ValidateXml //
 
 FUNC ('ShowDocumentFromXml',
-  Param ('sXmlPath', String, 0),
+  Block (
+    Param ('sXmlPath', String, 0);
+    Param ('sXsltID', String, 0);
+  ),
   Block (
     VAR ('iResult', integer, 0);
     VAR ('o', Variant, CREATEOLEOBJECT ('svh.Extention'));
-    IF (o.GetXSLT3 (sXmlPath, '1006135E', sXMLVersion) = 'True',
+    IF (o.GetXSLT3 (sXmlPath, sXsltID, sXMLVersion) = 'True',
       IF (o.Transformate() = 'True',
         Block (
           o.ShowDocument();
@@ -188,7 +191,7 @@ FUNC ('SendReqOperations',,
        //Ќе получилось, т.к. даже если перва€ 0, то провер€ет остальные, чего быть не должно
         VAR ('iSend', integer, 0);
         IF( ValidateXml (sTempFileName),
-          IF (ShowDocumentFromXml (sTempFileName),
+          IF (ShowDocumentFromXml (sTempFileName, '1006135E'),
             IF ( YESNO ('ѕередать «а€вление о проведении операций с товарами?'),
               iSend := 1;
             )

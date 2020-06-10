@@ -39,13 +39,13 @@ FUNC ('FillXML', ,
   Block(
     //-------------------------------------------Заносим данные-------------------------------------------------------------------------------------------------------------
     XMLNODESETVALUES (XMLNfRejOper, '',
-                      'nfro:DocumentSign', IF(JR_OPERATIONS.DOCUMENTSIGN=1, 'true', 'false')
+                      'nfro:DocumentSign', IF(JR_OPERATIONS.DOCUMENTSIGN = 1, 1, 0)
     );
 
     VAR('iOperationDescription', integer);
 
     //Транспортировка
-    IF ((JR_OPERATIONS.TranspValue=1)*(JR_OPERATIONS.TRANSPDECISION=1),
+    IF ((JR_OPERATIONS.TranspValue = 1)*(JR_OPERATIONS.TRANSPDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 1);
@@ -53,7 +53,7 @@ FUNC ('FillXML', ,
     );
 
     //Взвешивание
-    IF ((JR_OPERATIONS.WEIGHINGVALUE=1)*(JR_OPERATIONS.WEIGHINGDECISION=1),
+    IF ((JR_OPERATIONS.WEIGHINGVALUE = 1)*(JR_OPERATIONS.WEIGHINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 2);
@@ -61,7 +61,7 @@ FUNC ('FillXML', ,
     );
 
     //Иное определение кол-ва
-    IF ((JR_OPERATIONS.DEFQUANTVALUE=1)*(JR_OPERATIONS.DEFQUANTDECISION=1),
+    IF ((JR_OPERATIONS.DEFQUANTVALUE = 1)*(JR_OPERATIONS.DEFQUANTDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 3);
@@ -69,7 +69,7 @@ FUNC ('FillXML', ,
     );
 
     //Погрузка
-    IF ((JR_OPERATIONS.LOADINGVALUE=1)*(JR_OPERATIONS.LOADINGDECISION=1),
+    IF ((JR_OPERATIONS.LOADINGVALUE = 1)*(JR_OPERATIONS.LOADINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 4);
@@ -77,7 +77,7 @@ FUNC ('FillXML', ,
     );
 
     //Выгрузка
-    IF ((JR_OPERATIONS.UNLOADINGVALUE=1)*(JR_OPERATIONS.UNLOADINGDECISION=1),
+    IF ((JR_OPERATIONS.UNLOADINGVALUE = 1)*(JR_OPERATIONS.UNLOADINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 5);
@@ -85,7 +85,7 @@ FUNC ('FillXML', ,
     );
 
     //Перегрузка
-    IF ((JR_OPERATIONS.OVERLOADINGVALUE=1)*(JR_OPERATIONS.OVERLOADINGDECISION=1),
+    IF ((JR_OPERATIONS.OVERLOADINGVALUE = 1)*(JR_OPERATIONS.OVERLOADINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 6);
@@ -93,7 +93,7 @@ FUNC ('FillXML', ,
     );
 
     //Исправление поврежденной упаковки
-    IF ((JR_OPERATIONS.CorrPackValue=1)*(JR_OPERATIONS.CORRPACKDECISION=1),
+    IF ((JR_OPERATIONS.CorrPackValue = 1)*(JR_OPERATIONS.CORRPACKDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 7);
@@ -101,7 +101,7 @@ FUNC ('FillXML', ,
     );
 
     //Вскрытие упаковки
-    IF ((JR_OPERATIONS.UNPACKINGVALUE=1)*(JR_OPERATIONS.UNPACKINGDECISION=1),
+    IF ((JR_OPERATIONS.UNPACKINGVALUE = 1)*(JR_OPERATIONS.UNPACKINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 8);
@@ -109,7 +109,7 @@ FUNC ('FillXML', ,
     );
 
     //Упаковка
-    IF ((JR_OPERATIONS.PACKINGVALUE=1)*(JR_OPERATIONS.PACKINGDECISION=1),
+    IF ((JR_OPERATIONS.PACKINGVALUE = 1)*(JR_OPERATIONS.PACKINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 9);
@@ -117,7 +117,7 @@ FUNC ('FillXML', ,
     );
 
     //Переупаковка
-    IF ((JR_OPERATIONS.REPACKINGVALUE=1)*(JR_OPERATIONS.REPACKINGDECISION=1),
+    IF ((JR_OPERATIONS.REPACKINGVALUE = 1)*(JR_OPERATIONS.REPACKINGDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 10);
@@ -125,7 +125,7 @@ FUNC ('FillXML', ,
     );
 
     //Вскрытие пом.
-    IF ((JR_OPERATIONS.OLG_VALUE=1)*(JR_OPERATIONS.OLG_DECISION=1),
+    IF ((JR_OPERATIONS.OLG_VALUE = 1)*(JR_OPERATIONS.OLG_DECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 11);
@@ -133,7 +133,7 @@ FUNC ('FillXML', ,
     );
 
     //Разделение тов. партии
-    IF ((JR_OPERATIONS.DIVISIONVALUE=1)*(JR_OPERATIONS.DIVISIONDECISION=1),
+    IF ((JR_OPERATIONS.DIVISIONVALUE = 1)*(JR_OPERATIONS.DIVISIONDECISION = 1),
         BLOCK(
               iOperationDescription := XMLNODEADDCHILD (XMLNfRejOper, 'nfro:OperationDescription');
               XMLNODESETVALUE (iOperationDescription, 12);
